@@ -1,0 +1,16 @@
+{
+  "issues": [
+    {
+      "id": "xyfynabpkgufzelrdtwuccrkzwjnbhbq",
+      "shortId": "xyfynabp",
+      "title": "fp module: binary resolver + read/write CLI adapter",
+      "description": "Recorded from fp 0.23.0-next via `fp issue list --status in-progress --format json`.",
+      "status": "in-progress",
+      "priority": "high",
+      "parent": "gjsqxsytlryqohsctheykegtzetflmkc",
+      "dependencies": [],
+      "createdAt": "2026-05-04T23:44:16.495Z",
+      "updatedAt": "2026-05-04T23:56:04.391Z"
+    }
+  ]
+}
