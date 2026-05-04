@@ -1,0 +1,6 @@
+[shell_environment_policy]
+inherit = "all"
+experimental_use_profile = true
+
+[sandbox_workspace_write]
+writable_roots = ["~/.fiberplane"]
