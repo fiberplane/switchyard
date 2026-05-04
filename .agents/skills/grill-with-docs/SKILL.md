@@ -17,41 +17,18 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 ## Repo documentation map
 
-`docs/README.md` is the system of record for what goes where. Read it before grilling — it tells you the homes for patterns, templates, architecture, proposals, experiments, testing notes, and retired docs, and the rules for when to put something in each.
+`docs/README.md` is the system of record for what goes where. Read it before grilling instead of relying on a duplicated directory map in this skill.
 
-The shape relevant to a grill session:
-
-```
-/
-├── AGENTS.md            ← repo map: apps, packages, commands, pointers into docs/
-│                          (CLAUDE.md is a symlink to AGENTS.md)
-├── docs/
-│   ├── README.md        ← convention guide — read this first
-│   ├── patterns/        ← how we write code (effect, boundaries, data-validation,
-│   │                      coding-style, observability)
-│   ├── templates/       ← how to build things (cli, api, worker)
-│   ├── architecture/    ← what the system looks like — populated as apps are built
-│   ├── proposals/       ← active and completed design docs
-│   ├── experiments/     ← feasibility notes and demo evidence
-│   ├── testing/         ← validation patterns and QA notes
-│   └── graveyard/       ← retired docs
-├── rules/               ← ast-grep rules that mechanically enforce patterns
-│   ├── shared/
-│   └── effect/
-├── apps/                ← deployable apps (CLIs, APIs, workers)
-└── packages/            ← shared packages
-```
-
-There is no `CONTEXT.md`, `docs/adr/`, or explicit glossary in this repo. The closest analogues for a grill session:
+The routes most relevant to a grill session are:
 
 - **Established conventions** ("how we write Effect", "how we structure boundaries") → `docs/patterns/` and the ast-grep rules in `rules/effect/` and `rules/shared/`.
 - **How to build a new app** ("CLI scaffold", "HTTP API scaffold") → `docs/templates/`.
-- **Settled architectural shape** ("what the system looks like for app X") → `docs/architecture/` (currently empty; populated as apps are built).
+- **Accepted architectural shape** ("what the system looks like for app X") → `docs/architecture/`.
 - **Unshipped non-trivial changes** ("what we plan to change and why") → `docs/proposals/active/`.
 - **Feasibility work** ("what the prototype proved") → `docs/experiments/`.
 - **Repo-level naming** (app names, package names, command names) → the tables in `AGENTS.md`.
 
-Do not create `CONTEXT.md` or `docs/adr/`. Update or extend the docs that already exist; only graduate to a new file when `docs/README.md`'s convention says you should.
+This repo does not use a separate `docs/adr/` tree. Architectural decisions are captured as rationale inside `docs/architecture/` once accepted. Update or extend the docs that already exist; only graduate to a new file when `docs/README.md`'s convention says you should.
 
 ## During the session
 
@@ -81,8 +58,8 @@ When the user states how something works, check whether the code agrees. If you 
 When a convention is sharpened or a name is pinned down, update the relevant doc in place — don't batch. Use the routing in `docs/README.md`:
 
 - **Coding convention** (idiom, rule, style — applies across files) → extend the relevant `docs/patterns/*.md`. If the pattern can be enforced mechanically, mention adding an ast-grep rule under `rules/effect/` or `rules/shared/` (with a matching test under `rule-tests/`).
-- **System shape, data flow, or process model** → `docs/architecture/` (create the file if it doesn't exist; this directory starts empty).
-- **Unshipped non-trivial design** → `docs/proposals/active/`, then move it to `docs/proposals/completed/` when shipped.
+- **Accepted system shape, data flow, or process model** → `docs/architecture/` (create the file if it doesn't exist).
+- **Unshipped non-trivial design** → `docs/proposals/active/`. Proposals carry status while decisions are still in flight.
 - **Feasibility notes and demo evidence** → `docs/experiments/` unless the repo has accepted the design.
 - **How to build a new app of some kind** → extend the matching `docs/templates/*.md`.
 - **Repo-level names or command pointers** → update `AGENTS.md`.
@@ -96,6 +73,6 @@ If the doc describes code behavior tightly, bind it with `drift link <doc> <sour
 
 If the decision is already settled and uncontroversial, write it directly into `docs/architecture/` or `docs/patterns/`. Don't invent ceremony where there's no live trade-off.
 
-When a non-obvious architectural decision is already settled, capture it inline in the appropriate `docs/architecture/<topic>.md` with a short rationale section — see [ADR-FORMAT.md](./ADR-FORMAT.md) for the shape and the criteria for when a decision is worth capturing at all. When the decision is still a proposal, use `docs/proposals/active/` instead.
+When a non-obvious architectural decision is already settled, capture it inline in the appropriate `docs/architecture/<topic>.md` with a short rationale section — see [ADR-FORMAT.md](./ADR-FORMAT.md) for the shape and the criteria for when a decision is worth capturing at all. When the decision is still a proposal, use `docs/proposals/active/`; when it is accepted, architecture describes the accepted state and the completed proposal keeps the historical decision context.
 
 </supporting-info>

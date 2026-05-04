@@ -1,6 +1,6 @@
 # Capturing architectural decisions
 
-This repo doesn't use ADRs. Settled conventions live in `docs/patterns/`; settled architectural shape lives in `docs/architecture/`; unshipped design work lives in `docs/proposals/active/`. When a settled non-obvious decision needs a paper trail, capture it inline as a short rationale section inside the relevant `docs/architecture/<topic>.md` (or `docs/patterns/<topic>.md`) rather than creating a separate ADR file.
+This repo does not use a separate ADR tree. Settled conventions live in `docs/patterns/`; accepted architectural shape and rationale live in `docs/architecture/`; unshipped design work lives in `docs/proposals/active/`. When an accepted non-obvious decision needs a paper trail, capture it inline as a short rationale section inside the relevant `docs/architecture/<topic>.md` (or `docs/patterns/<topic>.md`) rather than creating a separate ADR file.
 
 See `docs/README.md` for the wider convention.
 
@@ -29,9 +29,10 @@ When you do capture a decision inline, a tight rationale section is enough. Adap
 - bullet rationale (only when the rejection isn't obvious)
 ```
 
-Keep the rationale next to the thing it justifies. Once the decision is settled and load-bearing,
-move any proposal context into the relevant architecture or pattern doc, then drop the `Status:`
-line there; the rationale stays.
+Keep the rationale next to the thing it justifies. Proposals carry `Status:` while a decision is
+still in flight. Once the decision is accepted and load-bearing, move the accepted state and any
+essential rationale into the relevant architecture or pattern doc; the completed proposal keeps the
+historical context.
 
 ## When to capture
 
@@ -45,18 +46,18 @@ If any is missing, skip it. A pattern note in `docs/patterns/` is often the righ
 
 ### What qualifies
 
-- **Architectural shape.** "Single SQLite per project; one Y.Doc per issue."
-- **Integration patterns between contexts / processes.** "Main process owns the sync engine; renderer talks to it via Effect RPC, not direct DB access."
+- **Architectural shape.** "`fp` owns durable task state; the local orchestrator owns dispatch and sandbox lifecycle."
+- **Integration patterns across boundaries.** "Daytona execution is wrapped by an adapter; interior services talk to typed Effect services, not the raw SDK."
 - **Technology choices that carry lock-in.** Database, sync engine, auth provider, deployment target. Not every library — just the ones that would take a quarter to swap out.
-- **Boundary and scope decisions.** "Local activity stays local; only Yjs updates cross the wire." The explicit no-s are as valuable as the yes-s.
-- **Deliberate deviations from the obvious path.** "We're using manual SQL instead of Drizzle here because X." Anything where a reasonable reader would assume the opposite stops the next engineer from "fixing" something that was deliberate.
-- **Constraints not visible in the code.** "WASM boot overhead is unacceptable for CLI invocations."
-- **Rejected alternatives when the rejection is non-obvious.** If we considered LiveStore and picked Yjs for subtle reasons, record it — otherwise someone will suggest LiveStore again in six months.
+- **Boundary and scope decisions.** "Workers return artifacts; they do not claim work or perform final issue transitions." The explicit no-s are as valuable as the yes-s.
+- **Deliberate deviations from the obvious path.** "We're uploading a repo archive to Daytona instead of relying on local worktrees because remote sandboxes cannot share fp's local worktree identity." Anything where a reasonable reader would assume the opposite stops the next engineer from "fixing" something that was deliberate.
+- **Constraints not visible in the code.** "Local Daytona demos must probe host reachability instead of assuming `host.docker.internal`."
+- **Rejected alternatives when the rejection is non-obvious.** If we considered giving workers direct tracker authority and rejected it for subtle reasons, record it — otherwise someone will suggest it again in six months.
 
 ### Where decisions land
 
 - **System shape / data flow / process model** → `docs/architecture/<topic>.md`
-- **Unshipped design work** → `docs/proposals/active/`
+- **Unshipped design work** → `docs/proposals/active/` (proposals carry status)
 - **How we write code in light of the decision** → `docs/patterns/<topic>.md`
 - **Mechanically enforceable** → an ast-grep rule under `rules/` (with a test under `rule-tests/`), referenced from the pattern doc
 
