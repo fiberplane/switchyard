@@ -41,13 +41,13 @@ The meetup demo should show:
 
 The important point is the responsibility split:
 
-| Component                | Owns                                                                                                          | Must not own                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `fp`                     | Durable issue state, parent/child rules, readiness, comments, custom Symphony properties (human-glance only)  | Sandbox lifecycle or transient runner state                                               |
-| Local Codex orchestrator | Dispatch decisions, claims (in-memory), Daytona lifecycle, artifact integration, all `fp` writes              | Hidden durable state in chat history; per-turn execution semantics that the protocol owns |
-| Daytona                  | Isolated compute, sandbox filesystem, process execution, network/runtime boundary                             | Work scheduling or tracker semantics                                                      |
-| Codex worker in Daytona  | Code edits, multiple intermediate commits with descriptive messages, terminal outcome envelope (`outcome.json`)| Claiming work, writing to `fp` directly, deciding final ticket state                      |
-| Git                      | Source revision, worker commits, integration branches on host                                                 | Task readiness or worker lifecycle state                                                  |
+| Component                | Owns                                                                                                            | Must not own                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `fp`                     | Durable issue state, parent/child rules, readiness, comments, custom Symphony properties (human-glance only)    | Sandbox lifecycle or transient runner state                                               |
+| Local Codex orchestrator | Dispatch decisions, claims (in-memory), Daytona lifecycle, artifact integration, all `fp` writes                | Hidden durable state in chat history; per-turn execution semantics that the protocol owns |
+| Daytona                  | Isolated compute, sandbox filesystem, process execution, network/runtime boundary                               | Work scheduling or tracker semantics                                                      |
+| Codex worker in Daytona  | Code edits, multiple intermediate commits with descriptive messages, terminal outcome envelope (`outcome.json`) | Claiming work, writing to `fp` directly, deciding final ticket state                      |
+| Git                      | Source revision, worker commits, integration branches on host                                                   | Task readiness or worker lifecycle state                                                  |
 
 ## Reference Implementations
 
@@ -107,7 +107,7 @@ runs recorded here, both from playgrounds at `playgrounds/symphony-daytona-playg
 - Uploaded `repo.tgz`, `prompt.md`, and Codex auth into the sandbox via
   `sandbox.fs.uploadFiles`.
 - Configured `git user.name`, `git user.email`, `safe.directory`; ran `git init / add /
-  commit -m "base" / tag symphony-base` to seed the repo (the source-handoff flow described in
+commit -m "base" / tag symphony-base` to seed the repo (the source-handoff flow described in
   the **Source Handoff** section).
 - Authenticated Codex inside the sandbox with `CODEX_HOME=/workspace/codex-home` containing only
   a copied `auth.json`; `codex login status` reported `Logged in using ChatGPT`.
@@ -182,7 +182,7 @@ worker did not contact the host network; no host base URL was injected.
 `Schema.decodeUnknown(WorkerOutcome)` succeeded:
 
 ```json
-{"status":"completed","summary":"Rewrote message.txt and committed the smoke test change."}
+{ "status": "completed", "summary": "Rewrote message.txt and committed the smoke test change." }
 ```
 
 **Bundle integration:** the orchestrator step ran
@@ -203,11 +203,11 @@ Protocol** above; recorded here as evidence rather than as protocol documentatio
 - `initialize` params: `{ clientInfo, capabilities }`. No `initialized` notification needed by
   this server build (the brettimus reference runner sends one; harmless but unnecessary here).
 - `thread/start` params: `{ cwd, approvalPolicy: "never", sandbox: "danger-full-access",
-  ephemeral: true }`. `approvalPolicy: "auto"` (used by the brettimus reference) is rejected by
+ephemeral: true }`. `approvalPolicy: "auto"` (used by the brettimus reference) is rejected by
   this build with `unknown variant 'auto'` — valid `AskForApproval` strings are
   `untrusted | on-failure | on-request | never` plus a granular object form.
 - `turn/start` params: `{ threadId, cwd, approvalPolicy: "never",
-  sandboxPolicy: { type: "dangerFullAccess" }, input: [{ type: "text", text: prompt }] }`.
+sandboxPolicy: { type: "dangerFullAccess" }, input: [{ type: "text", text: prompt }] }`.
   `sandbox` (thread scope) and `sandboxPolicy` (turn scope) are different field shapes and case
   conventions; treat them as distinct types.
 - Turn termination: `turn/completed` notification carrying `params.turn.{id, status, …}`. There
@@ -285,13 +285,13 @@ claim signal; `symphony_state` is a human-glance mirror only (see below).
 
 The fp extension at `.fp/extensions/symphony-state.ts` registers these properties:
 
-| Property              | Type                                                          | Writer           | Meaning                                                                  |
-| --------------------- | ------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------ |
-| `symphony_ready`      | select `"true"` / `"false"`                                   | human or planner | Explicit dispatch gate                                                   |
-| `symphony_state`      | select `"idle"` / `"active"` / `"end"` / `"needs-attention"`  | orchestrator     | Coarse human-glance runtime hint. **Not authoritative; not read for correctness.** |
-| `symphony_attempt`    | text (numeric)                                                | orchestrator     | Current attempt number                                                   |
-| `symphony_artifact`   | text                                                          | orchestrator     | Integration branch name (e.g. `symphony/SWYRD-abc123`) and/or local artifact path |
-| `symphony_last_error` | text                                                          | orchestrator     | Last normalized failure reason                                           |
+| Property              | Type                                                         | Writer           | Meaning                                                                            |
+| --------------------- | ------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------- |
+| `symphony_ready`      | select `"true"` / `"false"`                                  | human or planner | Explicit dispatch gate                                                             |
+| `symphony_state`      | select `"idle"` / `"active"` / `"end"` / `"needs-attention"` | orchestrator     | Coarse human-glance runtime hint. **Not authoritative; not read for correctness.** |
+| `symphony_attempt`    | text (numeric)                                               | orchestrator     | Current attempt number                                                             |
+| `symphony_artifact`   | text                                                         | orchestrator     | Integration branch name (e.g. `symphony/SWYRD-abc123`) and/or local artifact path  |
+| `symphony_last_error` | text                                                         | orchestrator     | Last normalized failure reason                                                     |
 
 `symphony_state` is a **purely informational mirror** of orchestrator-internal state. It exists so
 a human glancing at an issue in fp can immediately see "is anything happening with this?" The
@@ -312,16 +312,16 @@ issue's `status` back to `todo`.
 Eligibility decision table (`symphony_state` column is informational only; eligibility derives from
 `status` + `symphony_ready` + the orchestrator's in-memory claim set):
 
-| `status`      | `symphony_ready` | `symphony_state`   | Deps + children                                  | Meaning                                       | Eligible? |
-| ------------- | ---------------- | ------------------ | ------------------------------------------------ | --------------------------------------------- | --------- |
-| `todo`        | `false`          | any                | any                                              | Not gated for Symphony                        | No        |
-| `todo`        | `true`           | `idle`             | any non-terminal dep, OR any open child          | Blocked by upstream work                      | No        |
-| `todo`        | `true`           | `idle`             | all deps terminal AND no open children           | Fresh candidate                               | Yes       |
-| `todo`        | `true`           | `needs-attention`  | all deps terminal AND no open children           | Human re-armed after a previous failure       | Yes       |
-| `todo`        | `true`           | `needs-attention`  | any non-terminal dep, OR any open child          | Re-armed but blocked again                    | No        |
-| `in-progress` | any              | `active`           | any                                              | Currently being worked on (in claim set)      | No        |
-| `in-progress` | any              | `needs-attention`  | any                                              | Parked for human triage                       | No        |
-| `done`        | any              | `end`              | any                                              | Terminal                                      | No        |
+| `status`      | `symphony_ready` | `symphony_state`  | Deps + children                         | Meaning                                  | Eligible? |
+| ------------- | ---------------- | ----------------- | --------------------------------------- | ---------------------------------------- | --------- |
+| `todo`        | `false`          | any               | any                                     | Not gated for Symphony                   | No        |
+| `todo`        | `true`           | `idle`            | any non-terminal dep, OR any open child | Blocked by upstream work                 | No        |
+| `todo`        | `true`           | `idle`            | all deps terminal AND no open children  | Fresh candidate                          | Yes       |
+| `todo`        | `true`           | `needs-attention` | all deps terminal AND no open children  | Human re-armed after a previous failure  | Yes       |
+| `todo`        | `true`           | `needs-attention` | any non-terminal dep, OR any open child | Re-armed but blocked again               | No        |
+| `in-progress` | any              | `active`          | any                                     | Currently being worked on (in claim set) | No        |
+| `in-progress` | any              | `needs-attention` | any                                     | Parked for human triage                  | No        |
+| `done`        | any              | `end`             | any                                     | Terminal                                 | No        |
 
 **Concurrency** is calculated against the orchestrator's in-memory set of issues with a live
 worker turn. `idle`, `end`, and `needs-attention` issues do not contribute to concurrency. Sandbox
@@ -387,7 +387,7 @@ polling:
 
 agent:
   maxConcurrentAgents: 1
-  maxAttempts: 1   # no auto-retry; reserved for future policy
+  maxAttempts: 1 # no auto-retry; reserved for future policy
 
 sandbox:
   kind: daytona
@@ -412,6 +412,11 @@ integration:
   # those results as informational. Orchestrator-side verification is deferred — see fp issue
   # SWYRD-ovvmzqxw.
 ```
+
+The YAML contract is camelCase, matching the example above. The workflow loader validates this
+shape as written and does not normalize Brettimus-style snake_case keys. Values like
+`"$DAYTONA_API_URL"` are loaded as literal strings; environment interpolation is left to the
+downstream Daytona configuration consumer so config loading remains a pure disk/YAML/schema step.
 
 `codex app-server` is a long-running stdio process; the orchestrator speaks the targeted
 app-server protocol over the process's stdio. The protocol process inherits Codex auth from
@@ -562,11 +567,11 @@ ls /tmp/.symphony/outcome.json
 
 The orchestrator downloads:
 
-| Artifact          | Producer                          | Required for `completed`? |
-| ----------------- | --------------------------------- | ------------------------- |
-| `transcript.jsonl`| Orchestrator (live, while streaming) | Always present (may be partial on crash) |
-| `work.bundle`     | Sandbox (`git bundle create symphony-base..HEAD`) | Yes |
-| `outcome.json`    | Worker (during the turn, before `turn_completed`) | Yes |
+| Artifact           | Producer                                          | Required for `completed`?                |
+| ------------------ | ------------------------------------------------- | ---------------------------------------- |
+| `transcript.jsonl` | Orchestrator (live, while streaming)              | Always present (may be partial on crash) |
+| `work.bundle`      | Sandbox (`git bundle create symphony-base..HEAD`) | Yes                                      |
+| `outcome.json`     | Worker (during the turn, before `turn_completed`) | Yes                                      |
 
 The worker outcome envelope is the only side-channel artifact the worker is required to write. Its
 schema:
@@ -588,14 +593,15 @@ After artifact download, the orchestrator writes its own record:
 ```typescript
 const OrchestratorRecord = Schema.Struct({
   status: Schema.Literal("integrated", "needs-attention"),
-  branch: Schema.String,                   // e.g. "symphony/SWYRD-abc123"
-  baseRev: Schema.String,                  // host SHA at dispatch time
-  workerStatus: Schema.OptionFromNullOr(   // null if outcome.json was missing/malformed
+  branch: Schema.String, // e.g. "symphony/SWYRD-abc123"
+  baseRev: Schema.String, // host SHA at dispatch time
+  workerStatus: Schema.OptionFromNullOr(
+    // null if outcome.json was missing/malformed
     Schema.Literal("completed", "blocked", "needs-human", "failed"),
   ),
   integrationError: Schema.optional(Schema.String),
-  startedAt: Schema.String,                // ISO timestamp
-  endedAt: Schema.String,                  // ISO timestamp
+  startedAt: Schema.String, // ISO timestamp
+  endedAt: Schema.String, // ISO timestamp
   attempt: Schema.Number,
 });
 ```
@@ -663,15 +669,15 @@ for each ready leaf issue while concurrency slots are available:
 Detailed state flow (only orchestrator-driven `fp` writes; protocol-event observability lives in
 `transcript.jsonl`, not in `fp`):
 
-| Step                  | Orchestrator action                                                 | fp write                                                                                |
-| --------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Claim                 | Re-read issue, verify ready rule, add to in-memory running set      | `status=in-progress`, `symphony_state=active`, `symphony_attempt=<n>`                   |
-| Sandbox + worker run  | `daytona.create(...)`, spawn `codex app-server`, drive protocol     | comment "Dispatched to sandbox `<sandbox-id>`"; no `fp` property changes                |
-| Turn completed        | Receive `turn_completed`; download bundle + `outcome.json`          | comment "Worker turn completed; integrating"; no property changes yet                  |
-| Integration ok        | Decode `outcome.json` (status=`completed`); fetch bundle into branch | `status=done`, `symphony_state=end`, `symphony_artifact=symphony/<issue-id>`           |
-| Worker non-`completed`| Decode `outcome.json` (status≠`completed`); still create branch     | `symphony_state=needs-attention`, `symphony_last_error=<status>: <summary head>`       |
-| Bundle/decode failure | Preserve whatever artifacts exist locally                           | `symphony_state=needs-attention`, `symphony_last_error=<reason>`                       |
-| Protocol failure      | Persist partial transcript, attempt salvage bundle, drop from running | `symphony_state=needs-attention`, `symphony_last_error=protocol stream <reason>`     |
+| Step                   | Orchestrator action                                                   | fp write                                                                         |
+| ---------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Claim                  | Re-read issue, verify ready rule, add to in-memory running set        | `status=in-progress`, `symphony_state=active`, `symphony_attempt=<n>`            |
+| Sandbox + worker run   | `daytona.create(...)`, spawn `codex app-server`, drive protocol       | comment "Dispatched to sandbox `<sandbox-id>`"; no `fp` property changes         |
+| Turn completed         | Receive `turn_completed`; download bundle + `outcome.json`            | comment "Worker turn completed; integrating"; no property changes yet            |
+| Integration ok         | Decode `outcome.json` (status=`completed`); fetch bundle into branch  | `status=done`, `symphony_state=end`, `symphony_artifact=symphony/<issue-id>`     |
+| Worker non-`completed` | Decode `outcome.json` (status≠`completed`); still create branch       | `symphony_state=needs-attention`, `symphony_last_error=<status>: <summary head>` |
+| Bundle/decode failure  | Preserve whatever artifacts exist locally                             | `symphony_state=needs-attention`, `symphony_last_error=<reason>`                 |
+| Protocol failure       | Persist partial transcript, attempt salvage bundle, drop from running | `symphony_state=needs-attention`, `symphony_last_error=protocol stream <reason>` |
 
 ## Effect Implementation Shape
 
@@ -937,7 +943,7 @@ why," the file says "the task ended, here's what I think happened."
 Upstream Symphony has a full retry model — exponential backoff, stall detection, continuation
 retries. We could have implemented a subset for the demo.
 
-We didn't, because there's no time on stage to *demonstrate* retry, and auto-retrying broken
+We didn't, because there's no time on stage to _demonstrate_ retry, and auto-retrying broken
 code wastes Daytona resources for no demo payoff. Human-gated handoff is the right default
 until we know which failures are flaky-transient vs. genuinely-broken.
 
@@ -951,7 +957,7 @@ Brettimus uses `git worktree` for per-issue workspaces because `fp` can resolve 
 to the parent project identity. That model breaks across the sandbox boundary (worktrees don't
 cross containers), so it can't be the source-handoff mechanism here.
 
-We considered keeping the worktree concept *only* on the host side as the integration target —
+We considered keeping the worktree concept _only_ on the host side as the integration target —
 the orchestrator would `git worktree add` for each issue and apply the worker's output there.
 
 The chosen path: branch-on-host with no worktrees. The orchestrator fetches each worker bundle

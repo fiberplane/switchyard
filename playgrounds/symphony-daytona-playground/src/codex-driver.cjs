@@ -180,8 +180,7 @@ const request = (method, params) =>
       sandbox: "danger-full-access",
       ephemeral: true,
     });
-    const threadId =
-      threadResult?.thread?.id || threadResult?.threadId || null;
+    const threadId = threadResult?.thread?.id || threadResult?.threadId || null;
     if (!threadId) {
       finish("thread_start_no_id", { result: threadResult });
       return;

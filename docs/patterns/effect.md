@@ -593,22 +593,21 @@ Benefits:
 
 ```typescript
 // Bad: parse then decode as two separate steps, each with its own error handling
-const parseResult = yield* Effect.either(
-  Effect.try({
-    try: () => JSON.parse(content) as unknown,
-    catch: (error) => error,
-  }),
-);
+const parseResult =
+  yield *
+  Effect.either(
+    Effect.try({
+      try: () => JSON.parse(content) as unknown,
+      catch: (error) => error,
+    }),
+  );
 if (Either.isLeft(parseResult)) return Option.none();
-const decoded = yield* Effect.either(Schema.decodeUnknown(MySchema)(parseResult.right));
+const decoded = yield * Effect.either(Schema.decodeUnknown(MySchema)(parseResult.right));
 if (Either.isLeft(decoded)) return Option.none();
 return Option.some(decoded.right);
 
 // Good: Schema.parseJson fuses parse + decode into one schema
-return yield* pipe(
-  Schema.decodeUnknown(Schema.parseJson(MySchema))(content),
-  Effect.option,
-);
+return yield * pipe(Schema.decodeUnknown(Schema.parseJson(MySchema))(content), Effect.option);
 ```
 
 `Schema.parseJson(Inner)` returns a schema whose input is a string. Decoding it runs `JSON.parse` and validates the result in a single `ParseError` channel. Combined with `Effect.option`, the whole "read + parse + validate or fall back" pipeline collapses to one line.
@@ -619,23 +618,23 @@ The `no-manual-json-decode` rule catches `Effect.try({ try: () => JSON.parse(...
 
 ### Effect rules (`rules/effect/`) -- apply to `apps/**` and `packages/**`:
 
-| Rule                      | Severity | What it catches                                                                                                                              |
-| ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no-throw-in-effect`      | error    | `throw` inside `Effect.gen` -- use `Effect.fail`                                                                                             |
-| `no-try-catch`            | error    | `try-catch` in Effect code -- use `Effect.try` or `Effect.catchTag`                                                                          |
-| `no-manual-tag-check`     | warning  | Manual `._tag` checking -- use `Effect.catchTag` or `Match`                                                                                  |
-| `no-direct-fs`            | error    | `import from "node:fs"` -- use Effect's `FileSystem` service                                                                                 |
-| `use-tagged-error`        | error    | `extends Error` -- use `Data.TaggedError`                                                                                                    |
-| `no-bare-new-error`       | error    | `new Error(...)` -- use tagged/domain error types                                                                                            |
-| `no-console-log`          | error    | `console.log/warn/error/info` -- use `Effect.log`/`logWarning`/`logError`                                                                    |
-| `no-runpromise-in-effect` | error    | `Effect.runPromise`/`runSync` -- use `yield*` inside Effect; `Runtime.runPromise` at boundary files only (see `docs/patterns/boundaries.md`) |
-| `no-silent-catch`         | error    | `Effect.catchAll(() => Effect.succeed(...))` without logging -- no silent error swallowing                                                   |
-| `no-interface-in-models`  | error    | `export interface` in models -- use `Schema.Struct` for domain types                                                                         |
-| `no-unsafe-typecast-at-boundary` | error | `as` casts on JSON.parse, .json(), .text(), .body -- use `Schema.decodeUnknown` (see `docs/patterns/data-validation.md`)              |
-| `no-json-parse-without-schema`   | error | Bare `JSON.parse` without `Schema.decode*` wrapper -- validate parsed data through Schema                                             |
-| `no-typed-boundary-assignment`   | error | Typed variable assignment from JSON.parse, .json(), .body -- decode first, then assign                                                |
-| `no-fetch-in-effect`      | error    | `Effect.tryPromise` wrapping `fetch(...)` -- use `@effect/platform`'s `HttpClient`                                                            |
-| `no-manual-json-decode`   | error    | `Effect.try({ try: () => JSON.parse(...) })` -- use `Schema.parseJson(Inner)` to fuse parse + decode                                           |
+| Rule                             | Severity | What it catches                                                                                                                              |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-throw-in-effect`             | error    | `throw` inside `Effect.gen` -- use `Effect.fail`                                                                                             |
+| `no-try-catch`                   | error    | `try-catch` in Effect code -- use `Effect.try` or `Effect.catchTag`                                                                          |
+| `no-manual-tag-check`            | warning  | Manual `._tag` checking -- use `Effect.catchTag` or `Match`                                                                                  |
+| `no-direct-fs`                   | error    | `import from "node:fs"` -- use Effect's `FileSystem` service                                                                                 |
+| `use-tagged-error`               | error    | `extends Error` -- use `Data.TaggedError`                                                                                                    |
+| `no-bare-new-error`              | error    | `new Error(...)` -- use tagged/domain error types                                                                                            |
+| `no-console-log`                 | error    | `console.log/warn/error/info` -- use `Effect.log`/`logWarning`/`logError`                                                                    |
+| `no-runpromise-in-effect`        | error    | `Effect.runPromise`/`runSync` -- use `yield*` inside Effect; `Runtime.runPromise` at boundary files only (see `docs/patterns/boundaries.md`) |
+| `no-silent-catch`                | error    | `Effect.catchAll(() => Effect.succeed(...))` without logging -- no silent error swallowing                                                   |
+| `no-interface-in-models`         | error    | `export interface` in models -- use `Schema.Struct` for domain types                                                                         |
+| `no-unsafe-typecast-at-boundary` | error    | `as` casts on JSON.parse, .json(), .text(), .body -- use `Schema.decodeUnknown` (see `docs/patterns/data-validation.md`)                     |
+| `no-json-parse-without-schema`   | error    | Bare `JSON.parse` without `Schema.decode*` wrapper -- validate parsed data through Schema                                                    |
+| `no-typed-boundary-assignment`   | error    | Typed variable assignment from JSON.parse, .json(), .body -- decode first, then assign                                                       |
+| `no-fetch-in-effect`             | error    | `Effect.tryPromise` wrapping `fetch(...)` -- use `@effect/platform`'s `HttpClient`                                                           |
+| `no-manual-json-decode`          | error    | `Effect.try({ try: () => JSON.parse(...) })` -- use `Schema.parseJson(Inner)` to fuse parse + decode                                         |
 
 **After writing any code**, run `ast-grep scan` from the repo root to check for these anti-patterns.
 

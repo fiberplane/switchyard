@@ -37,7 +37,7 @@ Validate at the boundary with `Schema.decodeUnknown`:
 
 ```typescript
 // In Effect code — returns Effect<User, ParseError>
-const user = yield* Schema.decodeUnknown(User)(JSON.parse(body));
+const user = yield * Schema.decodeUnknown(User)(JSON.parse(body));
 
 // In non-Effect code — throws ParseError on invalid data
 const user = Schema.decodeUnknownSync(User)(JSON.parse(body));
@@ -51,7 +51,7 @@ Other `Schema.decode*` variants (`decodeUnknownEither`, `decodeUnknownOption`, `
 
 ```typescript
 // ❌ Bad
-const input = await request.json() as CreateUserInput;
+const input = (await request.json()) as CreateUserInput;
 
 // ✅ Good
 const CreateUserInput = Schema.Struct({
@@ -60,14 +60,14 @@ const CreateUserInput = Schema.Struct({
   role: Schema.optional(Schema.Literal("admin", "member", "viewer")),
 });
 
-const input = yield* Schema.decodeUnknown(CreateUserInput)(await request.json());
+const input = yield * Schema.decodeUnknown(CreateUserInput)(await request.json());
 ```
 
 ### HTTP Response Bodies
 
 ```typescript
 // ❌ Bad
-const data = await response.json() as ApiResponse;
+const data = (await response.json()) as ApiResponse;
 
 // ✅ Good
 const ApiResponse = Schema.Struct({
@@ -76,7 +76,7 @@ const ApiResponse = Schema.Struct({
   nextCursor: Schema.optional(Schema.String),
 });
 
-const data = yield* Schema.decodeUnknown(ApiResponse)(await response.json());
+const data = yield * Schema.decodeUnknown(ApiResponse)(await response.json());
 ```
 
 ### JSON Files
@@ -92,7 +92,7 @@ const AppConfig = Schema.Struct({
   debug: Schema.optional(Schema.Boolean),
 });
 
-const config = yield* Schema.decodeUnknown(AppConfig)(JSON.parse(content));
+const config = yield * Schema.decodeUnknown(AppConfig)(JSON.parse(content));
 ```
 
 ### Discriminated Unions
@@ -116,7 +116,7 @@ const WebhookEvent = Schema.Union(
   }),
 );
 
-const event = yield* Schema.decodeUnknown(WebhookEvent)(JSON.parse(body));
+const event = yield * Schema.decodeUnknown(WebhookEvent)(JSON.parse(body));
 // TypeScript now knows event.type discriminates the union
 ```
 
@@ -125,11 +125,7 @@ const event = yield* Schema.decodeUnknown(WebhookEvent)(JSON.parse(body));
 For values with domain constraints beyond basic types:
 
 ```typescript
-const Port = Schema.Number.pipe(
-  Schema.int(),
-  Schema.between(1, 65535),
-  Schema.brand("Port"),
-);
+const Port = Schema.Number.pipe(Schema.int(), Schema.between(1, 65535), Schema.brand("Port"));
 
 const ISOTimestamp = Schema.String.pipe(
   Schema.pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/),
@@ -146,7 +142,7 @@ const ISOTimestamp = Schema.String.pipe(
 const data = JSON.parse(body) as MyType;
 
 // ❌ Same problem through .json()
-const payload = await response.json() as ApiResponse;
+const payload = (await response.json()) as ApiResponse;
 ```
 
 Caught by: `no-unsafe-typecast-at-boundary` ast-grep rule.
@@ -178,14 +174,14 @@ Caught by: `no-typed-boundary-assignment` ast-grep rule.
 ```typescript
 // ❌ Still flagged — the `any` leaks into `raw`
 const raw = JSON.parse(body);
-const data = yield* Schema.decodeUnknown(MySchema)(raw);
+const data = yield * Schema.decodeUnknown(MySchema)(raw);
 ```
 
 Pass `JSON.parse` directly to the Schema decode call. This keeps the unvalidated `any` contained:
 
 ```typescript
 // ✅ Good — `any` never escapes into a variable
-const data = yield* Schema.decodeUnknown(MySchema)(JSON.parse(body));
+const data = yield * Schema.decodeUnknown(MySchema)(JSON.parse(body));
 ```
 
 ### 5. Interface Instead of Schema in Models
@@ -206,10 +202,10 @@ Caught by: `no-interface-in-models` ast-grep rule (in `models/` and `domain/` di
 
 ## ast-grep Enforcement
 
-| Rule                                | What it catches                                          |
-| ----------------------------------- | -------------------------------------------------------- |
-| `no-unsafe-typecast-at-boundary`    | `as` casts on JSON.parse, .json(), .text(), .body        |
-| `no-json-parse-without-schema`      | Bare JSON.parse without Schema.decode* wrapper           |
-| `no-typed-boundary-assignment`      | Typed variable assignment from JSON.parse, .json(), .body |
-| `no-manual-json-decode`             | `Effect.try({ try: () => JSON.parse(...) })` — use `Schema.parseJson(Inner)` |
-| `no-interface-in-models`            | `export interface` in model dirs (use Schema.Struct)     |
+| Rule                             | What it catches                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| `no-unsafe-typecast-at-boundary` | `as` casts on JSON.parse, .json(), .text(), .body                            |
+| `no-json-parse-without-schema`   | Bare JSON.parse without Schema.decode\* wrapper                              |
+| `no-typed-boundary-assignment`   | Typed variable assignment from JSON.parse, .json(), .body                    |
+| `no-manual-json-decode`          | `Effect.try({ try: () => JSON.parse(...) })` — use `Schema.parseJson(Inner)` |
+| `no-interface-in-models`         | `export interface` in model dirs (use Schema.Struct)                         |

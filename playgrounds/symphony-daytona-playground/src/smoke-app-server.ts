@@ -12,8 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Daytona } from "@daytona/sdk";
-import { Effect, Schema } from "effect";
 import type {} from "bun";
+import { Effect, Schema } from "effect";
 
 interface CommandEvidence {
   readonly name: string;
@@ -93,10 +93,7 @@ const writeTinyRepo = () => {
     )}\n`,
   );
   writeFileSync(join(localRepo, "message.txt"), "before codex\n");
-  writeFileSync(
-    join(localRepo, "README.md"),
-    "# App-server smoke repo\n",
-  );
+  writeFileSync(join(localRepo, "README.md"), "# App-server smoke repo\n");
   sh(`tar -czf ${sq(join(root, "repo.tgz"))} -C ${sq(localRepo)} .`);
 };
 
@@ -166,11 +163,7 @@ let driverFinal: unknown = null;
 let bundleVerified = false;
 let hostBranch: string | null = null;
 
-const run = async (
-  name: string,
-  command: string,
-  timeout = 180,
-): Promise<CommandEvidence> => {
+const run = async (name: string, command: string, timeout = 180): Promise<CommandEvidence> => {
   console.log(`\n== ${name} ==`);
   if (!sandbox) {
     throw new Error("sandbox not created");
@@ -280,7 +273,7 @@ try {
         `export STDERR_PATH=${sq(remoteStderr)}`,
         "export TURN_TIMEOUT_MS=600000",
         `node ${sq(remoteDriver)}`,
-        "echo \"driver-exit=$?\"",
+        'echo "driver-exit=$?"',
         `echo "--- final ---"; cat /tmp/.symphony/driver-final.json || true`,
       ].join("\n"),
       900,
@@ -389,9 +382,7 @@ try {
   hostBranch = `symphony/${testId}`;
   bundleVerified = true;
 } catch (err) {
-  bundleLogLines.push(
-    `[full-bundle] FAILED: ${err instanceof Error ? err.message : String(err)}`,
-  );
+  bundleLogLines.push(`[full-bundle] FAILED: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 writeFileSync(join(artifactDir, "host-bundle-log.txt"), `${bundleLogLines.join("\n\n")}\n`);

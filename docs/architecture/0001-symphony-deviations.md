@@ -106,7 +106,7 @@ Rationale:
 
 - The meetup demo doesn't have time to demonstrate retry on stage; auto-retry adds complexity
   with no demo payoff.
-- Human-gated handoff is the right *default* until we know which failures are flaky-transient
+- Human-gated handoff is the right _default_ until we know which failures are flaky-transient
   vs. genuinely-broken. Auto-retrying broken code wastes Daytona resources.
 - `agent.maxAttempts` is preserved at `1` (no auto-retry) so the config knob exists for future
   policy. `agent.maxRetryBackoffMs` is not present — no auto-retry means no backoff timer.
