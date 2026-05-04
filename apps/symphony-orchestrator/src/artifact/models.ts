@@ -43,6 +43,22 @@ export const decodeWorkerOutcome = (
     ),
   );
 
+export const decodeWorkerOutcomeJson = (
+  content: string,
+  path: string,
+): Effect.Effect<WorkerOutcome, ArtifactDecodeError> =>
+  Schema.decodeUnknown(Schema.parseJson(WorkerOutcomeSchema))(content).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new ArtifactDecodeError({
+          path,
+          reason: "JSON/schema validation failed",
+          details: ParseResult.TreeFormatter.formatErrorSync(error),
+        }),
+      ),
+    ),
+  );
+
 export const decodeOrchestratorRecord = (
   value: unknown,
   path: string,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
@@ -133,5 +134,27 @@ describe("ArtifactStore", () => {
     );
 
     expect(attempts).toEqual([1, 2, 10]);
+  });
+
+  test("reads a worker outcome from a run directory", async () => {
+    const outcomeJson = await Bun.file(fixturePath("outcome.failed.json")).text();
+    const outcome = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const store = yield* ArtifactStore;
+          const dir = store.runDir("SWYRD-abc", 1);
+
+          yield* fs.makeDirectory(dir, { recursive: true });
+          yield* fs.writeFileString(join(dir, "outcome.json"), outcomeJson);
+
+          return yield* store.readOutcome("SWYRD-abc", 1);
+        }),
+      ),
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.summary).toContain("unrecoverable error");
   });
 });

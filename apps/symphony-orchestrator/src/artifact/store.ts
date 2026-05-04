@@ -6,9 +6,11 @@ import { Context, Effect, Layer } from "effect";
 import { ArtifactDecodeError, ArtifactPathError } from "./errors.js";
 import {
   decodeOrchestratorRecordJson,
+  decodeWorkerOutcomeJson,
   encodeOrchestratorRecord,
   type OrchestratorRecord,
   type OrchestratorRecordEncoded,
+  type WorkerOutcome,
 } from "./models.js";
 
 export type ArtifactStoreShape = {
@@ -16,6 +18,10 @@ export type ArtifactStoreShape = {
   readonly listRuns: (
     issueId: string,
   ) => Effect.Effect<Array<number>, ArtifactPathError, FileSystem.FileSystem>;
+  readonly readOutcome: (
+    issueId: string,
+    attempt: number,
+  ) => Effect.Effect<WorkerOutcome, ArtifactPathError | ArtifactDecodeError, FileSystem.FileSystem>;
   readonly writeRecord: (
     issueId: string,
     attempt: number,
@@ -56,6 +62,8 @@ const runDirFor = (basePath: string, issueId: string, attempt: number): string =
   join(issueRunsDir(basePath, issueId), String(attempt));
 
 const recordPath = (runDir: string): string => join(runDir, "outcome-record.json");
+
+const outcomePath = (runDir: string): string => join(runDir, "outcome.json");
 
 const parseAttemptDirectory = (
   entry: string,
@@ -115,6 +123,16 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
       );
 
       return attempts.filter(isNumber).sort((left, right) => left - right);
+    }),
+  readOutcome: (issueId, attempt) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = outcomePath(runDirFor(basePath, issueId, attempt));
+      const content = yield* fs
+        .readFileString(path)
+        .pipe(Effect.mapError(mapPathError(path, "read file")));
+
+      return yield* decodeWorkerOutcomeJson(content, path);
     }),
   writeRecord: (issueId, attempt, record) =>
     Effect.gen(function* () {
