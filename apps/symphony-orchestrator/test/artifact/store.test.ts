@@ -7,11 +7,17 @@ import {
   decodeWorkerOutcome,
   WorkerOutcomeSchema,
 } from "../../src/artifact/models.js";
+import { ArtifactStore, ArtifactStoreLive } from "../../src/artifact/store.js";
 
 const fixturePath = (name: string) => `test/fixtures/artifact/${name}`;
 
 const readFixture = async (name: string): Promise<unknown> =>
   JSON.parse(await Bun.file(fixturePath(name)).text());
+
+const artifactBase = "/tmp/switchyard-artifacts";
+
+const runWithArtifactStore = <A, E>(effect: Effect.Effect<A, E, ArtifactStore>) =>
+  Effect.runPromise(effect.pipe(Effect.provide(ArtifactStoreLive(artifactBase))));
 
 describe("WorkerOutcomeSchema", () => {
   test("decodes the completed outcome fixture", async () => {
@@ -39,5 +45,18 @@ describe("WorkerOutcomeSchema", () => {
         expect(error.details).toContain('["status"]');
       }
     }
+  });
+});
+
+describe("ArtifactStore", () => {
+  test("computes the run directory for an issue attempt", async () => {
+    const runDir = await runWithArtifactStore(
+      Effect.gen(function* () {
+        const store = yield* ArtifactStore;
+        return store.runDir("SWYRD-abc", 1);
+      }),
+    );
+
+    expect(runDir).toBe(`${artifactBase}/runs/SWYRD-abc/1`);
   });
 });
