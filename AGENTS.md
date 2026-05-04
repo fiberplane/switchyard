@@ -19,6 +19,17 @@ Effect.ts monorepo template with agent-friendly tooling for code quality, docume
 - **Schema-first at boundaries**: All external data (HTTP bodies, JSON files, messages) must be validated through `Schema.decodeUnknown` before use. No `as` casts or typed assignments on parsed data, no bare `JSON.parse`. See `docs/patterns/data-validation.md`.
 - **App templates**: To build new apps (CLI, API, worker), see `docs/templates/`.
 
+## Apps
+
+| App                                       | Runtime      | Purpose                                      |
+| ----------------------------------------- | ------------ | -------------------------------------------- |
+| `apps/symphony-orchestrator`              | Bun / Effect | Switchyard orchestrator implementation       |
+| `playgrounds/symphony-daytona-playground` | Bun          | Daytona/Codex smoke evidence and experiments |
+
+## Packages
+
+`packages/` is reserved for internal shared packages. It is currently empty.
+
 ## Prerequisites
 
 The following tools must be installed on the host machine:
@@ -38,11 +49,41 @@ bun run lint                      # oxlint
 bun run lint:ast                  # ast-grep scan (custom rules)
 bun run lint:drift                # drift lint (stale spec check)
 bun run format                    # oxfmt
+bun run format:check              # Check formatting without writing
 bun run typecheck                 # tsgo --noEmit
-bun run check                     # all of the above
+bun run check                     # lint + ast-grep + drift + typecheck
 bun run test                      # Tests (all workspaces)
 EFFECT_TRACE=1 bun run <command>  # Enable trace + structured log output
 ```
+
+`bun run check` does not run tests or `format:check`. Before closing code tasks, run all three:
+
+```bash
+bun run test
+bun run format:check
+bun run check
+```
+
+## FP Task Workflow
+
+For issue-backed implementation work, use the repo skill at
+`.agents/skills/fp-task/SKILL.md`.
+
+Minimum workflow:
+
+- Load context with `fp context <id>` and `fp issue get <id>`.
+- Claim work with `fp issue update <id> --status in-progress`.
+- Log meaningful milestones with `fp comment <id> "..."`.
+- Commit with the fp issue id in the message.
+- Attach the commit with `fp issue assign <id> --rev HEAD`.
+- Mark done only after auditing acceptance criteria against real evidence.
+
+Code review is mandatory by default for implementation work: use a review subagent unless the user
+explicitly opts out or the current agent environment does not provide subagents. If a review skill
+or plugin is available, instruct the subagent to use it. Address findings before final
+verification. If subagents are unavailable, state that exception clearly, perform a structured
+self-review, and ask for human or subagent-capable review before marking the issue done unless the
+user tells you to continue.
 
 ## Where to Look
 
@@ -60,6 +101,7 @@ EFFECT_TRACE=1 bun run <command>  # Enable trace + structured log output
 | Testing patterns                 | `docs/testing/`                            |
 | Retired docs                     | `docs/graveyard/`                          |
 | Docs convention guide            | `docs/README.md`                           |
+| fp task workflow                 | `.agents/skills/fp-task/SKILL.md`          |
 | ast-grep rules                   | `rules/shared/`, `rules/effect/`           |
 | ast-grep rule tests              | `rule-tests/shared/`, `rule-tests/effect/` |
 
@@ -71,7 +113,7 @@ EFFECT_TRACE=1 bun run <command>  # Enable trace + structured log output
 - **ast-grep** — Custom rules in `rules/`. These enforce the architectural patterns described above — see `docs/patterns/effect.md` for the full rule table.
 - **drift** — Binds specs in `docs/` to source files. `drift lint` flags stale specs, `drift link <spec>` re-stamps.
 
-**After writing any code**, run `bun run check`.
+**After writing any code**, run `bun run test`, `bun run format:check`, and `bun run check`.
 
 ## References
 
