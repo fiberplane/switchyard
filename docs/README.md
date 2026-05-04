@@ -12,6 +12,7 @@ System of record for the repository. AGENTS.md is the map, this directory is the
 | `docs/patterns/`     | How we write code in this repo. Conventions, rules, idioms.              | Effect usage, coding style, observability setup    |
 | `docs/templates/`    | How to build things. Specs for software components.                      | Effect CLI setup, API service scaffold             |
 | `docs/architecture/` | What the system looks like. Domain boundaries, data flow, key decisions. | Service architecture, data models                  |
+| `docs/superpowers/`  | Larger demo/spec work for agent orchestration and devtool-factory ideas. | Symphony, factory-floor demos                      |
 
 ### docs/ vs skills
 
@@ -52,13 +53,13 @@ App READMEs do NOT contain:
 
 ### patterns/
 
-| Doc                                           | Topic                                                      |
-| --------------------------------------------- | ---------------------------------------------------------- |
-| [effect.md](patterns/effect.md)               | Effect conventions, service architecture, code smells      |
-| [boundaries.md](patterns/boundaries.md)       | Boundary convention: adapters, entry points, interior code |
-| [coding-style.md](patterns/coding-style.md)   | TypeScript coding style, early returns, type safety        |
+| Doc                                               | Topic                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| [effect.md](patterns/effect.md)                   | Effect conventions, service architecture, code smells      |
+| [boundaries.md](patterns/boundaries.md)           | Boundary convention: adapters, entry points, interior code |
+| [coding-style.md](patterns/coding-style.md)       | TypeScript coding style, early returns, type safety        |
 | [data-validation.md](patterns/data-validation.md) | Schema-first validation at boundaries, anti-patterns       |
-| [observability.md](patterns/observability.md) | Effect + OpenTelemetry tracing and logging setup           |
+| [observability.md](patterns/observability.md)     | Effect + OpenTelemetry tracing and logging setup           |
 
 ### templates/
 
@@ -71,6 +72,13 @@ App READMEs do NOT contain:
 ### architecture/
 
 Architecture notes are added as apps and packages are built. This directory starts empty.
+
+### superpowers/specs/
+
+| Doc                                                                                                              | Topic                                               |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [2026-04-01-devtool-factory-template-design.md](superpowers/specs/2026-04-01-devtool-factory-template-design.md) | Switchyard/devtool-factory template design          |
+| [2026-05-04-symphony-daytona-vertical-slice.md](superpowers/specs/2026-05-04-symphony-daytona-vertical-slice.md) | Symphony vertical slice with fp, Codex, and Daytona |
 
 ## references/
 
