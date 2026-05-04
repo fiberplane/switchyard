@@ -333,10 +333,23 @@ integration:
 `codex app-server` is a long-running stdio process; the orchestrator speaks the targeted
 app-server protocol over the process's stdio. The protocol process inherits Codex auth from
 `CODEX_HOME` inside the sandbox (see Daytona setup). No `--dangerously-bypass-approvals-and-sandbox`
-flag is required at the CLI level — sandbox/approval policy is configured through the protocol's
-`approval_policy` and `turn_sandbox_policy` fields. The "external sandbox" assumption (we don't
-need codex's own sandboxing because Daytona provides isolation) is expressed via those protocol
-fields, not via a CLI flag.
+flag is required at the CLI level — sandbox/approval posture is configured through the protocol's
+`approvalPolicy` (sent on `thread/start` and `turn/start`) and the per-scope sandbox fields:
+`thread/start.sandbox` is an `AskForApproval`-paired `SandboxMode` string (kebab-case, valid
+variants: `read-only | workspace-write | danger-full-access`), and
+`turn/start.sandboxPolicy` is a `SandboxPolicy` object (camelCase variants: `{ type: "readOnly" }`,
+`{ type: "workspaceWrite" }`, `{ type: "dangerFullAccess" }`, `{ type: "externalSandbox" }`). The
+two field shapes and case conventions are different by design — treat them as distinct types,
+not interchangeable. The "external sandbox" assumption (we don't need codex's own sandboxing
+because Daytona provides isolation) is expressed via those protocol fields, not via a CLI flag.
+
+For Switchyard's posture inside Daytona, the orchestrator MUST send `approvalPolicy: "never"`
+plus `sandbox: "danger-full-access"` on `thread/start` and `sandboxPolicy: { type:
+"dangerFullAccess" }` on `turn/start`. Asking for approvals from inside a disposable sandbox
+would stall the run with no operator to answer; the sandbox itself is the trust boundary. Do not
+use `approvalPolicy: "auto"` — the targeted `codex-cli 0.128.0` rejects it as `unknown variant
+'auto'` (valid `AskForApproval` string variants are `untrusted | on-failure | on-request | never`,
+plus a granular object form).
 
 ## Daytona Execution Strategy
 

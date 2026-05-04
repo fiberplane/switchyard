@@ -3,18 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "demo": "bun run src/playground.ts",
     "smoke": "bun build src/smoke.ts --target=node --outfile=dist/smoke.mjs && node dist/smoke.mjs",
     "smoke:bun": "bun run src/smoke.ts",
+    "smoke:app-server": "bun build src/smoke-app-server.ts --target=node --outfile=dist/smoke-app-server.mjs && node dist/smoke-app-server.mjs",
     "auth:probe": "bun build src/auth-probe.ts --target=node --outfile=dist/auth-probe.mjs && node dist/auth-probe.mjs",
     "auth:probe:bun": "bun run src/auth-probe.ts"
   },
   "dependencies": {
     "@daytona/sdk": "0.171.0",
     "@types/bun": "1.2.14",
-    "effect": "3.20.0",
-    "typescript": "5.9.3"
+    "effect": "3.20.0"
   },
   "devDependencies": {}
 }
