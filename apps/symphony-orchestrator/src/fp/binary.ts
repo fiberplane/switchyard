@@ -1,7 +1,9 @@
 import { delimiter, join, resolve as resolvePath } from "node:path";
 
 import { FileSystem } from "@effect/platform";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Either, Layer } from "effect";
+
+import { FpBinaryNotFoundError } from "./errors.js";
 
 export type FpBinaryOptions = {
   readonly env?: Record<string, string | undefined>;
@@ -11,7 +13,7 @@ export type FpBinaryOptions = {
 };
 
 export type FpBinaryShape = {
-  readonly resolve: () => Effect.Effect<string>;
+  readonly resolve: () => Effect.Effect<string, FpBinaryNotFoundError>;
 };
 
 export class FpBinary extends Context.Tag("FpBinary")<FpBinary, FpBinaryShape>() {}
@@ -42,7 +44,7 @@ const pathCandidates = (options: FpBinaryOptions): readonly string[] =>
   currentPath(options)
     .split(delimiter)
     .filter((entry) => entry !== "")
-    .map((entry) => join(entry, "fp"));
+    .map((entry) => resolvePath(join(entry, "fp")));
 
 const candidatesFor = (options: FpBinaryOptions): readonly string[] => [
   ...configuredEnvPath(options),
@@ -51,24 +53,35 @@ const candidatesFor = (options: FpBinaryOptions): readonly string[] => [
   ...pathCandidates(options),
 ];
 
-const resolveBinaryPath = (options: FpBinaryOptions): Effect.Effect<string, never, FileSystem.FileSystem> =>
+const resolveBinaryPath = (
+  options: FpBinaryOptions,
+): Effect.Effect<string, FpBinaryNotFoundError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const candidates = candidatesFor(options);
 
-    for (const candidate of candidatesFor(options)) {
+    for (const candidate of candidates) {
       const exists = yield* fs.exists(candidate).pipe(Effect.catchAll(() => Effect.succeed(false)));
       if (exists) {
         return candidate;
       }
     }
 
-    return "";
+    return yield* Effect.fail(
+      new FpBinaryNotFoundError({
+        attemptedPaths: candidates,
+      }),
+    );
   });
 
 export const FpBinaryLive = (options: FpBinaryOptions = {}) =>
   Layer.effect(
     FpBinary,
-    Effect.map(resolveBinaryPath(options), (resolvedPath) => ({
-      resolve: () => Effect.succeed(resolvedPath),
+    Effect.map(Effect.either(resolveBinaryPath(options)), (resolution) => ({
+      resolve: () =>
+        Either.match(resolution, {
+          onLeft: (error) => Effect.fail(error),
+          onRight: (path) => Effect.succeed(path),
+        }),
     })),
   );

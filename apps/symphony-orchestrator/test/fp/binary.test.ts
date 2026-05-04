@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
 
+import { FpBinaryNotFoundError } from "../../src/fp/errors.js";
 import { FpBinary, FpBinaryLive, type FpBinaryOptions } from "../../src/fp/binary.js";
 
 const tempDirs: string[] = [];
@@ -106,5 +107,32 @@ describe("FpBinary.resolve", () => {
         resolveBinary,
       ),
     ).resolves.toBe(pathBinary);
+  });
+
+  test("fails with attempted paths when no fp binary is found", async () => {
+    const root = await makeTempDir("swy-fp-missing-");
+    const home = join(root, "home");
+    const pathDirectory = join(root, "path-bin");
+    const missingSystem = join(root, "missing-system-fp");
+    const expectedHome = join(home, ".fiberplane", "bin", "fp");
+    const expectedPath = join(pathDirectory, "fp");
+
+    const result = await runWithBinary(
+      {
+        env: { SWITCHYARD_FP_BIN: undefined },
+        home,
+        path: pathDirectory,
+        systemCandidates: [missingSystem],
+      },
+      Effect.either(resolveBinary),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(FpBinaryNotFoundError);
+      if (result.left instanceof FpBinaryNotFoundError) {
+        expect(result.left.attemptedPaths).toEqual([missingSystem, expectedHome, expectedPath]);
+      }
+    }
   });
 });
