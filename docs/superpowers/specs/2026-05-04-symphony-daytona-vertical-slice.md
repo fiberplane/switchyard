@@ -98,6 +98,7 @@ Harder Daytona smoke evidence from 2026-05-04:
 
   The script bundles `src/smoke.ts` for Node and runs the Node bundle because the Daytona SDK
   `uploadFiles` path hung under Bun's runtime detection on this machine.
+
 - The smoke generated local artifact files for the result patch, result JSON, Codex event stream,
   final Codex message, host probes, prompt, repo archive, and manifest. Those artifacts are not
   part of the repo.
@@ -131,17 +132,37 @@ Harder Daytona smoke evidence from 2026-05-04:
   URL to the worker; it should not assume `host.docker.internal`.
 - Auth tradeoff: copying only `~/.codex/auth.json` was enough for local ChatGPT-based Codex auth
   inside Daytona. This is acceptable only for throwaway local demos because that file contains
-  reusable account auth material. The cleaner v0 path should remain Daytona env injection with a
-  scoped `OPENAI_API_KEY` when available. `codex login --with-api-key` and the Daytona Codex SDK
-  `OPENAI_API_KEY` injection path were not exercised because this machine did not have
-  `OPENAI_API_KEY` or `SANDBOX_OPENAI_API_KEY` set.
+  reusable account auth material.
 - OpenAI's Codex auth docs describe distinct ChatGPT subscription auth and API-key auth modes
   (https://developers.openai.com/codex/auth), and the CI/CD auth guide documents file-backed
   ChatGPT auth via `auth.json` under `CODEX_HOME` for trusted private runners
-  (https://developers.openai.com/codex/auth/ci-cd-auth). The next auth run should isolate copied
-  `auth.json` from
-  `OPENAI_API_KEY` and `codex login --with-api-key`, because mixed auth modes are the likely reason
-  a valid copied subscription session could appear to fail.
+  (https://developers.openai.com/codex/auth/ci-cd-auth).
+- Focused auth probe command:
+
+  ```bash
+  DAYTONA_API_KEY_FILE=/path/to/local-key \
+    bun run --cwd playgrounds/symphony-daytona-playground auth:probe
+  ```
+
+  The probe uses disposable `CODEX_HOME` directories inside one Daytona sandbox and writes redacted
+  local results under the ignored playground `artifacts/` directory.
+
+- Auth probe findings:
+  - copied `auth.json` reported `auth_mode: "chatgpt"` before and after `codex exec`;
+  - `codex login status` reported ChatGPT when `OPENAI_API_KEY` and `SANDBOX_OPENAI_API_KEY` were
+    unset;
+  - `codex exec` succeeded both with `--ignore-user-config` and with user config allowed, so
+    `--ignore-user-config` is not the cause of copied-auth failures;
+  - setting a placeholder `OPENAI_API_KEY` in the process environment did not override the copied
+    ChatGPT auth in this run: status still reported ChatGPT and exec still succeeded;
+  - running `codex login --with-api-key` in a disposable mixed `CODEX_HOME` changed `auth_mode` to
+    `"apikey"`, removed the ChatGPT token shape, and made status report API-key login. This supports
+    the mixed-auth hypothesis: the login flag can overwrite or mask copied subscription auth when
+    used in the same home.
+- The clean local-demo path is copied ChatGPT `auth.json` with API-key environment variables unset
+  unless intentionally testing precedence. The scoped API-key path remains supported by the probe
+  through `AUTH_PROBE_OPENAI_API_KEY`, but it was skipped in this run because no real scoped key was
+  available.
 
 ## v0 Scope
 

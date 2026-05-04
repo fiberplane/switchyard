@@ -36,6 +36,7 @@ bun install
 bun run --cwd playgrounds/symphony-daytona-playground typecheck
 bun run --cwd playgrounds/symphony-daytona-playground demo
 bun run --cwd playgrounds/symphony-daytona-playground smoke
+bun run --cwd playgrounds/symphony-daytona-playground auth:probe
 ```
 
 The smoke command builds `dist/smoke.mjs`, writes generated artifacts under
@@ -45,3 +46,8 @@ into the temporary Daytona sandbox. Use `smoke:bun` to run the TypeScript source
 ```bash
 bun run --cwd playgrounds/symphony-daytona-playground smoke:bun
 ```
+
+The auth probe isolates copied ChatGPT `auth.json`, inherited `OPENAI_API_KEY`, and
+`codex login --with-api-key` behavior in disposable `CODEX_HOME` directories inside one Daytona
+sandbox. It writes only redacted command results under `artifacts/`. Set
+`AUTH_PROBE_OPENAI_API_KEY` only when intentionally testing the real API-key path.
