@@ -3,12 +3,13 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "playgrounds/*"
   ],
   "scripts": {
     "lint": "oxlint",
     "lint:ast": "bunx @ast-grep/cli scan",
-    "lint:drift": "drift lint",
+    "lint:drift": "node scripts/drift-check.mjs",
     "test": "bun run --filter '*' test",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

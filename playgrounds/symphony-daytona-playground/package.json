@@ -1,0 +1,18 @@
+{
+  "name": "symphony-daytona-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "demo": "bun run src/playground.ts",
+    "smoke": "bun build src/smoke.ts --target=node --outfile=dist/smoke.mjs && node dist/smoke.mjs",
+    "smoke:bun": "bun run src/smoke.ts"
+  },
+  "dependencies": {
+    "@daytona/sdk": "0.171.0",
+    "@types/bun": "1.2.14",
+    "effect": "3.19.6",
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {}
+}

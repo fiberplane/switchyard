@@ -61,14 +61,87 @@ Daytona changes the execution model:
   `/api/health` returns `{"status":"ok"}`. The `daytona` CLI and `DAYTONA_API_KEY` are not
   currently configured.
 
-Playground evidence, kept out of the repo:
+Playground evidence:
 
-- Created `/tmp/symphony-daytona-playground`.
+- Safe playground source lives in the repo at `playgrounds/symphony-daytona-playground/`.
+  Generated artifacts and local auth material stay out of the repo.
 - Installed `@daytona/sdk@0.171.0`, `effect`, `typescript`, and `@types/bun`.
 - Typechecked an Effect service that decodes an fp issue, enforces `symphony_ready=true`, builds a
   Daytona sandbox creation plan, and constructs the Daytona client only when credentials exist.
 - `bun run typecheck` passed.
 - `bun run demo` produced a sandbox plan and correctly reported the missing `DAYTONA_API_KEY`.
+
+Harder Daytona smoke evidence from 2026-05-04:
+
+- Local API auth was created from the running OSS API container:
+  `docker exec daytona-api-1 node dist/apps/api/main.js --create-admin-api-key pjy-smoke-...`.
+  The generated key was stored in a local mode-`600` key file outside the repo.
+- The intended local Daytona target for this stack is `us`, not `local`. `DAYTONA_API_URL` is
+  `http://localhost:3000/api`.
+- The compose health checks passed: `/api/health` returned `{"status":"ok"}`, the proxy health
+  endpoint returned `{"status":"ok","version":"v0.171.0"}`, and `*.proxy.localhost` resolved
+  locally.
+- The default snapshot `daytonaio/sandbox:0.5.0-slim` existed but was `pending`; Daytona rejected
+  sandbox creation from it with `Snapshot daytonaio/sandbox:0.5.0-slim is pending`.
+- Built and activated the intended `symphony-codex-bun` snapshot from
+  `node:24-bookworm-slim`, installing `git`, `curl`, `ca-certificates`, `bash`, `jq`, `ripgrep`,
+  `procps`, `@openai/codex@0.128.0`, and `bun@1.3.13`.
+- Local dev database repairs were required before Daytona would schedule work: the personal
+  organization had zero per-sandbox and volume quotas and no `region_quota` row for `us`. The
+  runner was also marked unavailable because host disk pressure drove its availability score below
+  the compose thresholds. These are local preflight issues, not Symphony behavior.
+- The integrated smoke entrypoint is:
+
+  ```bash
+  bun run --cwd playgrounds/symphony-daytona-playground smoke
+  ```
+
+  The script bundles `src/smoke.ts` for Node and runs the Node bundle because the Daytona SDK
+  `uploadFiles` path hung under Bun's runtime detection on this machine.
+- The smoke generated local artifact files for the result patch, result JSON, Codex event stream,
+  final Codex message, host probes, prompt, repo archive, and manifest. Those artifacts are not
+  part of the repo.
+- Successful sandbox evidence: created sandbox
+  `23cfdaa4-1fc7-4621-ada9-427e22598bd4` from `symphony-codex-bun`, ran the smoke, downloaded
+  artifacts, and deleted the sandbox. A post-run API lookup for that sandbox returned `404`.
+- The integrated path proved the required worker operations together:
+  - uploaded `repo.tgz`, `prompt.md`, and minimal Codex auth into the sandbox with
+    `sandbox.fs.uploadFiles`;
+  - configured `git user.name`, `git user.email`, and `safe.directory`;
+  - ran `git init`, `git add`, `git commit -m "base"`, and `git tag symphony-base`;
+  - authenticated Codex inside the sandbox with `CODEX_HOME=/workspace/codex-home` containing only
+    a copied `auth.json`; `codex login status` reported `Logged in using ChatGPT`;
+  - streamed session logs through `getSessionCommandLogs`, collecting `stream-log-1` through
+    `stream-log-3`;
+  - started a tiny host HTTP server and proved sandbox-to-host reachability;
+  - ran `codex exec --json --dangerously-bypass-approvals-and-sandbox --cd /workspace/repo`
+    against the uploaded repo;
+  - ran `node test.js` after the Codex edit;
+  - generated result patch, result JSON, and diffstat artifacts;
+  - downloaded `symphony-result.patch`, `symphony-result.json`, `symphony-result.diffstat`,
+    `codex-events.jsonl`, `codex-last-message.txt`, and `host-probes.json` with
+    `sandbox.fs.downloadFiles`.
+- The Codex edit changed only `message.txt` from `before codex` to
+  `hello from daytona codex worker`; `node test.js` passed; `git diff --binary symphony-base`
+  produced the expected patch artifact.
+- Host reachability result: `host.docker.internal` did not resolve inside the sandbox, and
+  `172.17.0.1` did not reach the host server. The host was reachable through routable host
+  addresses including `172.19.0.1`, `172.18.0.1`, `100.80.33.10`, and `167.235.24.99` in this
+  run. For local demos, the orchestrator should probe candidates and pass the first successful base
+  URL to the worker; it should not assume `host.docker.internal`.
+- Auth tradeoff: copying only `~/.codex/auth.json` was enough for local ChatGPT-based Codex auth
+  inside Daytona. This is acceptable only for throwaway local demos because that file contains
+  reusable account auth material. The cleaner v0 path should remain Daytona env injection with a
+  scoped `OPENAI_API_KEY` when available. `codex login --with-api-key` and the Daytona Codex SDK
+  `OPENAI_API_KEY` injection path were not exercised because this machine did not have
+  `OPENAI_API_KEY` or `SANDBOX_OPENAI_API_KEY` set.
+- OpenAI's Codex auth docs describe distinct ChatGPT subscription auth and API-key auth modes
+  (https://developers.openai.com/codex/auth), and the CI/CD auth guide documents file-backed
+  ChatGPT auth via `auth.json` under `CODEX_HOME` for trusted private runners
+  (https://developers.openai.com/codex/auth/ci-cd-auth). The next auth run should isolate copied
+  `auth.json` from
+  `OPENAI_API_KEY` and `codex login --with-api-key`, because mixed auth modes are the likely reason
+  a valid copied subscription session could appear to fail.
 
 ## v0 Scope
 
@@ -455,9 +528,13 @@ This v0 is feasible enough to implement because:
 
 Open kinks for the next iteration:
 
-- Create and test the actual `symphony-codex-bun` Daytona snapshot.
-- Decide the cleanest Codex auth path inside Daytona.
-- Confirm the local Daytona target/API-key flow after the compose stack is running.
+- Turn the local Daytona preflight into an explicit setup command: create a real API key, ensure
+  `DAYTONA_TARGET=us`, ensure the personal organization has nonzero `us` region quota, and ensure
+  runner availability thresholds can schedule work on a disk-constrained dev machine.
+- Keep `symphony-codex-bun` creation in setup or CI, and verify it is `active` before dispatching.
+- Decide the cleanest Codex auth path inside Daytona. Copied `auth.json` is proven for local demo
+  use, but scoped API-key injection remains the safer v0 default and still needs a run with a real
+  `OPENAI_API_KEY`.
 - Decide whether workers should ever get direct `fp` credentials for comments, or whether all
   tracker writes should remain orchestrator-mediated.
 - Decide when to replace `codex exec --json` with `codex app-server`.

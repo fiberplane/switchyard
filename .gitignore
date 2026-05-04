@@ -7,3 +7,18 @@ references/
 # Dependencies
 node_modules/
 
+# Playground generated files and local smoke credentials
+playgrounds/**/node_modules/
+playgrounds/**/dist/
+playgrounds/**/artifacts/
+playgrounds/**/.env*
+playgrounds/**/auth.json
+playgrounds/**/codex-home/
+playgrounds/**/.codex/
+playgrounds/**/*.tgz
+playgrounds/**/daytona-api-key*
+playgrounds/**/*api-key*
+playgrounds/**/*apikey*
+playgrounds/**/*token*
+playgrounds/**/*.pem
+playgrounds/**/*.key
