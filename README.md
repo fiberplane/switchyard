@@ -42,7 +42,7 @@ Start your coding agent in this repo and start building. See `AGENTS.md` for the
 ```
 apps/           Deployable applications (CLIs, APIs, workers)
 packages/       Internal shared packages
-docs/           Conventions, templates, architecture notes
+docs/           Conventions, templates, architecture notes, proposals, experiments
 rules/          ast-grep lint rules (shared + Effect-specific)
 references/     Shallow clones of upstream repos (gitignored)
 .fp/extensions/ fp lifecycle extensions

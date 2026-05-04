@@ -1,6 +1,6 @@
 # Capturing architectural decisions
 
-This repo doesn't use ADRs and doesn't have a `docs/proposals/` folder. Settled conventions live in `docs/patterns/`; settled architectural shape lives in `docs/architecture/`. When a non-obvious decision needs a paper trail, capture it inline as a short rationale section inside the relevant `docs/architecture/<topic>.md` (or `docs/patterns/<topic>.md`) — not as a separate file.
+This repo doesn't use ADRs. Settled conventions live in `docs/patterns/`; settled architectural shape lives in `docs/architecture/`; unshipped design work lives in `docs/proposals/active/`. When a settled non-obvious decision needs a paper trail, capture it inline as a short rationale section inside the relevant `docs/architecture/<topic>.md` (or `docs/patterns/<topic>.md`) rather than creating a separate ADR file.
 
 See `docs/README.md` for the wider convention.
 
@@ -29,7 +29,9 @@ When you do capture a decision inline, a tight rationale section is enough. Adap
 - bullet rationale (only when the rejection isn't obvious)
 ```
 
-Keep the rationale next to the thing it justifies — embed it in the architecture doc rather than orphaning it in its own file. Once the decision is settled and load-bearing, drop the `Status:` line; the rationale stays.
+Keep the rationale next to the thing it justifies. Once the decision is settled and load-bearing,
+move any proposal context into the relevant architecture or pattern doc, then drop the `Status:`
+line there; the rationale stays.
 
 ## When to capture
 
@@ -54,6 +56,7 @@ If any is missing, skip it. A pattern note in `docs/patterns/` is often the righ
 ### Where decisions land
 
 - **System shape / data flow / process model** → `docs/architecture/<topic>.md`
+- **Unshipped design work** → `docs/proposals/active/`
 - **How we write code in light of the decision** → `docs/patterns/<topic>.md`
 - **Mechanically enforceable** → an ast-grep rule under `rules/` (with a test under `rule-tests/`), referenced from the pattern doc
 

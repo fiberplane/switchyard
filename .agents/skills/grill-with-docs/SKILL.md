@@ -1,6 +1,6 @@
 ---
 name: grill-with-docs
-description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (docs/patterns, docs/architecture) inline as decisions crystallise. Use when user wants to stress-test a plan against the project's language and documented decisions.
+description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (docs/patterns, docs/architecture, docs/proposals) inline as decisions crystallise. Use when user wants to stress-test a plan against the project's language and documented decisions.
 ---
 
 <what-to-do>
@@ -17,7 +17,7 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 ## Repo documentation map
 
-`docs/README.md` is the system of record for what goes where. Read it before grilling — it tells you the homes for patterns, templates, and architecture, and the rules for when to put something in each.
+`docs/README.md` is the system of record for what goes where. Read it before grilling — it tells you the homes for patterns, templates, architecture, proposals, experiments, testing notes, and retired docs, and the rules for when to put something in each.
 
 The shape relevant to a grill session:
 
@@ -30,7 +30,11 @@ The shape relevant to a grill session:
 │   ├── patterns/        ← how we write code (effect, boundaries, data-validation,
 │   │                      coding-style, observability)
 │   ├── templates/       ← how to build things (cli, api, worker)
-│   └── architecture/    ← what the system looks like — populated as apps are built
+│   ├── architecture/    ← what the system looks like — populated as apps are built
+│   ├── proposals/       ← active and completed design docs
+│   ├── experiments/     ← feasibility notes and demo evidence
+│   ├── testing/         ← validation patterns and QA notes
+│   └── graveyard/       ← retired docs
 ├── rules/               ← ast-grep rules that mechanically enforce patterns
 │   ├── shared/
 │   └── effect/
@@ -38,14 +42,16 @@ The shape relevant to a grill session:
 └── packages/            ← shared packages
 ```
 
-There is no `CONTEXT.md`, `docs/adr/`, `docs/proposals/`, or explicit glossary in this repo. The closest analogues for a grill session:
+There is no `CONTEXT.md`, `docs/adr/`, or explicit glossary in this repo. The closest analogues for a grill session:
 
 - **Established conventions** ("how we write Effect", "how we structure boundaries") → `docs/patterns/` and the ast-grep rules in `rules/effect/` and `rules/shared/`.
 - **How to build a new app** ("CLI scaffold", "HTTP API scaffold") → `docs/templates/`.
 - **Settled architectural shape** ("what the system looks like for app X") → `docs/architecture/` (currently empty; populated as apps are built).
+- **Unshipped non-trivial changes** ("what we plan to change and why") → `docs/proposals/active/`.
+- **Feasibility work** ("what the prototype proved") → `docs/experiments/`.
 - **Repo-level naming** (app names, package names, command names) → the tables in `AGENTS.md`.
 
-Do not create `CONTEXT.md`, `docs/adr/`, or `docs/proposals/`. Update or extend the docs that already exist; only graduate to a new file when `docs/README.md`'s convention says you should.
+Do not create `CONTEXT.md` or `docs/adr/`. Update or extend the docs that already exist; only graduate to a new file when `docs/README.md`'s convention says you should.
 
 ## During the session
 
@@ -76,6 +82,8 @@ When a convention is sharpened or a name is pinned down, update the relevant doc
 
 - **Coding convention** (idiom, rule, style — applies across files) → extend the relevant `docs/patterns/*.md`. If the pattern can be enforced mechanically, mention adding an ast-grep rule under `rules/effect/` or `rules/shared/` (with a matching test under `rule-tests/`).
 - **System shape, data flow, or process model** → `docs/architecture/` (create the file if it doesn't exist; this directory starts empty).
+- **Unshipped non-trivial design** → `docs/proposals/active/`, then move it to `docs/proposals/completed/` when shipped.
+- **Feasibility notes and demo evidence** → `docs/experiments/` unless the repo has accepted the design.
 - **How to build a new app of some kind** → extend the matching `docs/templates/*.md`.
 - **Repo-level names or command pointers** → update `AGENTS.md`.
 - **App-specific setup or run instructions** → the app's own `README.md`, *not* `docs/`.
@@ -88,6 +96,6 @@ If the doc describes code behavior tightly, bind it with `drift link <doc> <sour
 
 If the decision is already settled and uncontroversial, write it directly into `docs/architecture/` or `docs/patterns/`. Don't invent ceremony where there's no live trade-off.
 
-This repo doesn't have a `docs/proposals/` folder. When a non-obvious architectural decision needs to be recorded, capture it inline in the appropriate `docs/architecture/<topic>.md` with a short rationale section — see [ADR-FORMAT.md](./ADR-FORMAT.md) for the shape and the criteria for when a decision is worth capturing at all.
+When a non-obvious architectural decision is already settled, capture it inline in the appropriate `docs/architecture/<topic>.md` with a short rationale section — see [ADR-FORMAT.md](./ADR-FORMAT.md) for the shape and the criteria for when a decision is worth capturing at all. When the decision is still a proposal, use `docs/proposals/active/` instead.
 
 </supporting-info>

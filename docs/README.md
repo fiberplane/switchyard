@@ -6,13 +6,17 @@ System of record for the repository. AGENTS.md is the map, this directory is the
 
 ### What goes where
 
-| Location             | Contains                                                                 | Examples                                           |
-| -------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| `AGENTS.md`          | Map: apps, commands, pointers into docs/                                 | "For Effect patterns, see docs/patterns/effect.md" |
-| `docs/patterns/`     | How we write code in this repo. Conventions, rules, idioms.              | Effect usage, coding style, observability setup    |
-| `docs/templates/`    | How to build things. Specs for software components.                      | Effect CLI setup, API service scaffold             |
-| `docs/architecture/` | What the system looks like. Domain boundaries, data flow, key decisions. | Service architecture, data models                  |
-| `docs/superpowers/`  | Larger demo/spec work for agent orchestration and devtool-factory ideas. | Symphony, factory-floor demos                      |
+| Location                    | Contains                                                                 | Examples                                           |
+| --------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
+| `AGENTS.md`                 | Map: apps, commands, pointers into docs/                                 | "For Effect patterns, see docs/patterns/effect.md" |
+| `docs/patterns/`            | How we write code in this repo. Conventions, rules, idioms.              | Effect usage, coding style, observability setup    |
+| `docs/templates/`           | How to build things. Specs for software components.                      | Effect CLI setup, API service scaffold             |
+| `docs/architecture/`        | What the system looks like. Domain boundaries, data flow, key decisions. | Service architecture, data models                  |
+| `docs/proposals/active/`    | What we are planning to change. Design docs with status and rationale.   | New app scaffolds, orchestration flows             |
+| `docs/proposals/completed/` | Proposals that shipped. Kept for historical context.                     | Accepted designs after implementation              |
+| `docs/experiments/`         | Feasibility notes and demo evidence that are not yet product decisions.  | Prototype results, spike findings                  |
+| `docs/testing/`             | How we validate behavior. Test infrastructure and QA scenarios.          | Property tests, integration test notes             |
+| `docs/graveyard/`           | Retired docs for features or decisions that no longer describe the repo. | Removed prototypes, superseded designs             |
 
 ### docs/ vs skills
 
@@ -49,6 +53,36 @@ App READMEs do NOT contain:
 4. If the doc establishes a pattern that should be mechanically enforced, add or update an ast-grep rule
 5. If the doc describes code behavior, bind it with `drift link <doc> <source-file>`
 
+### Proposals
+
+Proposals are design docs for non-trivial changes. They live in `docs/proposals/active/`
+while in progress and move to `docs/proposals/completed/` when shipped.
+
+A proposal contains:
+
+- Problem statement
+- Design: what changes, with tables or diagrams where useful
+- Phases, if the work is incremental
+- Status: draft, accepted, or shipped
+
+Proposals are not specs to follow blindly. They capture decisions and rationale so agents can
+understand why the code looks the way it does.
+
+### Experiments
+
+Experiments capture feasibility work, demo notes, and prototype evidence. Keep them separate from
+proposals unless the repo has accepted the design. When an experiment turns into a planned change,
+write or move the decision into `docs/proposals/active/`.
+
+### Keeping docs current
+
+Docs rot when they describe code that changed. To mitigate:
+
+- Patterns that can be enforced mechanically should have a corresponding ast-grep rule or linter
+  check
+- When you change code that a doc describes, update the doc in the same PR
+- Retire dead docs into `docs/graveyard/` instead of leaving them in active directories
+
 ## Index
 
 ### patterns/
@@ -73,12 +107,30 @@ App READMEs do NOT contain:
 
 Architecture notes are added as apps and packages are built. This directory starts empty.
 
-### superpowers/specs/
+### proposals/
 
-| Doc                                                                                                              | Topic                                               |
-| ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| [2026-04-01-devtool-factory-template-design.md](superpowers/specs/2026-04-01-devtool-factory-template-design.md) | Switchyard/devtool-factory template design          |
-| [2026-05-04-symphony-daytona-vertical-slice.md](superpowers/specs/2026-05-04-symphony-daytona-vertical-slice.md) | Symphony vertical slice with fp, Codex, and Daytona |
+- `active/` -- In-progress design docs
+- `completed/` -- Shipped designs kept for historical context
+
+Completed proposals:
+
+| Doc                                                                                                                | Topic                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| [2026-04-01-devtool-factory-template-design.md](proposals/completed/2026-04-01-devtool-factory-template-design.md) | Switchyard/devtool-factory template design |
+
+### experiments/
+
+| Doc                                                                                                        | Topic                                               |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [2026-05-04-symphony-daytona-vertical-slice.md](experiments/2026-05-04-symphony-daytona-vertical-slice.md) | Symphony vertical slice with fp, Codex, and Daytona |
+
+### testing/
+
+Validation patterns, test infrastructure notes, and QA scenario indexes live here.
+
+### graveyard/
+
+Retired docs live here when they are useful historical context but no longer describe active code.
 
 ## references/
 

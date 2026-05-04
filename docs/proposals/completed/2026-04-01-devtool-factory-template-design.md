@@ -40,7 +40,13 @@ switchyard/
 │   │   └── observability.md           # Effect OTel console/file exporter setup
 │   ├── templates/
 │   │   └── cli.md                     # "How to build an Effect CLI" spec
-│   └── architecture/                  # Architecture notes (populated as apps are built)
+│   ├── architecture/                  # Architecture notes (populated as apps are built)
+│   ├── proposals/
+│   │   ├── active/                    # In-progress design docs
+│   │   └── completed/                 # Shipped design docs kept for context
+│   ├── experiments/                   # Demo evidence and feasibility notes
+│   ├── testing/                       # Validation patterns and QA notes
+│   └── graveyard/                     # Retired docs
 ├── apps/                              # Published apps (agents create these)
 ├── packages/                          # Shared packages (agents create these)
 ├── .codex/                            # Codex sandbox config for fp/bun/git
@@ -73,14 +79,18 @@ bun run check               # All linters + typecheck
 
 5. **Where to Look** — table pointing to docs/:
 
-| Topic | Location |
-|-------|----------|
-| Effect conventions | `docs/patterns/effect.md` |
-| Coding style | `docs/patterns/coding-style.md` |
-| Observability setup | `docs/patterns/observability.md` |
-| How to build a CLI | `docs/templates/cli.md` |
-| Architecture notes | `docs/architecture/` |
-| Docs convention guide | `docs/README.md` |
+| Topic                         | Location                         |
+| ----------------------------- | -------------------------------- |
+| Effect conventions            | `docs/patterns/effect.md`        |
+| Coding style                  | `docs/patterns/coding-style.md`  |
+| Observability setup           | `docs/patterns/observability.md` |
+| How to build a CLI            | `docs/templates/cli.md`          |
+| Architecture notes            | `docs/architecture/`             |
+| Proposals (active designs)    | `docs/proposals/active/`         |
+| Experiments and demo evidence | `docs/experiments/`              |
+| Testing patterns              | `docs/testing/`                  |
+| Retired docs                  | `docs/graveyard/`                |
+| Docs convention guide         | `docs/README.md`                 |
 
 6. **Enforcement** section:
 
@@ -96,30 +106,30 @@ bun run check               # All linters + typecheck
 
 Ported from nocturne. 3 rules:
 
-| Rule | What it catches |
-|------|-----------------|
-| `no-dynamic-import` | `await import(...)` — use static imports |
-| `no-else-after-return` | `if (...) { return } else { ... }` — use early returns |
-| `no-foreach` | `.forEach()` — use `for...of` (excludes `Effect.forEach`) |
+| Rule                   | What it catches                                           |
+| ---------------------- | --------------------------------------------------------- |
+| `no-dynamic-import`    | `await import(...)` — use static imports                  |
+| `no-else-after-return` | `if (...) { return } else { ... }` — use early returns    |
+| `no-foreach`           | `.forEach()` — use `for...of` (excludes `Effect.forEach`) |
 
-### Effect rules (apps/**/*, packages/**/*)
+### Effect rules (apps/**/\*, packages/**/\*)
 
 Ported from nocturne. 12 rules with `files:` globs adjusted from nocturne-specific paths to generic `apps/**/*.ts(x)` + `packages/**/*.ts(x)`:
 
-| Rule | What it catches |
-|------|-----------------|
-| `no-bare-new-error` | `new Error()` — use `Data.TaggedError` |
-| `no-console-log` | `console.log/warn/error/info` — use Effect logging |
-| `no-direct-fs` | `import from "node:fs"` — use Effect FileSystem |
-| `no-interface-in-models` | `export interface` in models — use `Schema.Struct` |
-| `no-interpolated-logging` | Template literals in logger calls — use structured fields |
-| `no-manual-tag-check` | Manual `._tag ===` checks — use `Effect.catchTag`/`Match` |
-| `no-node-or-bun-in-core` | `node:` imports in core packages — use `@effect/platform` |
-| `no-runpromise-in-effect` | `Effect.runPromise` inside Effect code — use `yield*` |
-| `no-silent-catch` | `catchAll` without logging — always log before recovery |
-| `no-throw-in-effect` | `throw` in `Effect.gen` — use `Effect.fail` |
-| `no-try-catch` | try-catch in Effect generators — use `Effect.try`/`catchTag` |
-| `use-tagged-error` | `extends Error` — use `Data.TaggedError` |
+| Rule                      | What it catches                                              |
+| ------------------------- | ------------------------------------------------------------ |
+| `no-bare-new-error`       | `new Error()` — use `Data.TaggedError`                       |
+| `no-console-log`          | `console.log/warn/error/info` — use Effect logging           |
+| `no-direct-fs`            | `import from "node:fs"` — use Effect FileSystem              |
+| `no-interface-in-models`  | `export interface` in models — use `Schema.Struct`           |
+| `no-interpolated-logging` | Template literals in logger calls — use structured fields    |
+| `no-manual-tag-check`     | Manual `._tag ===` checks — use `Effect.catchTag`/`Match`    |
+| `no-node-or-bun-in-core`  | `node:` imports in core packages — use `@effect/platform`    |
+| `no-runpromise-in-effect` | `Effect.runPromise` inside Effect code — use `yield*`        |
+| `no-silent-catch`         | `catchAll` without logging — always log before recovery      |
+| `no-throw-in-effect`      | `throw` in `Effect.gen` — use `Effect.fail`                  |
+| `no-try-catch`            | try-catch in Effect generators — use `Effect.try`/`catchTag` |
+| `use-tagged-error`        | `extends Error` — use `Data.TaggedError`                     |
 
 Rule tests ported where they exist in nocturne (6 of 12 effect rules have tests, all 3 shared rules have tests).
 
@@ -179,16 +189,16 @@ Ported from nocturne, removing CSS/frontend-specific config:
       "recommended": true,
       "suspicious": { "noExplicitAny": "error", "noConsole": "off" },
       "performance": { "noAccumulatingSpread": "error" },
-      "style": { "useBlockStatements": { "level": "error" } }
-    }
+      "style": { "useBlockStatements": { "level": "error" } },
+    },
   },
   "javascript": {
-    "formatter": { "quoteStyle": "double", "indentWidth": 2, "lineWidth": 100 }
+    "formatter": { "quoteStyle": "double", "indentWidth": 2, "lineWidth": 100 },
   },
   "assist": {
     "enabled": true,
-    "actions": { "source": { "organizeImports": "on" } }
-  }
+    "actions": { "source": { "organizeImports": "on" } },
+  },
 }
 ```
 
@@ -201,6 +211,7 @@ Minimal — just workspace defaults. No tailwind plugin (nocturne has it, we don
 ### docs/patterns/effect.md
 
 Direct port from nocturne with these removals:
+
 - Desktop/Electron section (ManagedRuntime, Effect RPC, scoped layer overrides)
 - Nocturne-specific path references (`apps/desktop`, `packages/fp-core`, etc.)
 - Hono integration example (defer to when an API template is added)
@@ -211,6 +222,7 @@ Keep everything else: tagged errors, service architecture, yargs bridging, code 
 ### docs/patterns/coding-style.md
 
 Port from nocturne with these removals:
+
 - "Defensive Programming with Database Validation" (no DB yet)
 - Vitest assertions section (no tests yet)
 - GitHub PR Updates section (operational, not a pattern)
@@ -222,16 +234,17 @@ Keep: type safety, modern JS patterns, early returns, consistent code structure.
 New document. Shows how to wire up Effect with `@effect/opentelemetry` using a console/file span exporter for development:
 
 ```typescript
-import { NodeSdk } from "@effect/opentelemetry"
-import { ConsoleSpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node"
+import { NodeSdk } from "@effect/opentelemetry";
+import { ConsoleSpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
 
 const TracingLive = NodeSdk.layer(() => ({
   resource: { serviceName: "my-cli" },
   spanProcessor: new SimpleSpanProcessor(new ConsoleSpanExporter()),
-}))
+}));
 ```
 
 Documents:
+
 - How to add the tracing layer to your app's layer composition
 - How Effect.log/logWarning/logError integrate with the OTel logger
 - How to read structured trace output (for agents debugging runtime behavior)
@@ -242,6 +255,7 @@ This doc needs hands-on validation — marking as needs-refinement.
 ### docs/templates/cli.md
 
 "How to build an Effect CLI" specification. Covers:
+
 - Project structure (`apps/<name>/`)
 - Yargs + Effect bridging pattern (from nocturne's effect.md)
 - Service layer setup (Context.Tag → Layer.effect → provide)
@@ -253,11 +267,16 @@ This doc needs hands-on validation — marking as needs-refinement.
 
 Adapted from nocturne's docs convention guide:
 
-| Location | Contains |
-|---|---|
-| `docs/patterns/` | How we write code. Conventions, rules, idioms. |
-| `docs/templates/` | How to build things. Specs for software components. |
-| `docs/architecture/` | What the system looks like. Domain boundaries, data flow, key decisions. |
+| Location                    | Contains                                                                 |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `docs/patterns/`            | How we write code. Conventions, rules, idioms.                           |
+| `docs/templates/`           | How to build things. Specs for software components.                      |
+| `docs/architecture/`        | What the system looks like. Domain boundaries, data flow, key decisions. |
+| `docs/proposals/active/`    | What we are planning to change. Design docs with status and rationale.   |
+| `docs/proposals/completed/` | Proposals that shipped. Kept for historical context.                     |
+| `docs/experiments/`         | Feasibility notes and demo evidence that are not yet product decisions.  |
+| `docs/testing/`             | How we validate behavior. Test infrastructure and QA scenarios.          |
+| `docs/graveyard/`           | Retired docs for features or decisions that no longer describe the repo. |
 
 Plus the docs/ vs skills distinction from nocturne.
 
