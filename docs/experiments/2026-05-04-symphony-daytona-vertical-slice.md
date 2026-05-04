@@ -66,12 +66,17 @@ We borrow shape and protocol details from two reference repos:
 
 ## Smoke Evidence (2026-05-04)
 
-Operational evidence collected while validating Daytona feasibility for this slice. The smoke
-script at `playgrounds/symphony-daytona-playground/` ran end-to-end, but used an earlier
-prototype's worker invocation and artifact shape; the artifact-collection bullets below will be
-re-run against the current `codex app-server` + `git bundle` design under fp issue
-`SWYRD-gxgqehxl`. The Daytona lifecycle, source-upload, auth, and host-reachability findings
-remain valid as-is.
+Operational evidence collected while validating Daytona feasibility for this slice. There are two
+runs recorded here, both from playgrounds at `playgrounds/symphony-daytona-playground/`:
+
+1. The original prototype run (`src/smoke.ts`, `bun run smoke`) used `codex exec --json` and
+   produced patch-shaped artifacts. Its Daytona-side findings — sandbox lifecycle, archive
+   upload, copied `CODEX_HOME` auth, host-reachability behavior, runner-DB repair on this
+   machine — are protocol-agnostic and still hold; they are recorded below.
+2. The refresh under fp issue `SWYRD-gxgqehxl` (`src/smoke-app-server.ts`,
+   `bun run smoke:app-server`) drives the current contract — `codex app-server` over stdio
+   plus `git bundle` plus `outcome.json` — and is recorded in
+   **App-server smoke (SWYRD-gxgqehxl)** below.
 
 **Daytona local stack:**
 
@@ -109,10 +114,10 @@ remain valid as-is.
 - Ran a Codex coding command against the uploaded repo and verified that the worker successfully
   edited a file (`message.txt`) and that a post-edit `node test.js` passed inside the sandbox.
 
-> The end-to-end run used `codex exec --json` rather than `codex app-server`, and produced
-> patch-shaped artifacts. Re-running with the current design (`codex app-server` + `git bundle`
-> + `outcome.json`) is tracked as `SWYRD-gxgqehxl`. The auth, upload, and lifecycle bullets
-> above are protocol-agnostic and should still hold.
+> The end-to-end run above used `codex exec --json` rather than `codex app-server`, and produced
+> patch-shaped artifacts. The re-run against the current design is recorded in **App-server
+> smoke (SWYRD-gxgqehxl)** below; the auth, upload, and lifecycle bullets above are
+> protocol-agnostic and were re-confirmed by that run.
 
 **Host reachability:**
 
@@ -147,6 +152,84 @@ remain valid as-is.
   (https://developers.openai.com/codex/auth); the CI/CD auth guide documents file-backed
   ChatGPT auth via `auth.json` under `CODEX_HOME` for trusted private runners
   (https://developers.openai.com/codex/auth/ci-cd-auth).
+
+### App-server smoke (SWYRD-gxgqehxl)
+
+Re-run of the Daytona end-to-end against the current contract: `codex app-server` over stdio,
+`git bundle` artifact transport, `outcome.json` decoded with the `WorkerOutcome` Effect Schema.
+Entrypoint:
+
+```bash
+DAYTONA_API_KEY_FILE=/path/to/local-key \
+  bun run --cwd playgrounds/symphony-daytona-playground smoke:app-server
+```
+
+The host script (`src/smoke-app-server.ts`) uploads an in-sandbox driver
+(`src/codex-driver.cjs`) that spawns `codex app-server` with stdin/stdout piped, drives the
+JSON-RPC handshake, and writes `transcript.jsonl` plus the worker's `outcome.json` under
+`/tmp/.symphony/`.
+
+**Run result:** sandbox `b2f4815b-…` from `symphony-codex-bun`, deleted after the run. The full
+flow `initialize → thread/start → turn/start → turn/completed` traversed Daytona's stdio bridge
+in ~22 s. The transcript captured 134 protocol messages (104 `item/agentMessage/delta`,
+10 `item/started`/10 `item/completed`, 5 `turn/diff/updated`, 5 `thread/tokenUsage/updated`,
+1 `item/fileChange/outputDelta`, 6 `account/rateLimits/updated`, plus lifecycle events). No
+approval requests fired with `approvalPolicy: "never"` and `sandbox: "danger-full-access"`. The
+worker did not contact the host network; no host base URL was injected.
+
+**Worker behaviour:** Codex edited `message.txt`, ran `git add -A && git commit`, and wrote
+`/tmp/.symphony/outcome.json` with the contract-shaped envelope. Decoding with
+`Schema.decodeUnknown(WorkerOutcome)` succeeded:
+
+```json
+{"status":"completed","summary":"Rewrote message.txt and committed the smoke test change."}
+```
+
+**Bundle integration:** the orchestrator step ran
+`git bundle create /tmp/.symphony/work.bundle symphony-base..HEAD` (476 bytes, the
+production-shaped delta against `symphony-base`) and a self-contained
+`git bundle create /tmp/.symphony/work-full.bundle --all` (942 bytes). The smoke fetched the
+`--all` bundle into a freshly initialized host repo and produced
+`symphony/gx-<timestamp>` with the worker's commit on top of the seeded base, validating the
+sandbox-to-host transfer described in **Sandbox-to-Host Code Transfer**. The delta bundle was
+also exercised: it correctly refused to fetch into a host repo that did not yet hold
+`symphony-base`, with `error: Repository lacks these prerequisite commits`. This is the
+expected production behavior — the orchestrator must seed the same base into the integration
+worktree before applying the delta — and is why the smoke produces both shapes for evidence.
+
+**Protocol shape verified against `codex-cli 0.128.0`** (matches the field guidance in **Worker
+Protocol** above; recorded here as evidence rather than as protocol documentation):
+
+- `initialize` params: `{ clientInfo, capabilities }`. No `initialized` notification needed by
+  this server build (the brettimus reference runner sends one; harmless but unnecessary here).
+- `thread/start` params: `{ cwd, approvalPolicy: "never", sandbox: "danger-full-access",
+  ephemeral: true }`. `approvalPolicy: "auto"` (used by the brettimus reference) is rejected by
+  this build with `unknown variant 'auto'` — valid `AskForApproval` strings are
+  `untrusted | on-failure | on-request | never` plus a granular object form.
+- `turn/start` params: `{ threadId, cwd, approvalPolicy: "never",
+  sandboxPolicy: { type: "dangerFullAccess" }, input: [{ type: "text", text: prompt }] }`.
+  `sandbox` (thread scope) and `sandboxPolicy` (turn scope) are different field shapes and case
+  conventions; treat them as distinct types.
+- Turn termination: `turn/completed` notification carrying `params.turn.{id, status, …}`. There
+  is no separate `turn/failed` notification — failures arrive as JSON-RPC error responses on the
+  original `turn/start` id.
+- Server-initiated approval-style requests are dispatched as `applyPatchApproval`,
+  `execCommandApproval`, `item/commandExecution/requestApproval`,
+  `item/fileChange/requestApproval`, `item/permissions/requestApproval` (plus
+  `item/tool/requestUserInput` and `item/tool/call` for the user-input/tool channels). The
+  driver responds with `{ decision: "approved" }` as defense-in-depth even with
+  `approvalPolicy: "never"`; `item/tool/requestUserInput` is treated as a hard turn failure per
+  openai-symphony SPEC §10.5.
+
+**Operational notes:** the local Daytona admin API key from the prior smoke at
+`/tmp/daytona-api-key-pjy` (mode 600) was still valid and was reused. `codex app-server` stderr
+emits one `bubblewrap not on PATH` ERROR on startup and falls back to its vendored bubblewrap;
+the message is benign on this snapshot.
+
+Run artifacts (gitignored) live under
+`playgrounds/symphony-daytona-playground/artifacts/app-server-<timestamp>/`:
+`transcript.jsonl`, `outcome.json`, `work.bundle`, `work-full.bundle`,
+`codex.stderr.log`, `driver-final.json`, `host-bundle-log.txt`, `manifest.json`.
 
 ## Scope
 
@@ -759,8 +842,9 @@ Open setup work before implementation begins:
 - Decide the cleanest Codex auth path inside Daytona. Copied `auth.json` is proven for local
   demo use; scoped API-key injection remains the safer default and still needs a run with a
   real `OPENAI_API_KEY`.
-- Re-run the smoke against `codex app-server` + `git bundle` + `outcome.json` (the existing
-  smoke used an earlier prototype's invocation). Tracked as `SWYRD-gxgqehxl`.
+- Re-run the smoke against `codex app-server` + `git bundle` + `outcome.json` —
+  **done under `SWYRD-gxgqehxl`**; results recorded under **App-server smoke (SWYRD-gxgqehxl)**
+  in **Smoke Evidence (2026-05-04)**.
 - Generate TypeScript bindings (`codex app-server generate-ts`) and wire them into a
   `bun run codegen` script before runner module work begins.
 
@@ -938,5 +1022,5 @@ fp.
 See `docs/architecture/0001-symphony-deviations.md` for the architectural rationale behind
 several of these deferrals.
 
-(The end-to-end smoke re-run against the current artifact format is tracked separately under
-`SWYRD-gxgqehxl`, a sibling of the spec-iteration epic.)
+(The end-to-end smoke re-run against the current artifact format ran under `SWYRD-gxgqehxl`
+and is recorded in **App-server smoke (SWYRD-gxgqehxl)** under **Smoke Evidence (2026-05-04)**.)
