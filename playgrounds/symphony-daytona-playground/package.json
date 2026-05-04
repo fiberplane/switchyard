@@ -11,7 +11,7 @@
   "dependencies": {
     "@daytona/sdk": "0.171.0",
     "@types/bun": "1.2.14",
-    "effect": "3.19.6",
+    "effect": "3.20.0",
     "typescript": "5.9.3"
   },
   "devDependencies": {}
