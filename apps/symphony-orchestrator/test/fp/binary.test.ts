@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,5 +49,62 @@ describe("FpBinary.resolve", () => {
     );
 
     expect(resolved).toBe(binaryPath);
+  });
+
+  test("falls back through system candidates, HOME, and PATH when env is unset", async () => {
+    const root = await makeTempDir("swy-fp-fallback-");
+    const systemDirectory = join(root, "usr-local-bin");
+    const home = join(root, "home");
+    const homeDirectory = join(home, ".fiberplane", "bin");
+    const pathDirectory = join(root, "path-bin");
+
+    await Promise.all([
+      mkdir(systemDirectory, { recursive: true }),
+      mkdir(homeDirectory, { recursive: true }),
+      mkdir(pathDirectory, { recursive: true }),
+    ]);
+
+    const systemBinary = await makeExecutable(systemDirectory);
+    const homeBinary = await makeExecutable(homeDirectory);
+    const pathBinary = await makeExecutable(pathDirectory);
+
+    const env = { SWITCHYARD_FP_BIN: undefined };
+
+    await expect(
+      runWithBinary(
+        {
+          env,
+          home,
+          path: pathDirectory,
+          systemCandidates: [systemBinary],
+        },
+        resolveBinary,
+      ),
+    ).resolves.toBe(systemBinary);
+
+    await expect(
+      runWithBinary(
+        {
+          env,
+          home,
+          path: pathDirectory,
+          systemCandidates: [join(root, "missing-system-fp")],
+        },
+        resolveBinary,
+      ),
+    ).resolves.toBe(homeBinary);
+
+    await rm(homeBinary);
+    await expect(
+      runWithBinary(
+        {
+          env,
+          home,
+          path: pathDirectory,
+          systemCandidates: [join(root, "missing-system-fp")],
+        },
+        resolveBinary,
+      ),
+    ).resolves.toBe(pathBinary);
   });
 });
