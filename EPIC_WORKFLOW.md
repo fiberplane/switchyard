@@ -24,7 +24,7 @@ Every leaf ticket has these sections, in order. Skip a section if genuinely empt
 1. **Spec sections.** Pointer(s) to the relevant headings in the spec / ADR / focused doc.
 2. **Depends on.** Explicit list of prior leaves whose output this consumes (e.g., "`SWYRD-ajxqlrhn` for the `apps/symphony-orchestrator/` workspace scaffolding"). If none, write "first leaf".
 3. **Produces.** What callers will receive — services, schemas, types, services exposed via `Layer`.
-4. **Out of scope.** What this leaf does *not* own (so consumers know they're picking it up later, and the implementer doesn't accidentally widen scope).
+4. **Out of scope.** What this leaf does _not_ own (so consumers know they're picking it up later, and the implementer doesn't accidentally widen scope).
 5. **Files to create.** Concrete tree.
 6. **Tracer bullet (red / green).** Numbered red → green steps that walk the implementer through TDD. Cadence: **one test at a time** — write a failing test, drive it green, refactor, then write the next failing test. **Not** "write all tests first, then implement" — the loop is `RED → GREEN → RED → GREEN`, not `RED RED RED → GREEN GREEN GREEN`. Each red/green cycle is a small commit-able unit.
 7. **Decisions you'll need to make.** Design judgment calls flagged as prompts so the implementer doesn't make them implicitly. (e.g., "Schema defaults vs. require-explicit?", "Take a dependency on `WorkflowService` or accept the value at `Layer` wiring time?")
@@ -52,6 +52,7 @@ Loosely follows `~/.claude/commands/brett-task.md`. The mandatory subagent self-
    Subagent returns severity-graded refinement points. The implementer:
    - **Posts a comment on the fp issue** summarizing what the subagent flagged (severity counts at minimum; specific blockers/important items quoted or paraphrased). This makes the review surface visible alongside the issue.
    - **Addresses or explicitly acknowledges each point.** Anything not fixed gets a one-line "acknowledged because X" note in the same comment so it's clear nothing was silently dropped.
+
 6. **Final verification.** `bun run check`, `bun test`. All green before committing the response to review.
 7. **Commit + attach.** Descriptive commit message ending with the fp issue id. `fp issue assign <id> --rev <sha>` to bind commits to the issue.
 8. **Reflection comment.** Post answers to the self-reflection prompts on the fp issue. Fill integration-reflection answers if any siblings now consume this leaf; otherwise mark it for later revisit.
@@ -73,10 +74,10 @@ The intended pattern:
 
 - The v1 spec at `docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md` is the umbrella design doc.
 - As each leaf's responsibility gets concrete enough to stand on its own, **split that responsibility into a focused doc under `docs/architecture/<topic>.md`** (e.g., `configuration-parsing.md`, `artifact-store.md`, `app-server-protocol.md`).
-- The focused doc owns the contract for that responsibility. It cross-links *up* to the spec section it originated from.
+- The focused doc owns the contract for that responsibility. It cross-links _up_ to the spec section it originated from.
 - Source files in `apps/symphony-orchestrator/` `drift link` to the **focused doc**, not directly to the umbrella spec.
 
-Each leaf ticket therefore asks: *"is this leaf's responsibility stable enough to deserve its own focused doc?"*
+Each leaf ticket therefore asks: _"is this leaf's responsibility stable enough to deserve its own focused doc?"_
 
 - **Yes** → during implementation, split the relevant section out of the spec into `docs/architecture/<topic>.md`. The split is part of this leaf's PR. Add `drift link` from the new source files to the focused doc.
 - **No** → spec section may need to grow / settle first. Skip the drift step for this leaf; revisit when the responsibility's shape stabilizes (often after a sibling forces a real interface).
@@ -99,10 +100,10 @@ When `AGENTS.md` adds canonical leaf-level commands, prefer those.
 
 Two reflection sections exist because they catch different gaps:
 
-- **Self-reflection.** Catches gaps found *while implementing alone* — the spec was unclear on env-var interpolation; the YAML key style needed picking; a default value made more sense than a runtime check. These are introspective.
-- **Integration reflection.** Catches gaps found *when wiring with a sibling* — your schema doesn't quite match what the sibling is producing; an interface mismatch forced an adjustment somewhere; a layered service boundary felt off. These are dialogic.
+- **Self-reflection.** Catches gaps found _while implementing alone_ — the spec was unclear on env-var interpolation; the YAML key style needed picking; a default value made more sense than a runtime check. These are introspective.
+- **Integration reflection.** Catches gaps found _when wiring with a sibling_ — your schema doesn't quite match what the sibling is producing; an interface mismatch forced an adjustment somewhere; a layered service boundary felt off. These are dialogic.
 
-For early leaves, integration reflection is usually "n/a — no sibling consumes this yet." When the first sibling does consume it, the implementer of *that* sibling re-opens this leaf's issue and fills the integration-reflection section with what they hit. This keeps the loop tight without forcing speculative answers up front.
+For early leaves, integration reflection is usually "n/a — no sibling consumes this yet." When the first sibling does consume it, the implementer of _that_ sibling re-opens this leaf's issue and fills the integration-reflection section with what they hit. This keeps the loop tight without forcing speculative answers up front.
 
 ## Conventions to inherit
 
