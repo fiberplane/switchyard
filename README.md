@@ -44,7 +44,18 @@ apps/           Deployable applications (CLIs, APIs, workers)
 packages/       Internal shared packages
 docs/           Conventions, templates, architecture notes
 rules/          ast-grep lint rules (shared + Effect-specific)
+references/     Shallow clones of upstream repos (gitignored)
 .fp/extensions/ fp lifecycle extensions
+```
+
+## References
+
+`references/` is gitignored and excluded from linting/formatting. Clone upstream repos here when you want agents to read the source directly. Recommended clones for this project:
+
+```bash
+git clone --depth 1 https://github.com/Effect-TS/effect.git references/effect
+git clone --depth 1 https://github.com/daytonaio/daytona.git references/daytona
+git clone --depth 1 https://github.com/openai/symphony.git references/symphony
 ```
 
 ## ast-grep rules
