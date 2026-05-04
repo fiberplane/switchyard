@@ -54,17 +54,31 @@ Loosely follows `~/.claude/commands/brett-task.md`. The mandatory subagent self-
    - **Addresses or explicitly acknowledges each point.** Anything not fixed gets a one-line "acknowledged because X" note in the same comment so it's clear nothing was silently dropped.
 
 6. **Final verification.** `bun run check`, `bun test`. All green before committing the response to review.
-7. **Commit + attach.** Descriptive commit message ending with the fp issue id. `fp issue assign <id> --rev <sha>` to bind commits to the issue.
+7. **Commit.** Descriptive commit message ending with the fp issue id.
 8. **Reflection comment.** Post answers to the self-reflection prompts on the fp issue. Fill integration-reflection answers if any siblings now consume this leaf; otherwise mark it for later revisit.
 9. **Drift step (see policy below).** If this leaf's responsibility deserves its own focused doc, split it out now and `drift link` the source files to the focused doc.
 10. **Mark issue done.** `fp issue update --status done <id>`.
 
 ## Backport policy
 
-- **Small spec corrections** — typo, missing field, exact-shape fix that the implementer ran into. Update the spec **inline in this PR**; no separate ticket.
-- **Cross-cutting structural changes** — new sections, scope shifts, decisions that affect multiple leaves. File a sibling `fp` ticket; link it from the leaf's reflection comment.
+The prompt every leaf answers in its reflection comment:
 
-The reflection comment must say which path was taken. Default leans toward small corrections inline — keeps the spec accurate without ceremony.
+> Did you make a decision a sibling will need to know about? If yes, write it into the right place in the spec tree.
+
+The spec tree, in order of preference:
+
+- **Focused doc** (`docs/architecture/<topic>.md`) — if one exists for this responsibility, the decision lives here. Source files already `drift link` to it, so writing here keeps the contract co-located with the consumers.
+- **ADR** (`docs/architecture/0001-symphony-deviations.md`) — if the decision diverges from upstream Symphony or another reference implementation. ADR captures the _why_, not the per-leaf shape.
+- **Umbrella spec** (`docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md`) — for cross-cutting facts not yet pulled into a focused doc, or for shape that matters across multiple leaves. Default destination when no focused doc exists yet.
+
+Edit cadence:
+
+- **Inline edit, this PR** — typos, missing fields, exact-shape fixes, single-line clarifications a sibling will need. Default lean.
+- **Sibling fp ticket** — new sections, scope shifts, decisions that touch multiple leaves, or anything that requires structural rework of a doc.
+
+The "did you make a decision a sibling will need to know" framing matters because the artifact leaf surfaced two implementation decisions (path-segment rule, JSON write shape) that were classed as "no spec correction" — but a sibling consuming the artifact module will need to know both. Bias toward writing them down somewhere in the tree; absence of contradiction is not the same as absence of a sibling-relevant fact.
+
+The reflection comment must say which destination was used (or that no backport was needed and why).
 
 ## Drift binding policy
 

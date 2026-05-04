@@ -94,14 +94,8 @@ Before marking done:
 
 1. Stage only the intended work.
 2. Commit with the fp issue id in the message.
-3. Attach the commit:
-
-   ```bash
-   fp issue assign <id> --rev HEAD
-   ```
-
-4. Post required reflection or final comment.
-5. Mark done:
+3. Post required reflection or final comment.
+4. Mark done:
 
    ```bash
    fp issue update <id> --status done

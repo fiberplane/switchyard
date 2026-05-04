@@ -75,7 +75,6 @@ Minimum workflow:
 - Claim work with `fp issue update <id> --status in-progress`.
 - Log meaningful milestones with `fp comment <id> "..."`.
 - Commit with the fp issue id in the message.
-- Attach the commit with `fp issue assign <id> --rev HEAD`.
 - Mark done only after auditing acceptance criteria against real evidence.
 
 Code review is mandatory by default for implementation work: use a review subagent unless the user
