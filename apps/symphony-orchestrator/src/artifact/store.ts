@@ -14,7 +14,7 @@ import {
 } from "./models.js";
 
 export type ArtifactStoreShape = {
-  readonly runDir: (issueId: string, attempt: number) => string;
+  readonly runDir: (issueId: string, attempt: number) => Effect.Effect<string, ArtifactPathError>;
   readonly listRuns: (
     issueId: string,
   ) => Effect.Effect<Array<number>, ArtifactPathError, FileSystem.FileSystem>;
@@ -58,8 +58,64 @@ const mapPathError = (path: string, operation: string) => (error: unknown) =>
 
 const issueRunsDir = (basePath: string, issueId: string): string => join(basePath, "runs", issueId);
 
-const runDirFor = (basePath: string, issueId: string, attempt: number): string =>
-  join(issueRunsDir(basePath, issueId), String(attempt));
+const validateIssueId = (
+  basePath: string,
+  issueId: string,
+): Effect.Effect<string, ArtifactPathError> => {
+  if (
+    issueId.length > 0 &&
+    issueId !== "." &&
+    issueId !== ".." &&
+    !issueId.includes("/") &&
+    !issueId.includes("\\")
+  ) {
+    return Effect.succeed(issueId);
+  }
+
+  return Effect.fail(
+    new ArtifactPathError({
+      path: basePath,
+      operation: "validate issue id",
+      reason: "issueId must be a non-empty single path segment",
+    }),
+  );
+};
+
+const validateAttempt = (
+  issueDir: string,
+  attempt: number,
+): Effect.Effect<number, ArtifactPathError> => {
+  if (Number.isInteger(attempt) && attempt > 0) {
+    return Effect.succeed(attempt);
+  }
+
+  return Effect.fail(
+    new ArtifactPathError({
+      path: issueDir,
+      operation: "validate attempt",
+      reason: "attempt must be a positive integer",
+    }),
+  );
+};
+
+const issueRunsDirFor = (
+  basePath: string,
+  issueId: string,
+): Effect.Effect<string, ArtifactPathError> =>
+  Effect.map(validateIssueId(basePath, issueId), (validatedIssueId) =>
+    issueRunsDir(basePath, validatedIssueId),
+  );
+
+const runDirFor = (
+  basePath: string,
+  issueId: string,
+  attempt: number,
+): Effect.Effect<string, ArtifactPathError> =>
+  Effect.gen(function* () {
+    const issueDir = yield* issueRunsDirFor(basePath, issueId);
+    const validatedAttempt = yield* validateAttempt(issueDir, attempt);
+    return join(issueDir, String(validatedAttempt));
+  });
 
 const recordPath = (runDir: string): string => join(runDir, "outcome-record.json");
 
@@ -99,7 +155,7 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
   listRuns: (issueId) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const issueDir = issueRunsDir(basePath, issueId);
+      const issueDir = yield* issueRunsDirFor(basePath, issueId);
       const exists = yield* fs
         .exists(issueDir)
         .pipe(Effect.mapError(mapPathError(issueDir, "check directory")));
@@ -127,7 +183,8 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
   readOutcome: (issueId, attempt) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const path = outcomePath(runDirFor(basePath, issueId, attempt));
+      const dir = yield* runDirFor(basePath, issueId, attempt);
+      const path = outcomePath(dir);
       const content = yield* fs
         .readFileString(path)
         .pipe(Effect.mapError(mapPathError(path, "read file")));
@@ -137,7 +194,7 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
   writeRecord: (issueId, attempt, record) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const dir = runDirFor(basePath, issueId, attempt);
+      const dir = yield* runDirFor(basePath, issueId, attempt);
       const path = recordPath(dir);
       const encoded = yield* encodeOrchestratorRecord(record, path);
 
@@ -151,7 +208,8 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
   readRecord: (issueId, attempt) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const path = recordPath(runDirFor(basePath, issueId, attempt));
+      const dir = yield* runDirFor(basePath, issueId, attempt);
+      const path = recordPath(dir);
       const content = yield* fs
         .readFileString(path)
         .pipe(Effect.mapError(mapPathError(path, "read file")));

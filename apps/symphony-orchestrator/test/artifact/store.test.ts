@@ -5,7 +5,7 @@ import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Either, Option, Schema } from "effect";
 
-import { ArtifactDecodeError } from "../../src/artifact/errors.js";
+import { ArtifactDecodeError, ArtifactPathError } from "../../src/artifact/errors.js";
 import {
   decodeWorkerOutcome,
   type OrchestratorRecord,
@@ -84,11 +84,39 @@ describe("ArtifactStore", () => {
       artifactBase,
       Effect.gen(function* () {
         const store = yield* ArtifactStore;
-        return store.runDir("SWYRD-abc", 1);
+        return yield* store.runDir("SWYRD-abc", 1);
       }),
     );
 
     expect(runDir).toBe(`${artifactBase}/runs/SWYRD-abc/1`);
+  });
+
+  test("rejects invalid run path inputs", async () => {
+    const invalidIssue = await runWithArtifactStore(
+      artifactBase,
+      Effect.gen(function* () {
+        const store = yield* ArtifactStore;
+        return yield* Effect.either(store.runDir("../escape", 1));
+      }),
+    );
+    const invalidAttempt = await runWithArtifactStore(
+      artifactBase,
+      Effect.gen(function* () {
+        const store = yield* ArtifactStore;
+        return yield* Effect.either(store.runDir("SWYRD-abc", 1.5));
+      }),
+    );
+
+    expect(Either.isLeft(invalidIssue)).toBe(true);
+    if (Either.isLeft(invalidIssue)) {
+      expect(invalidIssue.left).toBeInstanceOf(ArtifactPathError);
+      expect(invalidIssue.left.operation).toBe("validate issue id");
+    }
+    expect(Either.isLeft(invalidAttempt)).toBe(true);
+    if (Either.isLeft(invalidAttempt)) {
+      expect(invalidAttempt.left).toBeInstanceOf(ArtifactPathError);
+      expect(invalidAttempt.left.operation).toBe("validate attempt");
+    }
   });
 
   test("round-trips an orchestrator record", async () => {
@@ -124,9 +152,9 @@ describe("ArtifactStore", () => {
           const fs = yield* FileSystem.FileSystem;
           const store = yield* ArtifactStore;
 
-          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 10), { recursive: true });
-          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 2), { recursive: true });
-          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 1), { recursive: true });
+          yield* fs.makeDirectory(yield* store.runDir("SWYRD-abc", 10), { recursive: true });
+          yield* fs.makeDirectory(yield* store.runDir("SWYRD-abc", 2), { recursive: true });
+          yield* fs.makeDirectory(yield* store.runDir("SWYRD-abc", 1), { recursive: true });
 
           return yield* store.listRuns("SWYRD-abc");
         }),
@@ -134,6 +162,20 @@ describe("ArtifactStore", () => {
     );
 
     expect(attempts).toEqual([1, 2, 10]);
+  });
+
+  test("returns no runs for a missing issue directory", async () => {
+    const attempts = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const store = yield* ArtifactStore;
+          return yield* store.listRuns("SWYRD-abc");
+        }),
+      ),
+    );
+
+    expect(attempts).toEqual([]);
   });
 
   test("reads a worker outcome from a run directory", async () => {
@@ -144,7 +186,7 @@ describe("ArtifactStore", () => {
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const store = yield* ArtifactStore;
-          const dir = store.runDir("SWYRD-abc", 1);
+          const dir = yield* store.runDir("SWYRD-abc", 1);
 
           yield* fs.makeDirectory(dir, { recursive: true });
           yield* fs.writeFileString(join(dir, "outcome.json"), outcomeJson);
@@ -156,5 +198,81 @@ describe("ArtifactStore", () => {
 
     expect(outcome.status).toBe("failed");
     expect(outcome.summary).toContain("unrecoverable error");
+  });
+
+  test("maps malformed worker outcome files to ArtifactDecodeError", async () => {
+    const outcomeJson = await Bun.file(fixturePath("outcome.malformed-status.json")).text();
+    const result = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const store = yield* ArtifactStore;
+          const dir = yield* store.runDir("SWYRD-abc", 1);
+
+          yield* fs.makeDirectory(dir, { recursive: true });
+          yield* fs.writeFileString(join(dir, "outcome.json"), outcomeJson);
+
+          return yield* Effect.either(store.readOutcome("SWYRD-abc", 1));
+        }),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(ArtifactDecodeError);
+      expect(result.left.path).toContain("outcome.json");
+      if (result.left instanceof ArtifactDecodeError) {
+        expect(result.left.details).toContain('["status"]');
+      }
+    }
+  });
+
+  test("maps missing orchestrator records to ArtifactPathError", async () => {
+    const result = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const store = yield* ArtifactStore;
+          return yield* Effect.either(store.readRecord("SWYRD-abc", 1));
+        }),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(ArtifactPathError);
+      expect(result.left.path).toContain("outcome-record.json");
+      if (result.left instanceof ArtifactPathError) {
+        expect(result.left.operation).toBe("read file");
+      }
+    }
+  });
+
+  test("maps malformed orchestrator records to ArtifactDecodeError", async () => {
+    const result = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const store = yield* ArtifactStore;
+          const dir = yield* store.runDir("SWYRD-abc", 1);
+
+          yield* fs.makeDirectory(dir, { recursive: true });
+          yield* fs.writeFileString(join(dir, "outcome-record.json"), '{"status":"ok"}\n');
+
+          return yield* Effect.either(store.readRecord("SWYRD-abc", 1));
+        }),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(ArtifactDecodeError);
+      expect(result.left.path).toContain("outcome-record.json");
+      if (result.left instanceof ArtifactDecodeError) {
+        expect(result.left.details).toContain('["status"]');
+      }
+    }
   });
 });
