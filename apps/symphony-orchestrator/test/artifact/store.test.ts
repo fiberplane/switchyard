@@ -114,4 +114,24 @@ describe("ArtifactStore", () => {
 
     expect(readBack).toEqual(record);
   });
+
+  test("lists run attempts in numeric order", async () => {
+    const attempts = await withTempArtifactStore((basePath) =>
+      runWithArtifactStore(
+        basePath,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const store = yield* ArtifactStore;
+
+          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 10), { recursive: true });
+          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 2), { recursive: true });
+          yield* fs.makeDirectory(store.runDir("SWYRD-abc", 1), { recursive: true });
+
+          return yield* store.listRuns("SWYRD-abc");
+        }),
+      ),
+    );
+
+    expect(attempts).toEqual([1, 2, 10]);
+  });
 });

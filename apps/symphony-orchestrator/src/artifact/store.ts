@@ -13,6 +13,9 @@ import {
 
 export type ArtifactStoreShape = {
   readonly runDir: (issueId: string, attempt: number) => string;
+  readonly listRuns: (
+    issueId: string,
+  ) => Effect.Effect<Array<number>, ArtifactPathError, FileSystem.FileSystem>;
   readonly writeRecord: (
     issueId: string,
     attempt: number,
@@ -47,7 +50,23 @@ const mapPathError = (path: string, operation: string) => (error: unknown) =>
     reason: describeUnknown(error),
   });
 
+const issueRunsDir = (basePath: string, issueId: string): string => join(basePath, "runs", issueId);
+
+const runDirFor = (basePath: string, issueId: string, attempt: number): string =>
+  join(issueRunsDir(basePath, issueId), String(attempt));
+
 const recordPath = (runDir: string): string => join(runDir, "outcome-record.json");
+
+const parseAttemptDirectory = (
+  entry: string,
+): { readonly entry: string; readonly attempt: number } | null => {
+  if (!/^[1-9]\d*$/.test(entry)) {
+    return null;
+  }
+  return { entry, attempt: Number(entry) };
+};
+
+const isNumber = (value: number | null): value is number => value !== null;
 
 const formatRecordJson = (record: OrchestratorRecordEncoded): string =>
   `${JSON.stringify(
@@ -68,11 +87,39 @@ const formatRecordJson = (record: OrchestratorRecordEncoded): string =>
   )}\n`;
 
 const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
-  runDir: (issueId, attempt) => join(basePath, "runs", issueId, String(attempt)),
+  runDir: (issueId, attempt) => runDirFor(basePath, issueId, attempt),
+  listRuns: (issueId) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const issueDir = issueRunsDir(basePath, issueId);
+      const exists = yield* fs
+        .exists(issueDir)
+        .pipe(Effect.mapError(mapPathError(issueDir, "check directory")));
+
+      if (!exists) {
+        return [];
+      }
+
+      const entries = yield* fs
+        .readDirectory(issueDir)
+        .pipe(Effect.mapError(mapPathError(issueDir, "read directory")));
+      const attemptEntries = entries.flatMap((entry) => {
+        const parsed = parseAttemptDirectory(entry);
+        return parsed === null ? [] : [parsed];
+      });
+      const attempts = yield* Effect.forEach(attemptEntries, ({ entry, attempt }) =>
+        fs.stat(join(issueDir, entry)).pipe(
+          Effect.map((info) => (info.type === "Directory" ? attempt : null)),
+          Effect.mapError(mapPathError(join(issueDir, entry), "stat path")),
+        ),
+      );
+
+      return attempts.filter(isNumber).sort((left, right) => left - right);
+    }),
   writeRecord: (issueId, attempt, record) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const dir = join(basePath, "runs", issueId, String(attempt));
+      const dir = runDirFor(basePath, issueId, attempt);
       const path = recordPath(dir);
       const encoded = yield* encodeOrchestratorRecord(record, path);
 
@@ -86,7 +133,7 @@ const makeArtifactStore = (basePath: string): ArtifactStoreShape => ({
   readRecord: (issueId, attempt) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const path = recordPath(join(basePath, "runs", issueId, String(attempt)));
+      const path = recordPath(runDirFor(basePath, issueId, attempt));
       const content = yield* fs
         .readFileString(path)
         .pipe(Effect.mapError(mapPathError(path, "read file")));
