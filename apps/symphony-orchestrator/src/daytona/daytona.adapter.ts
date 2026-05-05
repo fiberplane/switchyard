@@ -1,13 +1,14 @@
 import { Buffer } from "node:buffer";
 
-import {
-  Daytona,
-  DaytonaNotFoundError,
-  type CreateSandboxFromSnapshotParams,
-  type Sandbox,
-} from "@daytona/sdk";
+import { Daytona, type CreateSandboxFromSnapshotParams, type Sandbox } from "@daytona/sdk";
 import { Context, Effect, Layer, ParseResult, Schema } from "effect";
 
+import {
+  createDaytonaClient,
+  describeUnknown,
+  isDaytonaNotFound,
+  isStateChangeInProgress,
+} from "./daytona-client.js";
 import {
   DaytonaSandboxCreateError,
   DaytonaSandboxNotFoundError,
@@ -61,26 +62,6 @@ export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
 export type DaytonaAdapterOptions = {
   readonly probeOnInit?: boolean;
 };
-
-const describeUnknown = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-};
-
-const isDaytonaNotFound = (error: unknown): boolean => {
-  if (error instanceof DaytonaNotFoundError) {
-    return true;
-  }
-  if (typeof error === "object" && error !== null && "statusCode" in error) {
-    return error.statusCode === 404;
-  }
-  return error instanceof Error && error.message.toLowerCase().includes("not found");
-};
-
-const isStateChangeInProgress = (error: unknown): boolean =>
-  error instanceof Error && error.message.toLowerCase().includes("state change in progress");
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -205,16 +186,6 @@ const decodeDownloadResponses = (sandboxId: string, value: unknown) =>
       ),
     ),
   );
-
-const createDaytonaClient = (config: DaytonaConfig): Daytona =>
-  new Daytona({
-    apiKey: config.apiKey,
-    apiUrl: config.apiUrl,
-    target: config.target,
-    _experimental: {
-      otelEnabled: false,
-    },
-  });
 
 const probeDaytonaClient = (client: Daytona): Effect.Effect<void, DaytonaSandboxOpError> =>
   Effect.tryPromise({

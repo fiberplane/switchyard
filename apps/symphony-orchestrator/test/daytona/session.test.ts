@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { Effect, Either, ParseResult, Schema } from "effect";
 
+import { DaytonaSession, DaytonaSessionLive } from "../../src/daytona/daytona.session.js";
 import {
   DaytonaSessionCreateError,
   DaytonaSessionExecError,
@@ -11,6 +12,7 @@ import {
   DaytonaSessionOpError,
 } from "../../src/daytona/errors.js";
 import { DaytonaSessionExecuteResponseSchema } from "../../src/daytona/session-models.js";
+import { daytonaTestConfig } from "./test-helpers/stack.js";
 
 describe("DaytonaSession errors", () => {
   test("DaytonaSessionCreateError tags and exposes its fields", () => {
@@ -78,6 +80,18 @@ describe("DaytonaSession errors", () => {
     expect(error._tag).toBe("DaytonaSessionOpError");
     expect(error.sessionId).toBe("sess-1");
     expect(error.operation).toBe("waitExit");
+  });
+});
+
+describe("DaytonaSession service", () => {
+  test("constructs via DaytonaSessionLive Layer and exposes start", async () => {
+    const program = Effect.gen(function* () {
+      const session = yield* DaytonaSession;
+      return typeof session.start;
+    }).pipe(Effect.provide(DaytonaSessionLive(daytonaTestConfig)));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBe("function");
   });
 });
 
