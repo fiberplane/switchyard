@@ -1,6 +1,14 @@
-import { Effect, Schema } from "effect";
+import { Effect, ParseResult, Schema } from "effect";
+
+import { DaytonaConfigError } from "./errors.js";
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
+const DaytonaConfigEnvFields = [
+  "DAYTONA_API_URL",
+  "DAYTONA_API_KEY",
+  "DAYTONA_TARGET",
+  "DAYTONA_SNAPSHOT",
+] as const;
 
 const DaytonaConfigEnvSchema = Schema.Struct({
   DAYTONA_API_URL: NonEmptyString,
@@ -17,7 +25,23 @@ export const DaytonaConfigSchema = Schema.Struct({
 });
 export type DaytonaConfig = Schema.Schema.Type<typeof DaytonaConfigSchema>;
 
-export const decodeDaytonaConfigEnv = (env: unknown) =>
+const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const missingConfigEnvFields = (env: unknown): readonly string[] => {
+  if (!isUnknownRecord(env)) {
+    return DaytonaConfigEnvFields;
+  }
+
+  return DaytonaConfigEnvFields.filter((field) => {
+    const value = env[field];
+    return typeof value !== "string" || value.length === 0;
+  });
+};
+
+export const decodeDaytonaConfigEnv = (
+  env: unknown,
+): Effect.Effect<DaytonaConfig, DaytonaConfigError> =>
   Schema.decodeUnknown(DaytonaConfigEnvSchema)(env).pipe(
     Effect.flatMap((decodedEnv) =>
       Schema.decodeUnknown(DaytonaConfigSchema)({
@@ -26,5 +50,13 @@ export const decodeDaytonaConfigEnv = (env: unknown) =>
         target: decodedEnv.DAYTONA_TARGET,
         snapshotName: decodedEnv.DAYTONA_SNAPSHOT,
       }),
+    ),
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaConfigError({
+          missingFields: missingConfigEnvFields(env),
+          details: ParseResult.TreeFormatter.formatErrorSync(error),
+        }),
+      ),
     ),
   );
