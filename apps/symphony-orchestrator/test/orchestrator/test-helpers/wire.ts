@@ -2,10 +2,10 @@
 // individual mock shapes, plus a NodeFileSystem layer. Tests stay short by
 // calling `wireOrchestrator(mocks).pipe(Effect.runPromise)`.
 
-import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 
@@ -18,7 +18,6 @@ import { WorkerPromptService } from "../../../src/prompt/service.js";
 import { AgentRunner, AgentRunnerLive } from "../../../src/runner/service.js";
 import { SandboxScriptService } from "../../../src/sandbox-scripts/service.js";
 import {
-  OrchestratorService,
   OrchestratorServiceLive,
   type OrchestratorServiceConfig,
 } from "../../../src/orchestrator/service.js";
@@ -45,15 +44,24 @@ export type WireOptions = {
   readonly config: OrchestratorServiceConfig;
   // Use the real AgentRunner (drives the protocol) by default, or override
   // when a stub is desired (failure-path cycles).
-  readonly agentRunner?: typeof AgentRunner.Service extends never ? never : Layer.Layer<AgentRunner>;
+  readonly agentRunner?: Layer.Layer<AgentRunner>;
 };
 
-export const writeFakeCodexAuth = async (): Promise<string> => {
-  const dir = await mkdtemp(join(tmpdir(), "swy-codex-auth-"));
-  const path = join(dir, "auth.json");
-  await writeFile(path, JSON.stringify({ access_token: "fixture", refresh_token: "fixture" }));
-  return path;
-};
+export const writeFakeCodexAuth = (): Effect.Effect<string, never, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const dir = yield* fs
+      .makeTempDirectory({ prefix: "swy-codex-auth-", directory: tmpdir() })
+      .pipe(Effect.orDie);
+    const path = join(dir, "auth.json");
+    yield* fs
+      .writeFileString(
+        path,
+        JSON.stringify({ access_token: "fixture", refresh_token: "fixture" }),
+      )
+      .pipe(Effect.orDie);
+    return path;
+  });
 
 export const wire = (options: WireOptions) => {
   const layer = Layer.mergeAll(
@@ -69,12 +77,6 @@ export const wire = (options: WireOptions) => {
   const fullLayer = OrchestratorServiceLive(options.config).pipe(Layer.provide(layer));
   return Layer.merge(fullLayer, NodeFileSystem.layer);
 };
-
-export const runOrchestrator = <A, E>(
-  options: WireOptions,
-  program: Effect.Effect<A, E, OrchestratorService | import("@effect/platform").FileSystem.FileSystem>,
-): Promise<A> =>
-  Effect.runPromise(program.pipe(Effect.provide(wire(options))));
 
 export {
   makeArtifactStoreMock,

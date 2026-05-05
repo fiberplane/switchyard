@@ -5,6 +5,7 @@
 // the runner can swap in a stub AgentRunner via wire().
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
 
 import {
@@ -86,7 +87,9 @@ const codexResponses = (
 let codexAuthPath: string;
 
 beforeEach(async () => {
-  codexAuthPath = await writeFakeCodexAuth();
+  codexAuthPath = await Effect.runPromise(
+    writeFakeCodexAuth().pipe(Effect.provide(NodeFileSystem.layer)),
+  );
 });
 
 afterEach(() => {

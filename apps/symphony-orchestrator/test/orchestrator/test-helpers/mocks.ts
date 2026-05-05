@@ -9,6 +9,7 @@ import { Effect, Queue, Stream } from "effect";
 import type { ArtifactStoreShape } from "../../../src/artifact/store.js";
 import { ArtifactDecodeError, ArtifactPathError } from "../../../src/artifact/errors.js";
 import type { OrchestratorRecord, WorkerOutcome } from "../../../src/artifact/models.js";
+import type { TurnOutcome } from "../../../src/runner/service.js";
 import type { DaytonaAdapterShape } from "../../../src/daytona/daytona.adapter.js";
 import type {
   DaytonaSandboxNotFoundError,
@@ -348,8 +349,6 @@ export const makeSandboxScriptMock = (): SandboxScriptServiceShape => ({
 // that returns a canned outcome is enough. Cycle 3 uses the real runner against
 // the DaytonaSession mock; failure-mode cycles can swap to this stub when the
 // failure originates outside the runner.
-export const makeStubAgentRunner = (
-  outcome: import("../../../src/runner/service.js").TurnOutcome,
-): AgentRunnerShape => ({
+export const makeStubAgentRunner = (outcome: TurnOutcome): AgentRunnerShape => ({
   runTurn: () => Effect.succeed(outcome),
 });

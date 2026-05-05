@@ -529,7 +529,7 @@ const runOneImpl = (
               onFailure: (err) =>
                 Effect.succeed({
                   kind: "malformed" as const,
-                  reason: err._tag === "ArtifactDecodeError" ? err.details : err.reason,
+                  reason: artifactReadErrorReason(err),
                 }),
             }),
           );
@@ -696,11 +696,13 @@ const runOneImpl = (
       }),
     );
 
-const mapArtifactWriteError = (err: ArtifactPathError | ArtifactDecodeError): TranscriptWriteError =>
+const mapArtifactWriteError = (
+  err: ArtifactPathError | ArtifactDecodeError,
+): TranscriptWriteError =>
   new TranscriptWriteError({
     path: "outcome-record.json",
     operation: "write record",
-    reason: err._tag === "ArtifactDecodeError" ? err.details : err.reason,
+    reason: artifactReadErrorReason(err),
   });
 
 const makeRecord = (input: {
@@ -914,6 +916,18 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
       };
     }),
   );
+
+// Single-spot extractor for the "human-readable reason" inside an
+// ArtifactPathError vs ArtifactDecodeError. Lives outside the pipeline so the
+// no-manual-tag-check rule sees the discriminant in one place.
+const artifactReadErrorReason = (err: ArtifactPathError | ArtifactDecodeError): string => {
+  switch (err._tag) {
+    case "ArtifactDecodeError":
+      return err.details;
+    case "ArtifactPathError":
+      return err.reason;
+  }
+};
 
 // Map any FpService write into a uniform FpWriteFailedError so the runOne
 // effect channel stays inside OrchestratorError.
