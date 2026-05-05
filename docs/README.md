@@ -105,7 +105,12 @@ Docs rot when they describe code that changed. To mitigate:
 
 ### architecture/
 
-Architecture notes are added as apps and packages are built. This directory starts empty.
+| Doc                                                                                  | Topic                                                                         |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| [0001-symphony-deviations.md](architecture/0001-symphony-deviations.md)              | ADR: switchyard deviations from upstream symphony                             |
+| [daytona-streaming-session.md](architecture/daytona-streaming-session.md)            | Daytona streaming-session contract                                            |
+| [fp-boundary.md](architecture/fp-boundary.md)                                        | fp adapter + eligibility predicate contract                                   |
+| [runner-protocol.md](architecture/runner-protocol.md)                                | codex app-server JSON-RPC client contract: approval shapes, capabilities, transcript surface |
 
 ### proposals/
 

@@ -7,3 +7,7 @@ docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/eligibilit
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/errors.ts sig:b55a6fb6d3decb85
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/models.ts sig:e915a696c34306a0
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/symphony-properties.ts sig:eeb16ec80944614b
+docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/protocol/InitializeCapabilities.ts sig:0b1b1bec7250bd1e
+docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/service.ts sig:76abc128e5bf8abb
+docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/session.ts sig:90534e0e3988e2af
+docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/turn.ts sig:112813f003357936
