@@ -387,6 +387,106 @@ describe("DaytonaSession round-trip", () => {
     }
   }, 90_000);
 
+  test("scope exit deletes the session and leaves the sandbox reusable", async () => {
+    await ensureEchoLoopUploaded();
+
+    // Capture the sessionId of a stream so we can probe its post-scope state.
+    const firstSessionId = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, peerCommand);
+
+          const received: string[] = [];
+          yield* Effect.forkScoped(
+            stream.receive.pipe(
+              Stream.tap((chunk) =>
+                Effect.sync(() => {
+                  received.push(chunk);
+                }),
+              ),
+              Stream.runDrain,
+              Effect.ignore,
+            ),
+          );
+
+          // Wait for "ready" and send one probe to confirm session is alive.
+          const ready = yield* Effect.gen(function* () {
+            const deadline = Date.now() + 10_000;
+            while (!received.join("").includes("ready") && Date.now() < deadline) {
+              yield* Effect.sleep("100 millis");
+            }
+            return received.join("").includes("ready");
+          });
+          expect(ready).toBe(true);
+
+          yield* stream.send("scope-cleanup-probe\n");
+
+          const echoed = yield* Effect.gen(function* () {
+            const deadline = Date.now() + 5_000;
+            while (
+              !received.join("").includes("echo:scope-cleanup-probe") &&
+              Date.now() < deadline
+            ) {
+              yield* Effect.sleep("100 millis");
+            }
+            return received.join("").includes("echo:scope-cleanup-probe");
+          });
+          expect(echoed).toBe(true);
+
+          return stream.sessionId;
+        }),
+      ),
+    );
+
+    // Scope has exited — session finalizer should have called deleteSession.
+    // Verify via direct SDK lookup that the session is gone (404).
+    const sandbox = await new (
+      await import("@daytona/sdk")
+    ).Daytona({
+      apiKey: daytonaTestConfig.apiKey,
+      apiUrl: daytonaTestConfig.apiUrl,
+      target: daytonaTestConfig.target,
+      _experimental: { otelEnabled: false },
+    }).get(sharedHandle.id);
+
+    let notFoundObserved = false;
+    try {
+      await sandbox.process.getSessionCommand(firstSessionId, "any-command-id");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notFoundObserved =
+        message.toLowerCase().includes("not found") ||
+        (typeof error === "object" && error !== null && "statusCode" in error
+          ? (error as { statusCode: unknown }).statusCode === 404
+          : false);
+    }
+    expect(notFoundObserved).toBe(true);
+
+    // The sandbox is still reusable: a fresh session should start and round-trip.
+    const secondResult = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "echo reuse-ok");
+          const collected = yield* Stream.runCollect(stream.receive).pipe(
+            Effect.timeoutFail({
+              duration: "5 seconds",
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId: stream.sessionId,
+                  commandId: stream.commandId,
+                  reason: "reuse receive deadline",
+                }),
+            }),
+          );
+          return Chunk.toReadonlyArray(collected).join("");
+        }),
+      ),
+    );
+    expect(secondResult).toContain("reuse-ok");
+  }, 90_000);
+
   test("waitExit reports a non-zero exit code as data", async () => {
     const result = await runWithSession(
       Effect.scoped(
