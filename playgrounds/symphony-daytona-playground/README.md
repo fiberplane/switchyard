@@ -51,3 +51,17 @@ The auth probe isolates copied ChatGPT `auth.json`, inherited `OPENAI_API_KEY`, 
 `codex login --with-api-key` behavior in disposable `CODEX_HOME` directories inside one Daytona
 sandbox. It writes only redacted command results under `artifacts/`. Set
 `AUTH_PROBE_OPENAI_API_KEY` only when intentionally testing the real API-key path.
+
+The fixture-capture command spawns `codex app-server` **locally** (not in Daytona) and records
+real send/recv JSON-RPC frames as JSONL fixtures the runner-transport tests will replay (see
+`SWYRD-dhkyapwn`). It costs a real codex turn per variant; the prompts are minimal to keep usage
+small. By default it writes into `apps/symphony-orchestrator/test/runner/fixtures/`.
+
+```bash
+bun run --cwd playgrounds/symphony-daytona-playground capture:fixtures              # all variants
+bun run --cwd playgrounds/symphony-daytona-playground capture:fixtures happy-path
+bun run --cwd playgrounds/symphony-daytona-playground capture:fixtures approval-roundtrip
+```
+
+Override `FIXTURE_OUT_DIR` to write elsewhere (e.g. `artifacts/` while iterating). Override
+`CODEX_BIN` and `CODEX_AUTH_JSON` if codex is not on `$PATH` or auth lives outside `~/.codex`.

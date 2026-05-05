@@ -1,0 +1,23 @@
+{
+  "variant": "happy-path-turn",
+  "note": "trivial prompt; no tool calls expected",
+  "capturedAt": "2026-05-05T02:50:12.238Z",
+  "codexCliVersion": "codex-cli 0.128.0",
+  "prompt": "Respond with only the single word DONE and nothing else.",
+  "threadStartParams": {
+    "approvalPolicy": "never",
+    "sandbox": "danger-full-access",
+    "ephemeral": true
+  },
+  "turnStartExtras": {
+    "approvalPolicy": "never",
+    "sandboxPolicy": {
+      "type": "dangerFullAccess"
+    }
+  },
+  "totalFrames": 23,
+  "sendFrames": 3,
+  "recvFrames": 20,
+  "approvalRequestCount": 0,
+  "finalNotification": "turn/completed"
+}
