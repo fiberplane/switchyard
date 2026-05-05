@@ -16,7 +16,10 @@ import { FpService } from "../../../src/fp/service.js";
 import { IntegrationService } from "../../../src/integration/service.js";
 import { WorkerPromptService } from "../../../src/prompt/service.js";
 import { AgentRunner, AgentRunnerLive } from "../../../src/runner/service.js";
-import { SandboxScriptService } from "../../../src/sandbox-scripts/service.js";
+import {
+  SandboxScriptService,
+  type SandboxScriptServiceShape,
+} from "../../../src/sandbox-scripts/service.js";
 import {
   OrchestratorServiceLive,
   type OrchestratorServiceConfig,
@@ -45,6 +48,9 @@ export type WireOptions = {
   // Use the real AgentRunner (drives the protocol) by default, or override
   // when a stub is desired (failure-path cycles).
   readonly agentRunner?: Layer.Layer<AgentRunner>;
+  // Override the SandboxScriptService mock when a cycle needs to drive the
+  // empty-bundle (commitsBeyondBase=0) or finalize-failure path.
+  readonly sandboxScripts?: SandboxScriptServiceShape;
 };
 
 export const writeFakeCodexAuth = (): Effect.Effect<string, never, FileSystem.FileSystem> =>
@@ -71,7 +77,7 @@ export const wire = (options: WireOptions) => {
     Layer.succeed(IntegrationService, options.integration.shape),
     Layer.succeed(ArtifactStore, options.artifact.shape),
     Layer.succeed(WorkerPromptService, makePromptMock()),
-    Layer.succeed(SandboxScriptService, makeSandboxScriptMock()),
+    Layer.succeed(SandboxScriptService, options.sandboxScripts ?? makeSandboxScriptMock()),
     options.agentRunner ?? AgentRunnerLive,
   );
   const fullLayer = OrchestratorServiceLive(options.config).pipe(Layer.provide(layer));
