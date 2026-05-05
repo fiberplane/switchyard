@@ -1,4 +1,5 @@
 import type { DaytonaConfig } from "../../../src/daytona/models.js";
+import { repairRunnerSchedulingIfEnabled } from "./repair-runner-scheduling.js";
 
 export const daytonaTestConfig: DaytonaConfig = {
   apiUrl: "http://localhost:33000/api",
@@ -86,4 +87,5 @@ const waitForHealth = async (): Promise<void> => {
 export const ensureStackUp = async (): Promise<void> => {
   await runStackUp();
   await waitForHealth();
+  await repairRunnerSchedulingIfEnabled(daytonaTestConfig.target);
 };

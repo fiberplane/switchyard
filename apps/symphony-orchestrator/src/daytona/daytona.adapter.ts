@@ -1,10 +1,12 @@
 import { Daytona } from "@daytona/sdk";
 import { Context, Effect, Layer } from "effect";
 
-import { DaytonaSandboxOpError } from "./errors.js";
+import { DaytonaSandboxOpError, DaytonaSnapshotError } from "./errors.js";
 import type { DaytonaConfig } from "./models.js";
 
-export type DaytonaAdapterShape = Record<string, never>;
+export type DaytonaAdapterShape = {
+  readonly assertSnapshot: (name: string) => Effect.Effect<void, DaytonaSnapshotError>;
+};
 
 export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
   DaytonaAdapter,
@@ -44,6 +46,34 @@ const probeDaytonaClient = (client: Daytona): Effect.Effect<void, DaytonaSandbox
       }),
   }).pipe(Effect.asVoid);
 
+const assertSnapshot = (
+  client: Daytona,
+  name: string,
+): Effect.Effect<void, DaytonaSnapshotError> =>
+  Effect.tryPromise({
+    try: () => client.snapshot.get(name),
+    catch: (error) =>
+      new DaytonaSnapshotError({
+        snapshotName: name,
+        reason: describeUnknown(error),
+      }),
+  }).pipe(
+    Effect.flatMap((snapshot) => {
+      if (snapshot.state === "active") {
+        return Effect.void;
+      }
+
+      return Effect.fail(
+        new DaytonaSnapshotError({
+          snapshotName: name,
+          state: String(snapshot.state),
+          reason: "expected active snapshot",
+        }),
+      );
+    }),
+    Effect.withSpan("DaytonaAdapter.assertSnapshot"),
+  );
+
 export const DaytonaAdapterLive = (
   config: DaytonaConfig,
   options: DaytonaAdapterOptions = {},
@@ -57,6 +87,8 @@ export const DaytonaAdapterLive = (
         yield* probeDaytonaClient(client);
       }
 
-      return {};
+      return {
+        assertSnapshot: (name) => assertSnapshot(client, name),
+      };
     }),
   );

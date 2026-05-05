@@ -6,6 +6,7 @@ import { Effect, Either } from "effect";
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaConfigError } from "../../src/daytona/errors.js";
 import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
+import { ensureTestSnapshot } from "./test-helpers/snapshot.js";
 import { daytonaTestConfig, ensureStackUp } from "./test-helpers/stack.js";
 
 describe("DaytonaConfig", () => {
@@ -50,6 +51,14 @@ describe("DaytonaConfig", () => {
 });
 
 describe("DaytonaAdapter", () => {
+  const runWithAdapter = <A, E>(effect: Effect.Effect<A, E, DaytonaAdapter>) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provide(DaytonaAdapterLive(daytonaTestConfig)),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+
   test("constructs a client against the test stack", async () => {
     await ensureStackUp();
 
@@ -68,4 +77,18 @@ describe("DaytonaAdapter", () => {
       ),
     ).resolves.toBeUndefined();
   }, 180_000);
+
+  test("assertSnapshot succeeds for the active test snapshot", async () => {
+    await ensureStackUp();
+    await ensureTestSnapshot();
+
+    await expect(
+      runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* DaytonaAdapter;
+          return yield* adapter.assertSnapshot("symphony-test-base");
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  }, 300_000);
 });
