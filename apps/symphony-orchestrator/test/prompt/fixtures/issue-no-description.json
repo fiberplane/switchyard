@@ -1,0 +1,19 @@
+{
+  "id": "def456def456def456def456def456de",
+  "displayId": "SWYRD-def456",
+  "title": "Issue with no body",
+  "description": null,
+  "status": "todo",
+  "priority": null,
+  "parent": null,
+  "dependencies": [],
+  "revisions": [],
+  "author": "test-fixture",
+  "createdAt": "2026-05-05T10:00:00.000Z",
+  "updatedAt": "2026-05-05T10:00:00.000Z",
+  "properties": {
+    "symphony_ready": "true",
+    "symphony_state": "idle"
+  },
+  "comments": []
+}

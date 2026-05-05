@@ -1,0 +1,19 @@
+{
+  "id": "abc123abc123abc123abc123abc123ab",
+  "displayId": "SWYRD-abc123",
+  "title": "Add foo helper to message module",
+  "description": "Implement the foo helper. The helper should take a string and return its uppercased form. Add a test that exercises the empty-string case.",
+  "status": "todo",
+  "priority": "medium",
+  "parent": null,
+  "dependencies": [],
+  "revisions": [],
+  "author": "test-fixture",
+  "createdAt": "2026-05-05T10:00:00.000Z",
+  "updatedAt": "2026-05-05T10:00:00.000Z",
+  "properties": {
+    "symphony_ready": "true",
+    "symphony_state": "idle"
+  },
+  "comments": []
+}
