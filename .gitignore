@@ -1,6 +1,9 @@
 # Fiberplane local issue tracking
 .fp/
 
+# symphony artifacts
+.symphony/
+
 # Cloned upstream repos for agent reference
 references/
 
