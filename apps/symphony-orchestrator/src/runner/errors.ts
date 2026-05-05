@@ -106,3 +106,11 @@ export class RunnerTurnInputRequiredError extends Data.TaggedError("RunnerTurnIn
     return `Runner turn requested user input: ${JSON.stringify(this.prompt)}`;
   }
 }
+
+export class LocalCodexUnavailableError extends Data.TaggedError("LocalCodexUnavailableError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Local codex unavailable: ${this.reason}`;
+  }
+}
