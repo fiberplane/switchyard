@@ -472,8 +472,17 @@ The orchestrator assumes a reusable Daytona snapshot named `symphony-codex-bun` 
 - `codex`
 - enough system packages to run the target repo's checks
 
-Codex authentication is the main operational kink. The clean path is to inject the minimum
-required runtime secret through Daytona env vars, not to copy the host's whole Codex home directory.
+Codex authentication is the main operational kink. **For the v1 demo,** the orchestrator reuses
+the host operator's existing Codex login: `~/.codex/auth.json` is uploaded into the sandbox at
+`/workspace/codex-home/auth.json` and the sandbox is created with `envVars: { CODEX_HOME:
+"/workspace/codex-home" }`. The sandbox MUST NOT receive `OPENAI_API_KEY` or
+`SANDBOX_OPENAI_API_KEY` — either one masks the copied ChatGPT subscription auth (see Smoke
+Evidence at lines 141-144). This file-copy approach is acceptable only for trusted local-demo
+runs because `auth.json` carries reusable account auth material.
+
+Productionizing codex auth — a discriminated `apiKey` (env-var injection) vs. `fileCopy`
+(this v1 path) `WorkflowConfig.codex.auth` shape, plus full testing of scoped `OPENAI_API_KEY`
+injection — is deferred to the post-demo follow-up epic (`SWYRD-uouprnfv`).
 
 ### Source Handoff
 
@@ -523,9 +532,14 @@ The orchestrator drives the protocol:
 1. **Initialize** the app-server session per the targeted protocol version.
 2. **Create or resume a thread** with `cwd = /workspace/repo`.
 3. **Start the first turn** with the rendered worker prompt (see **Worker Prompt Contract**).
-4. **Stream protocol events** to the orchestrator. Persist every event to
-   `.symphony/runs/<issue-id>/<attempt>/transcript.jsonl` on the host as it arrives. The protocol
-   stream **is** the conversation transcript — no separate logging needed.
+4. **Stream protocol events** to the orchestrator. Persist events to
+   `.symphony/runs/<issue-id>/<attempt>/transcript.jsonl` on the host. The protocol stream **is**
+   the conversation transcript — no separate logging needed. **v1 implementation note:** the
+   landed runner returns events as a buffered `TurnOutcome.events` array on `runTurn` completion,
+   so the orchestrator writes the full transcript after the turn ends rather than line-by-line as
+   events arrive. The trade-off is that protocol-stream failures mid-turn produce an empty rather
+   than partial transcript. Reshaping the runner to expose a live `Stream<RunnerNotification>` is
+   tracked under `SWYRD-aaytmsfz` (epic `SWYRD-uouprnfv`).
 5. **Watch for the turn-completion event.** On `turn_completed`, the orchestrator transitions to
    artifact collection. On `turn_failed`, `turn_cancelled`, `turn_ended_with_error`, or
    `turn_input_required`, the orchestrator records the failure reason and proceeds to the
@@ -725,10 +739,23 @@ apps/symphony-orchestrator/
       models.ts              # WorkerOutcome, OrchestratorRecord schemas
       store.ts               # `.symphony/runs/<issue>/<attempt>/` layout
       errors.ts
+    prompt/                  # worker prompt rendering; sibling to workflow/
+      models.ts
+      template.ts
+      service.ts
+      errors.ts
+    sandbox-scripts/         # in-sandbox shell ops (setupRepo, finalizeBundle)
+      models.ts              # canonical sandbox paths + script options
+      setup.ts
+      finalize.ts
+      shell-quote.ts
+      service.ts
+      errors.ts
     orchestrator/
       service.ts
       state.ts               # in-memory running set, claim management
       selector.ts
+      transcript.ts          # JSONL writer; consumes runner outcome.events post-completion
       errors.ts
 ```
 
