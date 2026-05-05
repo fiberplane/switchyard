@@ -4,7 +4,11 @@ import { NodeContext } from "@effect/platform-node";
 import { Effect, Either } from "effect";
 
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
-import { DaytonaConfigError, DaytonaSnapshotError } from "../../src/daytona/errors.js";
+import {
+  DaytonaConfigError,
+  DaytonaSandboxNotFoundError,
+  DaytonaSnapshotError,
+} from "../../src/daytona/errors.js";
 import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
 import { buildTestSandboxSpec } from "./test-helpers/sandbox-spec.js";
 import { ensureInactiveTestSnapshot, ensureTestSnapshot } from "./test-helpers/snapshot.js";
@@ -166,5 +170,33 @@ describe("DaytonaAdapter", () => {
     expect(handle.name).toBe(spec.name);
     expect(handle.labels).toEqual(spec.labels);
     expect(handle.envVars).toEqual(spec.envVars);
+  }, 300_000);
+
+  test("deleteSandbox is idempotent and command execution maps the deleted handle to not found", async () => {
+    const spec = buildTestSandboxSpec({
+      testRunId,
+      labels: {
+        purpose: "delete",
+      },
+    });
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        const handle = yield* adapter.createSandbox(spec);
+        yield* adapter.deleteSandbox(handle);
+        yield* adapter.deleteSandbox(handle);
+        return yield* Effect.either(adapter.executeCommand(handle, "echo deleted"));
+      }),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSandboxNotFoundError);
+      if (result.left instanceof DaytonaSandboxNotFoundError) {
+        expect(result.left.sandboxId.length).toBeGreaterThan(0);
+        expect(result.left.operation).toBe("executeCommand");
+      }
+    }
   }, 300_000);
 });

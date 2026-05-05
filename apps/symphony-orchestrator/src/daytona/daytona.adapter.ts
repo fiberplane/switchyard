@@ -1,18 +1,33 @@
-import { Daytona } from "@daytona/sdk";
+import { Daytona, DaytonaNotFoundError, type Sandbox } from "@daytona/sdk";
 import { Context, Effect, Layer } from "effect";
 
 import {
   DaytonaSandboxCreateError,
+  DaytonaSandboxNotFoundError,
   DaytonaSandboxOpError,
   DaytonaSnapshotError,
 } from "./errors.js";
-import type { DaytonaConfig, DaytonaSandboxSpec, SandboxHandle } from "./models.js";
+import type {
+  DaytonaCommandOptions,
+  DaytonaCommandResult,
+  DaytonaConfig,
+  DaytonaSandboxSpec,
+  SandboxHandle,
+} from "./models.js";
 
 export type DaytonaAdapterShape = {
   readonly assertSnapshot: (name: string) => Effect.Effect<void, DaytonaSnapshotError>;
   readonly createSandbox: (
     spec: DaytonaSandboxSpec,
   ) => Effect.Effect<SandboxHandle, DaytonaSandboxCreateError>;
+  readonly deleteSandbox: (
+    handle: SandboxHandle,
+  ) => Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
+  readonly executeCommand: (
+    handle: SandboxHandle,
+    command: string,
+    options?: DaytonaCommandOptions,
+  ) => Effect.Effect<DaytonaCommandResult, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
 };
 
 export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
@@ -30,6 +45,24 @@ const describeUnknown = (error: unknown): string => {
   }
   return String(error);
 };
+
+const isDaytonaNotFound = (error: unknown): boolean => {
+  if (error instanceof DaytonaNotFoundError) {
+    return true;
+  }
+  if (typeof error === "object" && error !== null && "statusCode" in error) {
+    return error.statusCode === 404;
+  }
+  return error instanceof Error && error.message.toLowerCase().includes("not found");
+};
+
+const isStateChangeInProgress = (error: unknown): boolean =>
+  error instanceof Error && error.message.toLowerCase().includes("state change in progress");
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const createDaytonaClient = (config: DaytonaConfig): Daytona =>
   new Daytona({
@@ -113,6 +146,174 @@ const createSandbox = (
       }),
   }).pipe(Effect.withSpan("DaytonaAdapter.createSandbox"));
 
+const getSandbox = (
+  client: Daytona,
+  sandboxId: string,
+  operation: string,
+): Effect.Effect<Sandbox, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  Effect.tryPromise({
+    try: () => client.get(sandboxId),
+    catch: (error) => {
+      if (isDaytonaNotFound(error)) {
+        return new DaytonaSandboxNotFoundError({
+          sandboxId,
+          operation,
+          reason: describeUnknown(error),
+        });
+      }
+
+      return new DaytonaSandboxOpError({
+        operation,
+        sandboxId,
+        reason: describeUnknown(error),
+      });
+    },
+  }).pipe(
+    Effect.flatMap((sandbox) => {
+      if (sandbox.state === "destroyed") {
+        return Effect.fail(
+          new DaytonaSandboxNotFoundError({
+            sandboxId,
+            operation,
+            reason: "sandbox is destroyed",
+          }),
+        );
+      }
+
+      return Effect.succeed(sandbox);
+    }),
+  );
+
+const deleteSandbox = (
+  client: Daytona,
+  handle: SandboxHandle,
+): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  getSandbox(client, handle.id, "deleteSandbox").pipe(
+    Effect.flatMap((sandbox) =>
+      Effect.tryPromise({
+        try: () => sandbox.delete(120),
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSandboxNotFoundError({
+              sandboxId: handle.id,
+              operation: "deleteSandbox",
+              reason: describeUnknown(error),
+            });
+          }
+
+          return new DaytonaSandboxOpError({
+            operation: "deleteSandbox",
+            sandboxId: handle.id,
+            reason: describeUnknown(error),
+          });
+        },
+      }).pipe(
+        Effect.catchAll((error) => {
+          if (error instanceof DaytonaSandboxNotFoundError || isStateChangeInProgress(error)) {
+            return Effect.void;
+          }
+
+          return Effect.fail(error);
+        }),
+      ),
+    ),
+    Effect.catchTag("DaytonaSandboxNotFoundError", () => Effect.void),
+    Effect.zipRight(waitForSandboxDeleted(client, handle.id)),
+    Effect.withSpan("DaytonaAdapter.deleteSandbox"),
+  );
+
+const waitForSandboxDeleted = (
+  client: Daytona,
+  sandboxId: string,
+): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const deadline = Date.now() + 120_000;
+
+      while (Date.now() < deadline) {
+        try {
+          const sandbox = await client.get(sandboxId);
+          if (sandbox.state === "destroyed") {
+            return;
+          }
+        } catch (error) {
+          if (isDaytonaNotFound(error)) {
+            return;
+          }
+          throw error;
+        }
+
+        await sleep(500);
+      }
+
+      throw new DaytonaSandboxOpError({
+        operation: "deleteSandbox",
+        sandboxId,
+        reason: "sandbox did not reach destroyed state within 120000ms",
+      });
+    },
+    catch: (error) => {
+      if (error instanceof DaytonaSandboxOpError) {
+        return error;
+      }
+      if (isDaytonaNotFound(error)) {
+        return new DaytonaSandboxNotFoundError({
+          sandboxId,
+          operation: "deleteSandbox",
+          reason: describeUnknown(error),
+        });
+      }
+
+      return new DaytonaSandboxOpError({
+        operation: "deleteSandbox",
+        sandboxId,
+        reason: describeUnknown(error),
+      });
+    },
+  });
+
+const executeCommand = (
+  client: Daytona,
+  handle: SandboxHandle,
+  command: string,
+  options: DaytonaCommandOptions = {},
+): Effect.Effect<DaytonaCommandResult, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  getSandbox(client, handle.id, "executeCommand").pipe(
+    Effect.flatMap((sandbox) =>
+      Effect.tryPromise({
+        try: async () => {
+          const result = await sandbox.process.executeCommand(
+            command,
+            options.cwd,
+            options.env,
+            options.timeoutSec,
+          );
+          return {
+            exitCode: result.exitCode,
+            stdout: result.result,
+            stderr: "",
+          };
+        },
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSandboxNotFoundError({
+              sandboxId: handle.id,
+              operation: "executeCommand",
+              reason: describeUnknown(error),
+            });
+          }
+
+          return new DaytonaSandboxOpError({
+            operation: "executeCommand",
+            sandboxId: handle.id,
+            reason: describeUnknown(error),
+          });
+        },
+      }),
+    ),
+    Effect.withSpan("DaytonaAdapter.executeCommand"),
+  );
+
 export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapterOptions = {}) =>
   Layer.effect(
     DaytonaAdapter,
@@ -126,6 +327,9 @@ export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapte
       return {
         assertSnapshot: (name) => assertSnapshot(client, name),
         createSandbox: (spec) => createSandbox(client, spec),
+        deleteSandbox: (handle) => deleteSandbox(client, handle),
+        executeCommand: (handle, command, options) =>
+          executeCommand(client, handle, command, options),
       };
     }),
   );
