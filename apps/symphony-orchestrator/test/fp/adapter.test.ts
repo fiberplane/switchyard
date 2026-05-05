@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { NodeContext } from "@effect/platform-node";
-import { Effect, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 
 import { FpAdapter, FpAdapterLive } from "../../src/fp/adapter.js";
 import { FpBinaryLive } from "../../src/fp/binary.js";
-import { FpIssueDetailSchema, FpIssueListSchema } from "../../src/fp/models.js";
+import { FpCommandError, FpDecodeError } from "../../src/fp/errors.js";
+import {
+  decodeFpIssueListJson,
+  FpIssueDetailSchema,
+  FpIssueListSchema,
+} from "../../src/fp/models.js";
 import {
   type FpTestProject,
   runFpSuccess,
@@ -79,6 +84,24 @@ describe("FpIssueListSchema", () => {
     expect(decoded.displayId).toBe("SWY-lutdubtu");
     expect(decoded.properties.symphony_state).toBe("idle");
   });
+
+  test("maps malformed issue list JSON to FpDecodeError", async () => {
+    const path = fixturePath("issue-list.malformed-status.json");
+    const result = await Effect.runPromise(
+      Effect.either(decodeFpIssueListJson(await Bun.file(path).text(), path)),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(FpDecodeError);
+      if (result.left instanceof FpDecodeError) {
+        expect(result.left.path).toBe(path);
+        expect(result.left.details).toContain('["issues"]');
+        expect(result.left.details).toContain("[0]");
+        expect(result.left.details).toContain('["status"]');
+      }
+    }
+  });
 });
 
 describe("FpAdapter", () => {
@@ -146,5 +169,23 @@ describe("FpAdapter", () => {
         }),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  test("maps non-zero writes to FpCommandError with stderr and exit code", async () => {
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* FpAdapter;
+        return yield* Effect.either(adapter.setStatus("SWY-missingx", "done"));
+      }),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(FpCommandError);
+      if (result.left instanceof FpCommandError) {
+        expect(result.left.exitCode).not.toBe(0);
+        expect(result.left.stderr.length).toBeGreaterThan(0);
+      }
+    }
   });
 });
