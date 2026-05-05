@@ -12,3 +12,13 @@ export class FpBinaryNotFoundError extends Data.TaggedError("FpBinaryNotFoundErr
     ].join("\n");
   }
 }
+
+export class FpCommandError extends Data.TaggedError("FpCommandError")<{
+  readonly command: readonly string[];
+  readonly stderr: string;
+  readonly exitCode: number;
+}> {
+  get message(): string {
+    return `fp command failed: ${this.command.join(" ")} (exit code ${this.exitCode})\n${this.stderr}`;
+  }
+}
