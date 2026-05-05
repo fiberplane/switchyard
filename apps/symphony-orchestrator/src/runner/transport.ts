@@ -1,6 +1,6 @@
 import { Effect, ParseResult, Schema, Stream } from "effect";
 
-import { ProtocolFramingError } from "./errors.js";
+import { PARSE_ERROR_LINE_TRUNCATION, ProtocolFramingError, ProtocolParseError } from "./errors.js";
 
 const NEWLINE = "\n";
 
@@ -38,7 +38,18 @@ export const frameMessages = <E>(
 
 const decodeJsonUnknown = Schema.decodeUnknown(Schema.parseJson(Schema.Unknown));
 
+const parseLine = (line: string): Effect.Effect<unknown, ProtocolParseError> =>
+  decodeJsonUnknown(line).pipe(
+    Effect.catchTag("ParseError", (parseError) =>
+      Effect.fail(
+        new ProtocolParseError({
+          reason: ParseResult.TreeFormatter.formatErrorSync(parseError),
+          line: line.slice(0, PARSE_ERROR_LINE_TRUNCATION),
+        }),
+      ),
+    ),
+  );
+
 export const parseFrames = <E>(
   lines: Stream.Stream<string, E>,
-): Stream.Stream<unknown, E | ParseResult.ParseError> =>
-  lines.pipe(Stream.mapEffect((line) => decodeJsonUnknown(line)));
+): Stream.Stream<unknown, E | ProtocolParseError> => lines.pipe(Stream.mapEffect(parseLine));
