@@ -552,15 +552,13 @@ worker turn ends):
 
 ```bash
 cd /workspace/repo
-# Empty-commit-range case: if the worker made no commits, symphony-base..HEAD is empty.
-# git bundle would refuse with "Refusing to create empty bundle" — bundle from the tag instead
-# so we always have a valid file to download. The orchestrator detects "no worker commits" by
-# inspecting the bundle on the host (no refs beyond symphony-base = no work).
-if [ -n "$(git log symphony-base..HEAD --oneline 2>/dev/null)" ]; then
-  git bundle create /tmp/.symphony/work.bundle symphony-base..HEAD
-else
-  git bundle create /tmp/.symphony/work.bundle symphony-base
-fi
+# Bundle is always self-contained (per ADR D7): the host doesn't necessarily share
+# `symphony-base`, so the orchestrator integrates via `git fetch --no-tags
+# <bundle> +HEAD:refs/symphony/<id>` rather than a delta fetch. The empty-commit
+# case is naturally handled by the single-commit-history invariant from ADR D6 —
+# `git bundle create … HEAD` against a sandbox containing only `symphony-base`
+# produces a valid 1-commit bundle, no fallback branch needed.
+git bundle create /tmp/.symphony/work.bundle HEAD
 # outcome.json is written by the worker during the turn (see Worker Prompt Contract)
 ls /tmp/.symphony/outcome.json
 ```
@@ -570,7 +568,7 @@ The orchestrator downloads:
 | Artifact           | Producer                                          | Required for `completed`?                |
 | ------------------ | ------------------------------------------------- | ---------------------------------------- |
 | `transcript.jsonl` | Orchestrator (live, while streaming)              | Always present (may be partial on crash) |
-| `work.bundle`      | Sandbox (`git bundle create symphony-base..HEAD`) | Yes                                      |
+| `work.bundle`      | Sandbox (`git bundle create HEAD`)                | Yes                                      |
 | `outcome.json`     | Worker (during the turn, before `turn_completed`) | Yes                                      |
 
 The worker outcome envelope is the only side-channel artifact the worker is required to write. Its
