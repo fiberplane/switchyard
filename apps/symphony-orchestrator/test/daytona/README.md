@@ -113,3 +113,19 @@ SWITCHYARD_DAYTONA_REPAIR_RUNNER=1 bun test --cwd apps/symphony-orchestrator tes
 
 Use it if a fresh local stack reports `No available runners`. The test compose lowers scheduling
 thresholds for normal runs, so this should only be needed for stale runner rows.
+
+## Runtimes (known: this suite is slow)
+
+These tests are **deliberately end-to-end against a real Daytona sandbox**, not mocks. Every test
+that exercises `executeCommand` / `uploadFiles` / `downloadFiles` creates and tears down its own
+sandbox. Sandbox creation alone takes ~15–25s (SDK roundtrip → runner job → container boot →
+snapshot mount), so a 14-test file like `adapter.test.ts` runs for ~5 minutes wall time even on
+a warm stack.
+
+Bun runs _files_ in parallel, so the **total suite** is bounded by the slowest file, not the sum.
+But within one file the per-test sandbox cost compounds linearly — that's the property of the
+test pattern, not a tooling overhead.
+
+If this becomes a daily-dev bottleneck, see SWYRD-qeuxjthv for tracked mitigation options
+(snapshot reuse, intra-file parallelism, slow-test tagging). None implemented today; the slowness
+is a feature of testing against a real sandbox boundary rather than a bug.
