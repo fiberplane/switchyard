@@ -11,6 +11,9 @@
     "test": "bun test",
     "test:daytona:up": "test/daytona/compose.sh up -d",
     "test:daytona:down": "test/daytona/compose.sh down -v",
+    "daytona:up": "daytona/compose.sh up -d",
+    "daytona:down": "daytona/compose.sh down -v",
+    "snapshot:build": "bun run snapshot/build.ts",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
