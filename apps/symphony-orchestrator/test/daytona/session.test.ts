@@ -273,6 +273,36 @@ describe("DaytonaSession round-trip", () => {
     }
   }, 90_000);
 
+  test("receive stream completes cleanly after a clean exit", async () => {
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "echo done; sleep 0.2");
+          const collected = yield* Stream.runCollect(stream.receive).pipe(
+            Effect.timeoutFail({
+              duration: "10 seconds",
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId: stream.sessionId,
+                  commandId: stream.commandId,
+                  reason: "receive did not complete cleanly within 10s",
+                }),
+            }),
+          );
+          const exit = yield* stream.waitExit;
+          return {
+            chunks: Chunk.toReadonlyArray(collected).join(""),
+            exitCode: exit.exitCode,
+          };
+        }),
+      ),
+    );
+
+    expect(result.chunks).toContain("done");
+    expect(result.exitCode).toBe(0);
+  }, 60_000);
+
   test("waitExit resolves with exitCode 0 for a clean exit", async () => {
     const result = await runWithSession(
       Effect.scoped(
