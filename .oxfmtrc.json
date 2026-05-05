@@ -29,6 +29,9 @@
     "references/",
     "dist/",
     "node_modules/",
-    "apps/symphony-orchestrator/src/runner/protocol/"
+    "apps/symphony-orchestrator/src/runner/protocol/",
+    "**/*.md",
+    "WORKFLOW.md",
+    "WORKFLOW.example.md"
   ]
 }
