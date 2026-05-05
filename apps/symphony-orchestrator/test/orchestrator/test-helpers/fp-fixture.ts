@@ -8,7 +8,11 @@
 
 import { Schema } from "effect";
 
-import { setupFpProject, runFpSuccess, type FpTestProject } from "../../fp/test-helpers/setup-fp-project.js";
+import {
+  setupFpProject,
+  runFpSuccess,
+  type FpTestProject,
+} from "../../fp/test-helpers/setup-fp-project.js";
 
 const FpCreatedIssueSchema = Schema.Struct({
   id: Schema.String,
@@ -70,9 +74,7 @@ export const createSymphonyFpFixture = async (
 // Deliberately does NOT touch symphony_attempt: the orchestrator reads the
 // prior attempt and increments, and 13d's whole point is that the second
 // dispatch lands on attempt=2. Resetting attempt would mask that contract.
-export const rearmFpIssue = async (
-  fixture: SymphonyFpFixture,
-): Promise<void> => {
+export const rearmFpIssue = async (fixture: SymphonyFpFixture): Promise<void> => {
   await runFpSuccess(fixture.project, [
     "issue",
     "update",

@@ -14,16 +14,16 @@ import { DaytonaAdapter } from "../../../src/daytona/daytona.adapter.js";
 import { DaytonaSession } from "../../../src/daytona/daytona.session.js";
 import { FpService } from "../../../src/fp/service.js";
 import { IntegrationService } from "../../../src/integration/service.js";
+import {
+  OrchestratorServiceLive,
+  type OrchestratorServiceConfig,
+} from "../../../src/orchestrator/service.js";
 import { WorkerPromptService } from "../../../src/prompt/service.js";
 import { AgentRunner, AgentRunnerLive } from "../../../src/runner/service.js";
 import {
   SandboxScriptService,
   type SandboxScriptServiceShape,
 } from "../../../src/sandbox-scripts/service.js";
-import {
-  OrchestratorServiceLive,
-  type OrchestratorServiceConfig,
-} from "../../../src/orchestrator/service.js";
 import {
   makeArtifactStoreMock,
   makeDaytonaAdapterMock,
@@ -61,10 +61,7 @@ export const writeFakeCodexAuth = (): Effect.Effect<string, never, FileSystem.Fi
       .pipe(Effect.orDie);
     const path = join(dir, "auth.json");
     yield* fs
-      .writeFileString(
-        path,
-        JSON.stringify({ access_token: "fixture", refresh_token: "fixture" }),
-      )
+      .writeFileString(path, JSON.stringify({ access_token: "fixture", refresh_token: "fixture" }))
       .pipe(Effect.orDie);
     return path;
   });
@@ -84,9 +81,4 @@ export const wire = (options: WireOptions) => {
   return Layer.merge(fullLayer, NodeFileSystem.layer);
 };
 
-export {
-  makeArtifactStoreMock,
-  makeDaytonaAdapterMock,
-  makeFpMock,
-  makeIntegrationMock,
-};
+export { makeArtifactStoreMock, makeDaytonaAdapterMock, makeFpMock, makeIntegrationMock };

@@ -5,16 +5,18 @@
 // the runner can swap in a stub AgentRunner via wire().
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
+import { Layer } from "effect";
 
+import { ArtifactDecodeError } from "../../src/artifact/errors.js";
 import {
   OrchestratorService,
   type OrchestratorServiceConfig,
 } from "../../src/orchestrator/service.js";
+import { AgentRunner } from "../../src/runner/service.js";
 import { fixtureEligible } from "./test-helpers/fixture-issue.js";
-import { ArtifactDecodeError } from "../../src/artifact/errors.js";
-import { Layer } from "effect";
 import {
   makeArtifactStoreMock,
   makeDaytonaAdapterMock,
@@ -23,7 +25,6 @@ import {
   makeIntegrationMock,
   makeStubAgentRunner,
 } from "./test-helpers/mocks.js";
-import { AgentRunner } from "../../src/runner/service.js";
 import { wire, writeFakeCodexAuth } from "./test-helpers/wire.js";
 
 const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
@@ -116,11 +117,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(
-        Effect.provide(
-          wire({ fp, daytona, session, integration, artifact, config }),
-        ),
-      ),
+      program.pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
     );
 
     expect(result.status).toBe("integrated");
@@ -140,9 +137,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     ]);
 
     // Cycle 8: three-comment cadence — verify the strings.
-    const comments = fp.calls.flatMap((call) =>
-      call.kind === "addComment" ? [call.body] : [],
-    );
+    const comments = fp.calls.flatMap((call) => (call.kind === "addComment" ? [call.body] : []));
     expect(comments[0]).toMatch(/^Dispatched to sandbox `/);
     expect(comments[1]).toBe("Worker turn completed; integrating");
     const completed = fp.calls.find((call) => call.kind === "markCompleted");
@@ -257,11 +252,7 @@ describe("OrchestratorService.runOne — cycle 5 malformed outcome (F10)", () =>
       Effect.gen(function* () {
         const orch = yield* OrchestratorService;
         return yield* orch.runOne(issue);
-      }).pipe(
-        Effect.provide(
-          wire({ fp, daytona, session, integration, artifact, config }),
-        ),
-      ),
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
     );
 
     expect(result.status).toBe("needs-attention");
@@ -297,9 +288,7 @@ describe("OrchestratorService.runOne — cycle 6 worker non-completed (F12)", ()
       Effect.gen(function* () {
         const orch = yield* OrchestratorService;
         return yield* orch.runOne(issue);
-      }).pipe(
-        Effect.provide(wire({ fp, daytona, session, integration, artifact, config })),
-      ),
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
     );
 
     expect(result.status).toBe("needs-attention");
@@ -334,9 +323,7 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
       }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
     );
 
-    expect(tick.dispatched).toEqual([
-      { issueId: "tick", displayId: "SWY-tick", attempt: 1 },
-    ]);
+    expect(tick.dispatched).toEqual([{ issueId: "tick", displayId: "SWY-tick", attempt: 1 }]);
     expect(tick.skipped).toEqual([]);
     // Confirm the issue actually went through runOne (markCompleted fired).
     expect(fp.calls.some((c) => c.kind === "markCompleted")).toBe(true);
@@ -411,9 +398,7 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
         return yield* orch.runOneTick;
       }).pipe(Effect.provide(layer)),
     );
-    expect(tick1.dispatched).toEqual([
-      { issueId: "first", displayId: "SWY-first", attempt: 1 },
-    ]);
+    expect(tick1.dispatched).toEqual([{ issueId: "first", displayId: "SWY-first", attempt: 1 }]);
 
     const tick2 = await Effect.runPromise(
       Effect.gen(function* () {
@@ -421,9 +406,7 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
         return yield* orch.runOneTick;
       }).pipe(Effect.provide(layer)),
     );
-    expect(tick2.dispatched).toEqual([
-      { issueId: "second", displayId: "SWY-second", attempt: 1 },
-    ]);
+    expect(tick2.dispatched).toEqual([{ issueId: "second", displayId: "SWY-second", attempt: 1 }]);
   });
 });
 
@@ -566,7 +549,11 @@ describe("OrchestratorService.stop", () => {
         yield* orch.stop;
         // The fiber should be interrupted; await to drain.
         yield* Effect.fiberId.pipe(Effect.zipRight(Effect.exit(Effect.suspend(() => fiber.await))));
-      }).pipe(Effect.provide(wire({ fp, daytona, session: stallingSession, integration, artifact, config }))),
+      }).pipe(
+        Effect.provide(
+          wire({ fp, daytona, session: stallingSession, integration, artifact, config }),
+        ),
+      ),
     );
 
     // Stop should have written markNeedsAttention with the locked string.

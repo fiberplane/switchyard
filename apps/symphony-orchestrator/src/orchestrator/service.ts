@@ -5,13 +5,12 @@
 
 import { dirname } from "node:path";
 
+import { Error as PlatformError, FileSystem } from "@effect/platform";
 import { Context, Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
 
-import { Error as PlatformError, FileSystem } from "@effect/platform";
-
-import { ArtifactStore } from "../artifact/store.js";
 import type { ArtifactDecodeError, ArtifactPathError } from "../artifact/errors.js";
 import type { OrchestratorRecord } from "../artifact/models.js";
+import { ArtifactStore } from "../artifact/store.js";
 import { DaytonaAdapter } from "../daytona/daytona.adapter.js";
 import {
   DaytonaSession,
@@ -26,19 +25,19 @@ import type { DaytonaSandboxSpec, SandboxHandle } from "../daytona/models.js";
 import type { EligibleIssue } from "../fp/eligibility.js";
 import { FpService } from "../fp/service.js";
 import type { WriteError } from "../fp/service.js";
-import { IntegrationService } from "../integration/service.js";
 import type { IntegrationResult } from "../integration/models.js";
+import { IntegrationService } from "../integration/service.js";
 import { WorkerPromptService } from "../prompt/service.js";
 import { ProtocolRecvError, ProtocolSendError } from "../runner/errors.js";
 import { AgentRunner, type RunnerError, type TurnOutcome } from "../runner/service.js";
 import type { ProtocolStream } from "../runner/transport.js";
-import { SandboxScriptService } from "../sandbox-scripts/service.js";
 import {
   SANDBOX_ARCHIVE_PATH,
   SANDBOX_BUNDLE_PATH,
   SANDBOX_REPO_PATH,
   SANDBOX_SYMPHONY_DIR,
 } from "../sandbox-scripts/models.js";
+import { SandboxScriptService } from "../sandbox-scripts/service.js";
 import {
   DispatchError,
   FpWriteFailedError,
@@ -152,9 +151,8 @@ const bridgeProtocolStream = (daytona: DaytonaProtocolStream): ProtocolStream =>
         .send(decoder.decode(bytes))
         .pipe(
           Effect.mapError(
-            (
-              err: DaytonaSessionInputError | DaytonaSessionNotFoundError,
-            ) => new ProtocolSendError({ reason: err.reason }),
+            (err: DaytonaSessionInputError | DaytonaSessionNotFoundError) =>
+              new ProtocolSendError({ reason: err.reason }),
           ),
         ),
     receive: daytona.receive.pipe(
@@ -201,8 +199,7 @@ const runnerErrorToProtocol = (
   attempt: number,
   err: RunnerError,
 ): ProtocolStreamError => {
-  const reason =
-    "reason" in err && typeof err.reason === "string" ? err.reason : err._tag;
+  const reason = "reason" in err && typeof err.reason === "string" ? err.reason : err._tag;
   return new ProtocolStreamError({
     issueId,
     attempt,
@@ -236,7 +233,8 @@ const turnOutcomeToProtocol = (
         issueId,
         attempt,
         kind: "input-required",
-        reason: typeof outcome.prompt === "string" ? outcome.prompt : JSON.stringify(outcome.prompt),
+        reason:
+          typeof outcome.prompt === "string" ? outcome.prompt : JSON.stringify(outcome.prompt),
       });
   }
 };
@@ -246,18 +244,19 @@ const turnOutcomeToProtocol = (
 // archive-tempdir cleanup. Inner Effect.scoped(runTurn) owns: codex app-server
 // session lifetime — closes BEFORE the finalize bundle script runs in a
 // separate session. See orchestrator-runone.md.
-const runOneImpl = (
-  config: OrchestratorServiceConfig,
-  ref: Ref.Ref<RunningSet>,
-  fp: Context.Tag.Service<FpService>,
-  daytona: Context.Tag.Service<DaytonaAdapter>,
-  session: Context.Tag.Service<DaytonaSession>,
-  integration: Context.Tag.Service<IntegrationService>,
-  artifactStore: Context.Tag.Service<ArtifactStore>,
-  prompt: Context.Tag.Service<WorkerPromptService>,
-  scripts: Context.Tag.Service<SandboxScriptService>,
-  runner: Context.Tag.Service<AgentRunner>,
-) =>
+const runOneImpl =
+  (
+    config: OrchestratorServiceConfig,
+    ref: Ref.Ref<RunningSet>,
+    fp: Context.Tag.Service<FpService>,
+    daytona: Context.Tag.Service<DaytonaAdapter>,
+    session: Context.Tag.Service<DaytonaSession>,
+    integration: Context.Tag.Service<IntegrationService>,
+    artifactStore: Context.Tag.Service<ArtifactStore>,
+    prompt: Context.Tag.Service<WorkerPromptService>,
+    scripts: Context.Tag.Service<SandboxScriptService>,
+    runner: Context.Tag.Service<AgentRunner>,
+  ) =>
   (issue: EligibleIssue): Effect.Effect<RunOneResult, OrchestratorError, FileSystem.FileSystem> =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -273,11 +272,13 @@ const runOneImpl = (
 
       // Step 5: prepare source handoff. Pre-claim per §5b rule 1 — failure
       // here never writes fp; the tick handler logs + skips.
-      const handoff = yield* integration.prepareSourceHandoff().pipe(
-        Effect.mapError(
-          (err) => new DispatchError({ stage: "prepare-source", issueId, reason: err.stderr }),
-        ),
-      );
+      const handoff = yield* integration
+        .prepareSourceHandoff()
+        .pipe(
+          Effect.mapError(
+            (err) => new DispatchError({ stage: "prepare-source", issueId, reason: err.stderr }),
+          ),
+        );
 
       // Step 6: render prompt. Same pre-claim rule.
       const rendered = yield* prompt.renderPrompt({ issue: issue.detail, attempt }).pipe(
@@ -458,18 +459,16 @@ const runOneImpl = (
           );
 
           // Step 12: write transcript. Buffered post-completion.
-          const runDir = yield* artifactStore
-            .runDir(issueId, attempt)
-            .pipe(
-              Effect.mapError(
-                (err): TranscriptWriteError =>
-                  new TranscriptWriteError({
-                    path: err.path,
-                    operation: "resolve runDir",
-                    reason: err.reason,
-                  }),
-              ),
-            );
+          const runDir = yield* artifactStore.runDir(issueId, attempt).pipe(
+            Effect.mapError(
+              (err): TranscriptWriteError =>
+                new TranscriptWriteError({
+                  path: err.path,
+                  operation: "resolve runDir",
+                  reason: err.reason,
+                }),
+            ),
+          );
           yield* writeTranscript(runDir, turnResult.events);
 
           // F7: non-completed TurnOutcome. Best-effort finalize + download for
@@ -565,7 +564,8 @@ const runOneImpl = (
               status: "needs-attention",
               branch: "",
               baseRev: handoff.baseRev,
-              workerStatus: decoded.kind === "ok" ? Option.some(decoded.outcome.status) : Option.none(),
+              workerStatus:
+                decoded.kind === "ok" ? Option.some(decoded.outcome.status) : Option.none(),
               startedAt,
               attempt,
             });
@@ -687,11 +687,7 @@ const runOneImpl = (
           yield* artifactStore
             .writeRecord(issueId, attempt, record)
             .pipe(Effect.mapError(mapArtifactWriteError));
-          yield* writeFp(
-            fp.setArtifact(issueId, integrated.branch),
-            issueId,
-            "setArtifact",
-          );
+          yield* writeFp(fp.setArtifact(issueId, integrated.branch), issueId, "setArtifact");
           yield* writeFp(
             fp.markCompleted(issueId, decoded.outcome.summary),
             issueId,
@@ -807,7 +803,9 @@ const makeRecord = (input: {
   readonly status: "integrated" | "needs-attention";
   readonly branch: string;
   readonly baseRev: string;
-  readonly workerStatus: Option.Option<OrchestratorRecord["workerStatus"] extends Option.Option<infer A> ? A : never>;
+  readonly workerStatus: Option.Option<
+    OrchestratorRecord["workerStatus"] extends Option.Option<infer A> ? A : never
+  >;
   readonly startedAt: string;
   readonly attempt: number;
   readonly integrationError?: string | undefined;
@@ -837,20 +835,17 @@ const resultFromError = (
   lastError,
 });
 
-
 // Best-effort F7 salvage: try to finalize the in-sandbox bundle and download
 // it for forensics. Errors here are intentionally absorbed by the caller
 // (Effect.ignore at the call site) so the original ProtocolStreamError stays
 // the lastError on the issue. The bundle, if it lands, sits at runDir/work.bundle
 // for human inspection — we deliberately do NOT integrate it (per the F7 row).
-const salvageBundle = (
-  ctx: {
-    readonly handle: SandboxHandle;
-    readonly runDir: string;
-    readonly scripts: Context.Tag.Service<SandboxScriptService>;
-    readonly daytona: Context.Tag.Service<DaytonaAdapter>;
-  },
-): Effect.Effect<void, never, never> =>
+const salvageBundle = (ctx: {
+  readonly handle: SandboxHandle;
+  readonly runDir: string;
+  readonly scripts: Context.Tag.Service<SandboxScriptService>;
+  readonly daytona: Context.Tag.Service<DaytonaAdapter>;
+}): Effect.Effect<void, never, never> =>
   Effect.gen(function* () {
     const bundle = yield* ctx.scripts.finalizeBundle(ctx.handle, {
       repoPath: SANDBOX_REPO_PATH,
@@ -884,19 +879,17 @@ const sandboxSetupLastError = (err: SandboxSetupError): string => {
 // marks the issue. Used by every Effect.catchTags branch in the runOneImpl
 // scoped block. Suppresses any FpWriteFailedError on the terminal write so
 // the running-set finalizer still fires (F15 deferral).
-const routePostClaimFailure = (
-  input: {
-    readonly ref: Ref.Ref<RunningSet>;
-    readonly fp: Context.Tag.Service<FpService>;
-    readonly artifactStore: Context.Tag.Service<ArtifactStore>;
-    readonly issueId: string;
-    readonly attempt: number;
-    readonly baseRev: string;
-    readonly lastError: string;
-    readonly comment: string;
-    readonly startedAt: string;
-  },
-): Effect.Effect<RunOneResult, never, FileSystem.FileSystem> =>
+const routePostClaimFailure = (input: {
+  readonly ref: Ref.Ref<RunningSet>;
+  readonly fp: Context.Tag.Service<FpService>;
+  readonly artifactStore: Context.Tag.Service<ArtifactStore>;
+  readonly issueId: string;
+  readonly attempt: number;
+  readonly baseRev: string;
+  readonly lastError: string;
+  readonly comment: string;
+  readonly startedAt: string;
+}): Effect.Effect<RunOneResult, never, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const record = makeRecord({
       status: "needs-attention",
@@ -912,18 +905,16 @@ const routePostClaimFailure = (
       .pipe(Effect.ignore);
     // Best-effort fp write — log and continue if it fails (F15: retry-once
     // not yet implemented; tracked for later).
-    yield* input.fp
-      .markNeedsAttention(input.issueId, input.comment)
-      .pipe(
-        Effect.catchAll((err) =>
-          Effect.logWarning("markNeedsAttention failed; issue stays at in-progress").pipe(
-            Effect.annotateLogs({
-              issue_id: input.issueId,
-              reason: "stderr" in err ? err.stderr : err._tag,
-            }),
-          ),
+    yield* input.fp.markNeedsAttention(input.issueId, input.comment).pipe(
+      Effect.catchAll((err) =>
+        Effect.logWarning("markNeedsAttention failed; issue stays at in-progress").pipe(
+          Effect.annotateLogs({
+            issue_id: input.issueId,
+            reason: "stderr" in err ? err.stderr : err._tag,
+          }),
         ),
-      );
+      ),
+    );
     return resultFromError(input.issueId, input.attempt, input.lastError, undefined, undefined);
   });
 
@@ -1129,10 +1120,7 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
           // SIGINT/SIGTERM error string.
           yield* Fiber.interrupt(current.value.fiber);
           yield* fp
-            .markNeedsAttention(
-              current.value.issueId,
-              "orchestrator interrupted by signal",
-            )
+            .markNeedsAttention(current.value.issueId, "orchestrator interrupted by signal")
             .pipe(Effect.ignore);
         }),
       };

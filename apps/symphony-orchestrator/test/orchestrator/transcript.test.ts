@@ -1,13 +1,13 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
 
-import type { RunnerNotification } from "../../src/runner/session.js";
 import { writeTranscript, TRANSCRIPT_FILENAME } from "../../src/orchestrator/transcript.js";
+import type { RunnerNotification } from "../../src/runner/session.js";
 
 let workdir: string;
 
@@ -54,9 +54,7 @@ describe("orchestrator transcript", () => {
 
   test("writes an empty-but-present transcript file when given an empty events array", async () => {
     const runDir = join(workdir, "empty");
-    await Effect.runPromise(
-      writeTranscript(runDir, []).pipe(Effect.provide(NodeFileSystem.layer)),
-    );
+    await Effect.runPromise(writeTranscript(runDir, []).pipe(Effect.provide(NodeFileSystem.layer)));
 
     const path = join(runDir, TRANSCRIPT_FILENAME);
     const content = await readFile(path, "utf8");

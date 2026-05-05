@@ -13,7 +13,8 @@ export const TRANSCRIPT_FILENAME = "transcript.jsonl";
 const formatJsonl = (events: ReadonlyArray<RunnerNotification>): string =>
   events.map((event) => `${JSON.stringify(event)}\n`).join("");
 
-const mapPlatformError = (path: string, operation: string) =>
+const mapPlatformError =
+  (path: string, operation: string) =>
   (error: PlatformError.PlatformError): TranscriptWriteError =>
     new TranscriptWriteError({ path, operation, reason: error.message });
 

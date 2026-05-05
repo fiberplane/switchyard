@@ -6,11 +6,14 @@
 
 import { Effect, Queue, Stream } from "effect";
 
-import type { ArtifactStoreShape } from "../../../src/artifact/store.js";
 import { ArtifactDecodeError, ArtifactPathError } from "../../../src/artifact/errors.js";
 import type { OrchestratorRecord, WorkerOutcome } from "../../../src/artifact/models.js";
-import type { TurnOutcome } from "../../../src/runner/service.js";
+import type { ArtifactStoreShape } from "../../../src/artifact/store.js";
 import type { DaytonaAdapterShape } from "../../../src/daytona/daytona.adapter.js";
+import type {
+  DaytonaSessionShape,
+  ProtocolStream as DaytonaProtocolStream,
+} from "../../../src/daytona/daytona.session.js";
 import type {
   DaytonaSandboxNotFoundError,
   DaytonaSandboxOpError,
@@ -24,18 +27,15 @@ import type {
   DaytonaSandboxSpec,
   SandboxHandle,
 } from "../../../src/daytona/models.js";
-import type {
-  DaytonaSessionShape,
-  ProtocolStream as DaytonaProtocolStream,
-} from "../../../src/daytona/daytona.session.js";
 import type { CandidateScan, FpServiceShape } from "../../../src/fp/service.js";
-import type { IntegrationServiceShape } from "../../../src/integration/service.js";
 import type { IntegrationResult, SourceHandoff } from "../../../src/integration/models.js";
-import type { WorkerPromptServiceShape } from "../../../src/prompt/service.js";
+import type { IntegrationServiceShape } from "../../../src/integration/service.js";
 import type { RenderedPrompt } from "../../../src/prompt/models.js";
+import type { WorkerPromptServiceShape } from "../../../src/prompt/service.js";
+import type { TurnOutcome } from "../../../src/runner/service.js";
 import type { AgentRunnerShape } from "../../../src/runner/service.js";
-import type { SandboxScriptServiceShape } from "../../../src/sandbox-scripts/service.js";
 import type { SandboxBundleResult } from "../../../src/sandbox-scripts/models.js";
+import type { SandboxScriptServiceShape } from "../../../src/sandbox-scripts/service.js";
 
 export type FpCall =
   | { readonly kind: "fetchCandidates"; readonly running: ReadonlyArray<string> }
@@ -146,7 +146,9 @@ export const makeDaytonaAdapterMock = (overrides?: {
     createSandbox: (spec) =>
       Effect.suspend(() => {
         calls.push({ kind: "createSandbox", spec });
-        return overrides?.createSandbox === undefined ? Effect.succeed(handle) : overrides.createSandbox();
+        return overrides?.createSandbox === undefined
+          ? Effect.succeed(handle)
+          : overrides.createSandbox();
       }),
     deleteSandbox: () => Effect.void,
     executeCommand: (h, command) =>
@@ -227,10 +229,7 @@ export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSe
               for (const reply of replies) {
                 yield* Queue.offer(queue, `${reply}\n`);
               }
-            }) as Effect.Effect<
-              void,
-              DaytonaSessionInputError | DaytonaSessionNotFoundError
-            >,
+            }) as Effect.Effect<void, DaytonaSessionInputError | DaytonaSessionNotFoundError>,
           waitExit: Effect.succeed({ exitCode: 0 }),
           close: Effect.void,
         };
@@ -266,7 +265,10 @@ export const makeIntegrationMock = (overrides: {
       Effect.suspend(() => {
         prepareN += 1;
         return overrides.prepare === undefined
-          ? Effect.succeed({ baseRev: "deadbeef", archivePath: "/tmp/swy-source-fixture/source.tar.gz" })
+          ? Effect.succeed({
+              baseRev: "deadbeef",
+              archivePath: "/tmp/swy-source-fixture/source.tar.gz",
+            })
           : overrides.prepare();
       }),
     integrateBundle: (bundlePath, issueId, options) =>
@@ -300,7 +302,10 @@ export type ArtifactStoreMock = {
 export const makeArtifactStoreMock = (
   basePath: string,
   overrides: {
-    readonly readOutcome?: () => Effect.Effect<WorkerOutcome, ArtifactPathError | ArtifactDecodeError>;
+    readonly readOutcome?: () => Effect.Effect<
+      WorkerOutcome,
+      ArtifactPathError | ArtifactDecodeError
+    >;
   } = {},
 ): ArtifactStoreMock => {
   const recordLog: Array<{
@@ -309,8 +314,7 @@ export const makeArtifactStoreMock = (
     readonly record: OrchestratorRecord;
   }> = [];
   const shape: ArtifactStoreShape = {
-    runDir: (issueId, attempt) =>
-      Effect.succeed(`${basePath}/runs/${issueId}/${attempt}`),
+    runDir: (issueId, attempt) => Effect.succeed(`${basePath}/runs/${issueId}/${attempt}`),
     listRuns: () => Effect.succeed([]),
     readOutcome: () =>
       Effect.suspend(() =>

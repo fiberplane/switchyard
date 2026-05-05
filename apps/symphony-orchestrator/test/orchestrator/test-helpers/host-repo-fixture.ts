@@ -2,7 +2,11 @@
 // that adds the orchestrator-side helpers it needs (cwd-rooted git env, base
 // rev capture, branch-existence assertion).
 
-import { setupHostRepo, headSha, branchExistsRaw } from "../../integration/test-helpers/host-repo.js";
+import {
+  setupHostRepo,
+  headSha,
+  branchExistsRaw,
+} from "../../integration/test-helpers/host-repo.js";
 
 export type SymphonyHostRepoFixture = {
   readonly dir: string;

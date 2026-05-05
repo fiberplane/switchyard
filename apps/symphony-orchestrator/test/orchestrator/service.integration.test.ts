@@ -41,8 +41,8 @@ import {
 import { WorkerPromptServiceLive } from "../../src/prompt/service.js";
 import { AgentRunnerLive } from "../../src/runner/service.js";
 import { SandboxScriptServiceLive } from "../../src/sandbox-scripts/service.js";
-import { daytonaTestConfig, ensureStackUp } from "../daytona/test-helpers/stack.js";
 import { ensureTestSnapshot } from "../daytona/test-helpers/snapshot.js";
+import { daytonaTestConfig, ensureStackUp } from "../daytona/test-helpers/stack.js";
 import { sweepOrphanedTestSandboxes } from "../daytona/test-helpers/sweep.js";
 import {
   createSymphonyFpFixture,
@@ -91,7 +91,9 @@ const daytonaStackReachable = async (): Promise<boolean> => {
 
 let stackReachable = false;
 
-const baseConfig = (overrides: Partial<OrchestratorServiceConfig> = {}): OrchestratorServiceConfig => ({
+const baseConfig = (
+  overrides: Partial<OrchestratorServiceConfig> = {},
+): OrchestratorServiceConfig => ({
   maxConcurrentAgents: 1,
   // Real codex turns can take minutes; the test still gates on a faster
   // ceiling so a stuck turn fails the test rather than blocking CI forever.
@@ -135,7 +137,7 @@ beforeAll(async () => {
   fpFixture = await createSymphonyFpFixture(fpPath, {
     title: "switchyard integration test",
     description:
-      "Add `INTEGRATION_TEST.md` at the repo root with the literal contents `marker\\n` and nothing else. Then write `outcome.json` to `/tmp/.symphony/` with `{\"status\":\"completed\",\"summary\":\"created marker file\"}`.",
+      'Add `INTEGRATION_TEST.md` at the repo root with the literal contents `marker\\n` and nothing else. Then write `outcome.json` to `/tmp/.symphony/` with `{"status":"completed","summary":"created marker file"}`.',
   });
   hostRepo = await createSymphonyHostRepoFixture();
   artifactBase = await Bun.$`mktemp -d ${join(tmpdir(), "swy-orchestrator-int-XXXX")}`.text();
@@ -207,92 +209,77 @@ describe("OrchestratorService integration — cycles 13a/13b/13c/13d", () => {
     expect(await hostRepo.branchExists("symphony/never-existed")).toBe(false);
   });
 
-  test(
-    "13c: full lifecycle — real Daytona + real codex + real fp + real host repo",
-    async () => {
-      if (skipReason() !== null) {
-        console.warn(`[skipped] ${skipReason()}`);
-        return;
-      }
+  test("13c: full lifecycle — real Daytona + real codex + real fp + real host repo", async () => {
+    if (skipReason() !== null) {
+      console.warn(`[skipped] ${skipReason()}`);
+      return;
+    }
 
-      const config = baseConfig();
-      const env: Record<string, string | undefined> = {
-        ...process.env,
-        ...fpFixture.project.env,
-      };
-      const layer = wireLive(
-        { fpProjectDir: fpFixture.project.projectDir, hostRepoDir: hostRepo.dir, env },
-        config,
-      );
+    const config = baseConfig();
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      ...fpFixture.project.env,
+    };
+    const layer = wireLive(
+      { fpProjectDir: fpFixture.project.projectDir, hostRepoDir: hostRepo.dir, env },
+      config,
+    );
 
-      // Use the orchestrator's full pipeline (runOneTick) so candidate fetch +
-      // selector + dispatch all exercise their real implementations.
-      const tick = await Effect.runPromise(
-        Effect.gen(function* () {
-          const orch = yield* OrchestratorService;
-          return yield* orch.runOneTick;
-        }).pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)),
-      );
+    // Use the orchestrator's full pipeline (runOneTick) so candidate fetch +
+    // selector + dispatch all exercise their real implementations.
+    const tick = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)),
+    );
 
-      expect(tick.dispatched).toHaveLength(1);
-      expect(tick.dispatched[0]!.issueId).toBe(fpFixture.issueId);
+    expect(tick.dispatched).toHaveLength(1);
+    expect(tick.dispatched[0]!.issueId).toBe(fpFixture.issueId);
 
-      // Branch + record + fp transitions
-      const branchName = `symphony/${fpFixture.issueId}`;
-      expect(await hostRepo.branchExists(branchName)).toBe(true);
+    // Branch + record + fp transitions
+    const branchName = `symphony/${fpFixture.issueId}`;
+    expect(await hostRepo.branchExists(branchName)).toBe(true);
 
-      const recordPath = join(
-        artifactBase,
-        "runs",
-        fpFixture.issueId,
-        "1",
-        "outcome-record.json",
-      );
-      const record = JSON.parse(await Bun.file(recordPath).text());
-      expect(record.status).toBe("integrated");
-      expect(record.branch).toBe(branchName);
-      expect(record.attempt).toBe(1);
-    },
-    900_000,
-  );
+    const recordPath = join(artifactBase, "runs", fpFixture.issueId, "1", "outcome-record.json");
+    const record = JSON.parse(await Bun.file(recordPath).text());
+    expect(record.status).toBe("integrated");
+    expect(record.branch).toBe(branchName);
+    expect(record.attempt).toBe(1);
+  }, 900_000);
 
-  test(
-    "13d: re-arm flow — attempt increments and branch lands at -attempt2",
-    async () => {
-      if (skipReason() !== null) {
-        console.warn(`[skipped] ${skipReason()}`);
-        return;
-      }
+  test("13d: re-arm flow — attempt increments and branch lands at -attempt2", async () => {
+    if (skipReason() !== null) {
+      console.warn(`[skipped] ${skipReason()}`);
+      return;
+    }
 
-      // Pre-state expectation: 13c already ran and left the issue at done.
-      // Re-arm: status=todo, ready=true, state=idle. Service.ts sees
-      // symphony_attempt="1" and bumps to 2 on dispatch.
-      await rearmFpIssue(fpFixture);
+    // Pre-state expectation: 13c already ran and left the issue at done.
+    // Re-arm: status=todo, ready=true, state=idle. Service.ts sees
+    // symphony_attempt="1" and bumps to 2 on dispatch.
+    await rearmFpIssue(fpFixture);
 
-      const config = baseConfig();
-      const env: Record<string, string | undefined> = {
-        ...process.env,
-        ...fpFixture.project.env,
-      };
-      const layer = wireLive(
-        { fpProjectDir: fpFixture.project.projectDir, hostRepoDir: hostRepo.dir, env },
-        config,
-      );
+    const config = baseConfig();
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      ...fpFixture.project.env,
+    };
+    const layer = wireLive(
+      { fpProjectDir: fpFixture.project.projectDir, hostRepoDir: hostRepo.dir, env },
+      config,
+    );
 
-      const tick = await Effect.runPromise(
-        Effect.gen(function* () {
-          const orch = yield* OrchestratorService;
-          return yield* orch.runOneTick;
-        }).pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)),
-      );
+    const tick = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)),
+    );
 
-      expect(tick.dispatched).toHaveLength(1);
-      expect(tick.dispatched[0]!.attempt).toBe(2);
+    expect(tick.dispatched).toHaveLength(1);
+    expect(tick.dispatched[0]!.attempt).toBe(2);
 
-      const branchName = `symphony/${fpFixture.issueId}-attempt2`;
-      expect(await hostRepo.branchExists(branchName)).toBe(true);
-    },
-    900_000,
-  );
+    const branchName = `symphony/${fpFixture.issueId}-attempt2`;
+    expect(await hostRepo.branchExists(branchName)).toBe(true);
+  }, 900_000);
 });
-
