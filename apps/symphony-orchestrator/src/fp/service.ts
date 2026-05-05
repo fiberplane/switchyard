@@ -33,6 +33,11 @@ export type FpServiceShape = {
   readonly markNeedsAttention: (id: string, error: string) => Effect.Effect<void, WriteError>;
   readonly setAttempt: (id: string, attempt: number) => Effect.Effect<void, WriteError>;
   readonly setArtifact: (id: string, path: string) => Effect.Effect<void, WriteError>;
+  // Pure comment write — no status / property change. The orchestrator's
+  // three-comment cadence ("Dispatched to sandbox <id>", "Worker turn
+  // completed; integrating", final summary) uses this for the first two; the
+  // third coalesces with markCompleted/markNeedsAttention.
+  readonly addComment: (id: string, body: string) => Effect.Effect<void, WriteError>;
 };
 
 export class FpService extends Context.Tag("FpService")<FpService, FpServiceShape>() {}
@@ -112,6 +117,7 @@ export const FpServiceLive = Layer.effect(
         adapter.updateIssue(id, {
           properties: { symphony_artifact: path },
         }),
+      addComment: (id, body) => adapter.addComment(id, body),
     };
   }),
 );

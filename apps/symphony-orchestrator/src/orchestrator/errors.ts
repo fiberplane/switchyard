@@ -130,6 +130,34 @@ export class UnparseableAttemptError extends Data.TaggedError("UnparseableAttemp
   }
 }
 
+// fp write (claim / setAttempt / addComment / markCompleted /
+// markNeedsAttention / setArtifact) failed underlyingly (binary missing,
+// command failed). §7b F15: retry once, then log + leave issue in
+// `in-progress`. v1 surfaces the wrapped error so the integration test can
+// assert on a single tag.
+export class FpWriteFailedError extends Data.TaggedError("FpWriteFailedError")<{
+  readonly issueId: string;
+  readonly operation: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `fp write ${this.operation} failed for ${this.issueId}: ${this.reason}`;
+  }
+}
+
+// Wrapping the platform-level FS errors that pop up around tempdir cleanup or
+// codex auth probing. Pre-claim path uses MissingCodexAuthError; this is the
+// catch-all for in-pipeline FS surprises.
+export class HostFileSystemError extends Data.TaggedError("HostFileSystemError")<{
+  readonly path: string;
+  readonly operation: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Host FS ${this.operation} failed at ${this.path}: ${this.reason}`;
+  }
+}
+
 // Discriminated union exposed to callers (index.ts, integration tests). Every
 // post-claim failure path inside `runOne` resolves into one of these tags
 // before bubbling out — pre-claim failures (DispatchError) never reach the
@@ -138,6 +166,8 @@ export type OrchestratorError =
   | AlreadyClaimedError
   | BundleDecodeError
   | DispatchError
+  | FpWriteFailedError
+  | HostFileSystemError
   | IntegrationFailedError
   | MissingCodexAuthError
   | ProtocolStreamError
