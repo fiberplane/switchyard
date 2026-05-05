@@ -10,14 +10,14 @@ the upstream Daytona repo into `references/` first).
 
 Two stacks, two purposes:
 
-| | `daytona/` (this dir) | `test/daytona/` |
-| --- | --- | --- |
-| Used by | Orchestrator runtime, manual dogfood, demo runs. | `bun test` integration tests for the Daytona adapter / session. |
-| Project name | `daytona` | `switchyard-test` |
-| API port | `3000` | `33000` |
-| Proxy port | `4000` | `34000` |
-| Default snapshot | `symphony-codex-bun` (full toolchain — see `../snapshot/`). | `symphony-test-base` (minimal). |
-| Auth | Dashboard-issued API key (Dex login). | Hardcoded `ADMIN_API_KEY=switchyard-test-api-key`. |
+|                  | `daytona/` (this dir)                                       | `test/daytona/`                                                 |
+| ---------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| Used by          | Orchestrator runtime, manual dogfood, demo runs.            | `bun test` integration tests for the Daytona adapter / session. |
+| Project name     | `daytona`                                                   | `switchyard-test`                                               |
+| API port         | `3000`                                                      | `33000`                                                         |
+| Proxy port       | `4000`                                                      | `34000`                                                         |
+| Default snapshot | `symphony-codex-bun` (full toolchain — see `../snapshot/`). | `symphony-test-base` (minimal).                                 |
+| Auth             | Dashboard-issued API key (Dex login).                       | Hardcoded `ADMIN_API_KEY=switchyard-test-api-key`.              |
 
 They bind different host ports and use different docker compose project names
 so they can run side by side. Pick `daytona:up` when running the orchestrator
@@ -93,18 +93,18 @@ patching the api env to pick up the new template.
 
 ## Ports exposed
 
-| Service | Host port |
-| --- | --- |
-| `api` | `3000` |
-| `proxy` | `4000` |
-| `dex` (auth) | `5556` |
-| `pgadmin` | `5050` |
-| `registry` | `6000` |
-| `registry-ui` | `5100` |
-| `ssh-gateway` | `2222` |
-| `maildev` | `1080` |
-| `minio` (console) | `9001` |
-| `jaeger` (tracing UI) | `16686` |
+| Service               | Host port |
+| --------------------- | --------- |
+| `api`                 | `3000`    |
+| `proxy`               | `4000`    |
+| `dex` (auth)          | `5556`    |
+| `pgadmin`             | `5050`    |
+| `registry`            | `6000`    |
+| `registry-ui`         | `5100`    |
+| `ssh-gateway`         | `2222`    |
+| `maildev`             | `1080`    |
+| `minio` (console)     | `9001`    |
+| `jaeger` (tracing UI) | `16686`   |
 
 Conflicts with these ports on your host will block the corresponding service
 from binding. Common collision: a local sshd or devcontainer on `2222`. Stop
@@ -112,11 +112,11 @@ the conflicting process or remap the host side in `compose.yaml`.
 
 ## Troubleshooting
 
-| Symptom | Diagnosis / fix |
-| --- | --- |
-| `403 Forbidden` on `POST /api/snapshots` | API key lacks `write:snapshots`. Create a new key in the dashboard with that scope (see "First-time setup"). |
-| `ECONNREFUSED` on sandbox upload/exec/download | Sandbox toolbox unreachable. If you hit this with the vendored compose as-is, verify `docker exec daytona-api-1 env | grep PROXY_DOMAIN` shows the `nip.io` value. |
-| `region_quota` or runner-availability errors | Local dev DB needs nudges — same fixes as the test stack documents in `../test/daytona/README.md`. |
+| Symptom                                        | Diagnosis / fix                                                                                                                                           |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `403 Forbidden` on `POST /api/snapshots`       | API key lacks `write:snapshots`. Create a new key in the dashboard with that scope (see "First-time setup").                                              |
+| `ECONNREFUSED` on sandbox upload/exec/download | Sandbox toolbox unreachable. With the vendored compose as-is, run `docker exec daytona-api-1 env` and confirm the `PROXY_DOMAIN` value contains `nip.io`. |
+| `region_quota` or runner-availability errors   | Local dev DB needs nudges — same fixes as the test stack documents in `../test/daytona/README.md`.                                                        |
 
 ## Updating the vendor
 

@@ -85,8 +85,54 @@ describe("parseFrames", () => {
       }
     }
   });
-});
 
+  // Real-world repro from SWYRD-flbsjoyb: lines arriving from the daytona
+  // session bridge are prefixed with one or more C0 control bytes (commonly
+  // SOH 0x01) before the JSON payload. parseLine strips them before parsing.
+  // The prefixes are constructed from `String.fromCharCode` so the byte
+  // values survive copy/paste/format and are readable without a hex viewer.
+  it("strips leading SOH bytes before JSON parse", async () => {
+    const prefix = String.fromCharCode(0x01, 0x01, 0x01);
+    const lines = Stream.make(`${prefix}{"id":3,"result":{"a":1}}`);
+    const parsed = await Effect.runPromise(Stream.runCollect(parseFrames(lines)));
+    expect(Array.from(parsed)).toEqual([{ id: 3, result: { a: 1 } }]);
+  });
+
+  it("strips a mix of leading C0 control bytes (NUL, SOH, BEL) before JSON parse", async () => {
+    const prefix = String.fromCharCode(0x00, 0x01, 0x07);
+    const lines = Stream.make(`${prefix}{"hello":"world"}`);
+    const parsed = await Effect.runPromise(Stream.runCollect(parseFrames(lines)));
+    expect(Array.from(parsed)).toEqual([{ hello: "world" }]);
+  });
+
+  it("preserves a literal leading tab as JSON whitespace (the documented carve-out)", async () => {
+    // The strip skips control bytes < 0x20 except 0x09 (tab). A line that
+    // begins with a literal tab followed by JSON should pass through to
+    // parseJson, which accepts tab as whitespace per the JSON grammar.
+    const lines = Stream.make(`${String.fromCharCode(0x09)}{"ok":true}`);
+    const parsed = await Effect.runPromise(Stream.runCollect(parseFrames(lines)));
+    expect(Array.from(parsed)).toEqual([{ ok: true }]);
+  });
+
+  it("still fails with ProtocolParseError when the line has no JSON content even after stripping, preserving the original raw line", async () => {
+    const original = `${String.fromCharCode(0x01, 0x01)}not json after strip`;
+    const lines = Stream.make(original);
+    const exit = await Effect.runPromiseExit(Stream.runCollect(parseFrames(lines)));
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const failure = Cause.failureOption(exit.cause);
+      expect(failure._tag).toBe("Some");
+      if (failure._tag === "Some") {
+        expect(failure.value).toBeInstanceOf(ProtocolParseError);
+        // Lock the layering choice: the parser strips before parsing but
+        // surfaces the un-stripped bytes in the error so operators can see
+        // exactly what came in.
+        const err = failure.value as ProtocolParseError;
+        expect(err.line).toBe(original);
+      }
+    }
+  });
+});
 describe("encodeMessage", () => {
   it("emits JSON.stringify(message) + '\\n' as UTF-8 bytes", () => {
     const msg = { id: 1, method: "initialize", params: {} };

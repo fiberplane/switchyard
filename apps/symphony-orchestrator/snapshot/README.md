@@ -11,13 +11,13 @@ by the orchestrator's `test:daytona:*` adapter and session tests), see
 
 ## What's inside
 
-| Tool | Why it ships in the snapshot |
-| --- | --- |
-| `git`, `bash`, `curl`, `jq`, `ripgrep`, `procps`, `sudo`, `tar`, `unzip` | Shell + repo hygiene basics. |
-| `node 20` + `@openai/codex@0.128.0` | Worker runtime (`codex app-server`) — pinned per `scripts/codex-ts-codegen.ts:REQUIRED_CODEX_VERSION`. |
-| `bun` | Worker invokes `bun run test`, `bun run format:check`, `bun run check`. |
-| `drift` | Worker invokes `bun run lint:drift`. Installed from the project's release tarball at `https://github.com/fiberplane/drift/releases`. |
-| `@ast-grep/cli` | Used transitively by `bun run lint:ast` via `bun run check`. |
+| Tool                                                                     | Why it ships in the snapshot                                                                                                         |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `git`, `bash`, `curl`, `jq`, `ripgrep`, `procps`, `sudo`, `tar`, `unzip` | Shell + repo hygiene basics.                                                                                                         |
+| `node 20` + `@openai/codex@0.128.0`                                      | Worker runtime (`codex app-server`) — pinned per `scripts/codex-ts-codegen.ts:REQUIRED_CODEX_VERSION`.                               |
+| `bun`                                                                    | Worker invokes `bun run test`, `bun run format:check`, `bun run check`.                                                              |
+| `drift`                                                                  | Worker invokes `bun run lint:drift`. Installed from the project's release tarball at `https://github.com/fiberplane/drift/releases`. |
+| `@ast-grep/cli`                                                          | Used transitively by `bun run lint:ast` via `bun run check`.                                                                         |
 
 The non-root `daytona` user matches Daytona's runtime convention. Workspace
 mounts at `/workspace` per `WorkflowConfig.sandbox.repoPath`.
@@ -47,13 +47,13 @@ expect 3–6 minutes on a warm Docker engine.
 
 All env vars are optional except `DAYTONA_API_KEY`:
 
-| Env | Default |
-| --- | --- |
-| `DAYTONA_API_URL` | `http://localhost:3000/api` |
-| `DAYTONA_TARGET` | `us` |
-| `DAYTONA_SNAPSHOT` | `symphony-codex-bun` |
-| `DOCKERFILE` | `./Dockerfile` (relative to `build.ts`) |
-| `SNAPSHOT_TIMEOUT_MS` | `900000` (15min) |
+| Env                   | Default                                 |
+| --------------------- | --------------------------------------- |
+| `DAYTONA_API_URL`     | `http://localhost:3000/api`             |
+| `DAYTONA_TARGET`      | `us`                                    |
+| `DAYTONA_SNAPSHOT`    | `symphony-codex-bun`                    |
+| `DOCKERFILE`          | `./Dockerfile` (relative to `build.ts`) |
+| `SNAPSHOT_TIMEOUT_MS` | `900000` (15min)                        |
 
 ## Verifying the snapshot
 
@@ -80,9 +80,9 @@ it first via the dashboard or push the new build under a different
 
 ## Troubleshooting
 
-| Symptom | Diagnosis / fix |
-| --- | --- |
-| `403 Forbidden` on `POST /api/snapshots` | The API key lacks `write:snapshots`. Create a new key in the dashboard with that permission (and `delete:snapshots` if you want the script to auto-replace failed snapshots). |
-| `Snapshot ... build_failed: <reason>` | The build script auto-deletes a `build_failed` snapshot on the next run, so re-running with the same env is the recovery path. To inspect the build logs, hit `GET /api/snapshots/:id/build-logs` while the snapshot still exists. |
-| `Snapshot did not become active within 900000ms` | Bump `SNAPSHOT_TIMEOUT_MS` (the apt + npm + bun installer chain can be slow on cold caches). Confirm the runner isn't blocked on a stalled `PULL_SNAPSHOT` job via the dashboard. |
-| `Cannot find module '@daytona/sdk'` | Run `bun install` at the repo root — `@daytona/sdk` is a workspace dep declared by `apps/symphony-orchestrator/package.json`. |
+| Symptom                                          | Diagnosis / fix                                                                                                                                                                                                                    |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `403 Forbidden` on `POST /api/snapshots`         | The API key lacks `write:snapshots`. Create a new key in the dashboard with that permission (and `delete:snapshots` if you want the script to auto-replace failed snapshots).                                                      |
+| `Snapshot ... build_failed: <reason>`            | The build script auto-deletes a `build_failed` snapshot on the next run, so re-running with the same env is the recovery path. To inspect the build logs, hit `GET /api/snapshots/:id/build-logs` while the snapshot still exists. |
+| `Snapshot did not become active within 900000ms` | Bump `SNAPSHOT_TIMEOUT_MS` (the apt + npm + bun installer chain can be slow on cold caches). Confirm the runner isn't blocked on a stalled `PULL_SNAPSHOT` job via the dashboard.                                                  |
+| `Cannot find module '@daytona/sdk'`              | Run `bun install` at the repo root — `@daytona/sdk` is a workspace dep declared by `apps/symphony-orchestrator/package.json`.                                                                                                      |

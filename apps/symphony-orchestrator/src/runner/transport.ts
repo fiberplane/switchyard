@@ -73,10 +73,33 @@ export const frameMessages = <E>(
 
 const decodeJsonUnknown = Schema.decodeUnknown(Schema.parseJson(Schema.Unknown));
 
+// Strip leading C0 control bytes (0x00..0x1F) other than tab. The daytona
+// session bridge can prepend SOH () and similar framing/multiplex bytes
+// to a frame's payload; the JSON itself is well-formed and valid downstream
+// once the prefix is removed. See SWYRD-flbsjoyb for the field repro.
+//
+// Intentionally narrow: DEL (0x7F), C1 controls (0x80..0x9F), and BOM
+// (U+FEFF) are NOT stripped — those have not been observed in the field and
+// silently eating them would mask upstream encoding bugs. They will surface
+// as ProtocolParseError carrying the raw line for diagnosis.
+const stripLeadingControlBytes = (line: string): string => {
+  let i = 0;
+  for (; i < line.length; i++) {
+    const code = line.charCodeAt(i);
+    if (code >= 0x20 || code === 0x09) {
+      break;
+    }
+  }
+  return i === 0 ? line : line.slice(i);
+};
+
 const parseLine = (line: string): Effect.Effect<unknown, ProtocolParseError> =>
-  decodeJsonUnknown(line).pipe(
+  decodeJsonUnknown(stripLeadingControlBytes(line)).pipe(
     Effect.catchTag("ParseError", (parseError) =>
       Effect.fail(
+        // Keep the original (un-stripped) line in the error so operators can
+        // see the raw bytes when diagnosing — strip is a parse-time concession,
+        // not a logging one.
         new ProtocolParseError({
           reason: ParseResult.TreeFormatter.formatErrorSync(parseError).slice(
             0,
