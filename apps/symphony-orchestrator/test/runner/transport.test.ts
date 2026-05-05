@@ -24,6 +24,18 @@ describe("frameMessages", () => {
     expect(Array.from(frames)).toEqual(['{"a":1}']);
   });
 
+  it("flushes a non-empty buffer as a final frame when the stream ends without a trailing newline", async () => {
+    const input = Stream.fromIterable([utf8('{"a":1}\n{"b":'), utf8("2}")]);
+    const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
+    expect(Array.from(frames)).toEqual(['{"a":1}', '{"b":2}']);
+  });
+
+  it("emits no extra frame when the stream ends with an empty buffer", async () => {
+    const input = Stream.make(utf8('{"a":1}\n'));
+    const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
+    expect(Array.from(frames)).toEqual(['{"a":1}']);
+  });
+
   it("fails with ProtocolFramingError when the buffer exceeds MAX_LINE_BUFFER_SIZE", async () => {
     const oversize = utf8("x".repeat(MAX_LINE_BUFFER_SIZE + 1));
     const exit = await Effect.runPromiseExit(Stream.runCollect(frameMessages(Stream.make(oversize))));
