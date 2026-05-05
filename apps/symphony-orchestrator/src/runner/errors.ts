@@ -37,3 +37,39 @@ export class ProtocolRecvError extends Data.TaggedError("ProtocolRecvError")<{
     return `Runner transport receive stream failed: ${this.reason}`;
   }
 }
+
+export class RunnerRequestTimeoutError extends Data.TaggedError("RunnerRequestTimeoutError")<{
+  readonly method: string;
+  readonly requestId: number;
+  readonly timeoutMs: number;
+}> {
+  get message(): string {
+    return `Runner request ${this.method}#${this.requestId} timed out after ${this.timeoutMs}ms`;
+  }
+}
+
+export class RunnerRequestError extends Data.TaggedError("RunnerRequestError")<{
+  readonly method: string;
+  readonly requestId: number;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner request ${this.method}#${this.requestId} failed: ${this.reason}`;
+  }
+}
+
+export class RunnerProtocolError extends Data.TaggedError("RunnerProtocolError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner protocol error: ${this.reason}`;
+  }
+}
+
+export class RunnerSessionClosedError extends Data.TaggedError("RunnerSessionClosedError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner session closed: ${this.reason}`;
+  }
+}
