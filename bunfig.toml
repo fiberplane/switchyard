@@ -1,3 +1,14 @@
 [install]
 # Use exact versions for reproducible installs
 exact = true
+
+[test]
+# `references/` mirrors upstream repos for code reference (e.g. `references/effect/`).
+# Their *.test.ts files depend on devDeps we don't install, so bare `bun test` from
+# the repo root produces ~870 noisy failures and appears to hang. The canonical test
+# command is `bun run test` (workspace-filtered) — see AGENTS.md.
+#
+# `pathIgnorePatterns` is documented at https://bun.com/docs/runtime/bunfig but is a
+# no-op in Bun 1.3.10 (only the `--path-ignore-patterns` CLI flag is honored). Keep
+# this set so the exclude takes effect once the bunfig path lands upstream.
+pathIgnorePatterns = ["references/**"]

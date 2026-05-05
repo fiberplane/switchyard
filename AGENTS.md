@@ -52,9 +52,17 @@ bun run format                    # oxfmt
 bun run format:check              # Check formatting without writing
 bun run typecheck                 # tsgo --noEmit
 bun run check                     # lint + ast-grep + drift + typecheck
-bun run test                      # Tests (all workspaces)
+bun run test                      # Tests (all workspaces, fan-out via --filter '*')
 EFFECT_TRACE=1 bun run <command>  # Enable trace + structured log output
 ```
+
+> **Don't run bare `bun test` from the repo root.** It walks the cwd and picks up
+> `references/` (gitignored upstream mirrors like `references/effect/`), producing
+> ~870 import failures and appearing to hang. `bunfig.toml` declares
+> `pathIgnorePatterns = ["references/**"]`, but Bun 1.3.x does not yet honor the
+> bunfig key — only the `--path-ignore-patterns` CLI flag works. Use `bun run test`
+> (workspace-filtered) or scope by workspace, e.g.
+> `bun run --filter @switchyard/symphony-orchestrator test`.
 
 `bun run check` does not run tests or `format:check`. Before closing code tasks, run all three:
 
