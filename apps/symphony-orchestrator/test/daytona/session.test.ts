@@ -272,6 +272,46 @@ describe("DaytonaSession round-trip", () => {
       expect(observed).toContain(expected);
     }
   }, 90_000);
+
+  test("stderr stream demuxes from stdout", async () => {
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(
+            sharedHandle,
+            "echo first; echo second 1>&2; echo third",
+          );
+
+          const stdoutF = yield* Effect.fork(
+            Stream.runCollect(stream.receive).pipe(Effect.timeoutOption("5 seconds")),
+          );
+          const stderrF = yield* Effect.fork(
+            Stream.runCollect(stream.stderr).pipe(Effect.timeoutOption("5 seconds")),
+          );
+
+          const stdoutChunks = yield* stdoutF;
+          const stderrChunks = yield* stderrF;
+
+          return {
+            stdout: Chunk.toReadonlyArray(
+              stdoutChunks._tag === "Some" ? stdoutChunks.value : Chunk.empty<string>(),
+            ).join(""),
+            stderr: Chunk.toReadonlyArray(
+              stderrChunks._tag === "Some" ? stderrChunks.value : Chunk.empty<string>(),
+            ).join(""),
+          };
+        }),
+      ),
+    );
+
+    expect(result.stdout).toContain("first");
+    expect(result.stdout).toContain("third");
+    expect(result.stdout).not.toContain("second");
+    expect(result.stderr).toContain("second");
+    expect(result.stderr).not.toContain("first");
+    expect(result.stderr).not.toContain("third");
+  }, 60_000);
 });
 
 describe("DaytonaSessionExecuteResponseSchema", () => {
