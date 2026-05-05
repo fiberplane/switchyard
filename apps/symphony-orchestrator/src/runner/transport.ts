@@ -53,3 +53,8 @@ const parseLine = (line: string): Effect.Effect<unknown, ProtocolParseError> =>
 export const parseFrames = <E>(
   lines: Stream.Stream<string, E>,
 ): Stream.Stream<unknown, E | ProtocolParseError> => lines.pipe(Stream.mapEffect(parseLine));
+
+const encoder = new TextEncoder();
+
+export const encodeMessage = (message: unknown): Uint8Array =>
+  encoder.encode(`${JSON.stringify(message)}\n`);

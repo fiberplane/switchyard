@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { Cause, Effect, Exit, Stream } from "effect";
 
 import { ProtocolFramingError, ProtocolParseError } from "../../src/runner/errors.js";
-import { MAX_LINE_BUFFER_SIZE, frameMessages, parseFrames } from "../../src/runner/transport.js";
+import {
+  MAX_LINE_BUFFER_SIZE,
+  encodeMessage,
+  frameMessages,
+  parseFrames,
+} from "../../src/runner/transport.js";
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -55,5 +60,22 @@ describe("parseFrames", () => {
         expect(err.line).toBe(longBadLine.slice(0, 500));
       }
     }
+  });
+});
+
+describe("encodeMessage", () => {
+  it("emits JSON.stringify(message) + '\\n' as UTF-8 bytes", () => {
+    const msg = { id: 1, method: "initialize", params: {} };
+    const encoded = encodeMessage(msg);
+    expect(encoded).toEqual(utf8(`${JSON.stringify(msg)}\n`));
+  });
+
+  it("round-trips through frameMessages + parseFrames", async () => {
+    const msg = { id: 1, method: "initialize", params: { foo: "bar" } };
+    const bytes = encodeMessage(msg);
+    const recovered = await Effect.runPromise(
+      Stream.runCollect(parseFrames(frameMessages(Stream.make(bytes)))),
+    );
+    expect(Array.from(recovered)).toEqual([msg]);
   });
 });
