@@ -1,23 +1,7 @@
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { NodeContext } from "@effect/platform-node";
-import { Data, Effect } from "effect";
-
-import { FpBinary, FpBinaryLive } from "../../../src/fp/binary.js";
-
-export class FpTestCommandError extends Data.TaggedError("FpTestCommandError")<{
-  readonly command: readonly string[];
-  readonly cwd: string;
-  readonly exitCode: number;
-  readonly stderr: string;
-}> {
-  get message(): string {
-    return `fp test command failed in ${this.cwd}: ${this.command.join(" ")} (exit code ${this.exitCode})\n${this.stderr}`;
-  }
-}
+import { FpCommandError } from "../../../src/fp/errors.js";
 
 export type FpTestProject = {
   readonly projectDir: string;
@@ -36,14 +20,6 @@ export type FpCommandResult = {
 const symphonyStateExtensionPath = fileURLToPath(
   new URL("../../../../../.fp/extensions/symphony-state.ts", import.meta.url),
 );
-
-const resolveRealFpBinary = (): Promise<string> =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const fpBinary = yield* FpBinary;
-      return yield* fpBinary.resolve();
-    }).pipe(Effect.provide(FpBinaryLive()), Effect.provide(NodeContext.layer)),
-  );
 
 export const runFpCommand = async (
   project: FpTestProject,
@@ -70,9 +46,8 @@ export const runFpSuccess = async (
 ): Promise<string> => {
   const result = await runFpCommand(project, args);
   if (result.exitCode !== 0) {
-    throw new FpTestCommandError({
+    throw new FpCommandError({
       command: [project.fpPath, ...args],
-      cwd: project.projectDir,
       exitCode: result.exitCode,
       stderr: result.stderr,
     });
@@ -80,10 +55,12 @@ export const runFpSuccess = async (
   return result.stdout;
 };
 
-export const setupFpProject = async (): Promise<FpTestProject> => {
-  const fpPath = await resolveRealFpBinary();
-  const projectDir = await mkdtemp(join(tmpdir(), "swy-fp-"));
-  const homeDir = await mkdtemp(join(tmpdir(), "swy-fp-home-"));
+const makeTempDirectory = async (template: string): Promise<string> =>
+  (await Bun.$`mktemp -d ${template}`.text()).trim();
+
+export const setupFpProject = async (fpPath: string): Promise<FpTestProject> => {
+  const projectDir = await makeTempDirectory("/tmp/swy-fp-XXXXXXXX");
+  const homeDir = await makeTempDirectory("/tmp/swy-fp-home-XXXXXXXX");
   const env = {
     ...process.env,
     HOME: homeDir,
@@ -95,17 +72,11 @@ export const setupFpProject = async (): Promise<FpTestProject> => {
     fpPath,
     env,
     cleanup: () =>
-      Promise.all([
-        rm(projectDir, { force: true, recursive: true }),
-        rm(homeDir, { force: true, recursive: true }),
-      ]).then(() => undefined),
+      Promise.all([Bun.$`rm -rf ${projectDir}`, Bun.$`rm -rf ${homeDir}`]).then(() => undefined),
   };
 
   await runFpSuccess(project, ["init", "--prefix", "SWY", "--yes", "--agent", "skip"]);
-  await copyFile(
-    symphonyStateExtensionPath,
-    join(projectDir, ".fp", "extensions", "symphony-state.ts"),
-  );
+  await Bun.$`cp ${symphonyStateExtensionPath} ${join(projectDir, ".fp", "extensions", "symphony-state.ts")}`;
 
   return project;
 };

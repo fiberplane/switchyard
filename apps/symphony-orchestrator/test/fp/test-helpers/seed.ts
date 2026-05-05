@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 
 import { type FpTestProject, runFpSuccess } from "./setup-fp-project.js";
 
@@ -42,9 +42,7 @@ const createSeedIssue = async (
     "--format",
     "json",
   ]);
-  const issue = await Effect.runPromise(
-    Schema.decodeUnknown(Schema.parseJson(FpCreatedIssueSchema))(output),
-  );
+  const issue = Schema.decodeUnknownSync(Schema.parseJson(FpCreatedIssueSchema))(output);
 
   return {
     id: issue.id,

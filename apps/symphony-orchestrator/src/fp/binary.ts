@@ -61,7 +61,15 @@ const resolveBinaryPath = (
     const candidates = candidatesFor(options);
 
     for (const candidate of candidates) {
-      const exists = yield* fs.exists(candidate).pipe(Effect.catchAll(() => Effect.succeed(false)));
+      const exists = yield* fs
+        .exists(candidate)
+        .pipe(
+          Effect.catchAll((error) =>
+            Effect.logDebug(`Failed to check fp binary candidate ${candidate}`, error).pipe(
+              Effect.as(false),
+            ),
+          ),
+        );
       if (exists) {
         return candidate;
       }

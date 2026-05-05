@@ -4,7 +4,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Effect, Either, Schema } from "effect";
 
 import { FpAdapter, FpAdapterLive } from "../../src/fp/adapter.js";
-import { FpBinaryLive } from "../../src/fp/binary.js";
+import { FpBinary, FpBinaryLive } from "../../src/fp/binary.js";
 import { FpCommandError, FpDecodeError } from "../../src/fp/errors.js";
 import {
   decodeFpIssueListJson,
@@ -33,7 +33,13 @@ let project: FpTestProject;
 let seeds: SeededIssues;
 
 beforeAll(async () => {
-  project = await setupFpProject();
+  const fpPath = await Effect.runPromise(
+    Effect.gen(function* () {
+      const fpBinary = yield* FpBinary;
+      return yield* fpBinary.resolve();
+    }).pipe(Effect.provide(FpBinaryLive()), Effect.provide(NodeContext.layer)),
+  );
+  project = await setupFpProject(fpPath);
   seeds = await seedTestIssues(project);
 });
 
