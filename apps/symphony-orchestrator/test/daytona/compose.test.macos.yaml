@@ -25,3 +25,14 @@ services:
       # these two without needing to repeat the rest of the api environment.
       PROXY_DOMAIN: proxy.127.0.0.1.nip.io:34000
       PROXY_TEMPLATE_URL: http://{{PORT}}-{{sandboxId}}.proxy.127.0.0.1.nip.io:34000
+
+  ssh-gateway:
+    # OrbStack reserves 127.0.0.1:32222 for its own host-to-VM SSH gateway and
+    # there is no `orb config` key to release it (`ssh.expose_port` only gates
+    # LAN exposure, not the loopback bind). The upstream compose binds the
+    # daytona ssh-gateway to the same host port, so on OrbStack-on-macOS the
+    # service fails to start with `bind: address already in use`. Remap to
+    # 32223; nothing in the orchestrator integration suite exercises the SSH
+    # path, and the in-network `ssh-gateway:2222` reachability is unchanged.
+    ports: !override
+      - 32223:2222
