@@ -630,6 +630,11 @@ Worker commits cross the sandbox boundary as a `git bundle`:
    git fetch <bundle-path> +HEAD:refs/symphony/<issue-id>
    git branch symphony/<issue-id> refs/symphony/<issue-id>
    ```
+   If `symphony/<issue-id>` already exists from a prior attempt, the integration step creates
+   `symphony/<issue-id>-attempt<N>` instead, where `N` starts at 2 and increments. Existing
+   branches are never reset, force-updated, or rewritten — the audit trail is preserved. How the
+   orchestrator decides whether to re-dispatch versus park at `needs-attention` on collision is
+   tracked separately as `SWYRD-zituhadq`.
 4. The branch is the integration deliverable. **No automatic merge to `main`.** Human reviewers
    read `git log symphony/<issue-id>` to see the worker's commits and messages.
 

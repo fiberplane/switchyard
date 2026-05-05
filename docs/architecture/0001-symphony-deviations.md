@@ -201,3 +201,4 @@ Open follow-up decisions, captured as fp issues under epic `SWYRD-uouprnfv`:
 - `SWYRD-yailwgkj` — Full git history transfer to sandbox
 - `SWYRD-ovvmzqxw` — Orchestrator-side check verification
 - `SWYRD-jjlifoqq` — Decide whether the worker should write `fp` directly
+- `SWYRD-zituhadq` — Orchestrator policy for branch collision on integration retry
