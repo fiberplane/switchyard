@@ -5,6 +5,8 @@ import { Effect } from "effect";
 import { DaytonaAdapter } from "../../src/daytona/daytona.adapter.js";
 import {
   SANDBOX_ARCHIVE_PATH,
+  SANDBOX_GIT_AUTHOR_EMAIL,
+  SANDBOX_GIT_AUTHOR_NAME,
   SANDBOX_REPO_PATH,
   SANDBOX_SYMPHONY_DIR,
 } from "../../src/sandbox-scripts/models.js";
@@ -67,13 +69,21 @@ describe("SandboxScriptService.setupRepo", () => {
             handle,
             `test -d ${SANDBOX_SYMPHONY_DIR}`,
           );
-          return { baseRev, symphonyDir };
+          const author = yield* adapter.executeCommand(
+            handle,
+            `cd ${SANDBOX_REPO_PATH} && git log -1 --format='%an|%ae' symphony-base`,
+          );
+          return { baseRev, symphonyDir, author };
         }),
       );
 
       expect(probes.baseRev.exitCode).toBe(0);
       expect(probes.baseRev.stdout.trim()).toMatch(/^[0-9a-f]{40}$/);
       expect(probes.symphonyDir.exitCode).toBe(0);
+      expect(probes.author.exitCode).toBe(0);
+      expect(probes.author.stdout.trim()).toBe(
+        `${SANDBOX_GIT_AUTHOR_NAME}|${SANDBOX_GIT_AUTHOR_EMAIL}`,
+      );
     } finally {
       await archive.cleanup();
     }

@@ -4,7 +4,11 @@ import type { DaytonaAdapterShape } from "../daytona/daytona.adapter.js";
 import type { DaytonaSandboxNotFoundError, DaytonaSandboxOpError } from "../daytona/errors.js";
 import type { SandboxHandle } from "../daytona/models.js";
 import { SandboxScriptError } from "./errors.js";
-import type { SetupRepoOptions } from "./models.js";
+import {
+  SANDBOX_GIT_AUTHOR_EMAIL,
+  SANDBOX_GIT_AUTHOR_NAME,
+  type SetupRepoOptions,
+} from "./models.js";
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
@@ -15,6 +19,11 @@ export const buildSetupScript = (options: SetupRepoOptions): string => {
   const archive = shellQuote(options.archivePath);
   const repo = shellQuote(options.repoPath);
   const symphony = shellQuote(options.symphonyDir);
+  // Stamp identity inline via `-c user.name`/`-c user.email` rather than
+  // `git config --global` so the metadata is local to this commit and won't
+  // mutate any global git state inside the sandbox.
+  const authorName = shellQuote(SANDBOX_GIT_AUTHOR_NAME);
+  const authorEmail = shellQuote(SANDBOX_GIT_AUTHOR_EMAIL);
   return [
     "set -euo pipefail",
     `mkdir -p ${repo} ${symphony}`,
@@ -22,7 +31,7 @@ export const buildSetupScript = (options: SetupRepoOptions): string => {
     `cd ${repo}`,
     "git init -q",
     "git add .",
-    'git commit -q -m "base"',
+    `git -c user.name=${authorName} -c user.email=${authorEmail} commit -q -m "base"`,
     "git tag symphony-base",
   ].join("\n");
 };
