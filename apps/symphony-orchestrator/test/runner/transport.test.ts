@@ -122,3 +122,31 @@ describe("transport composed over happy-path fixture", () => {
     expect(last?.method).toBe("turn/completed");
   });
 });
+
+describe("transport composed over approval-roundtrip fixture", () => {
+  it("decodes the approval-request frame whose method matches an approval shape", async () => {
+    const helper = await Effect.runPromise(loadFixtureProtocolStream("approval-roundtrip.jsonl"));
+    const decoded = await Effect.runPromise(
+      Stream.runCollect(parseFrames(frameMessages(helper.stream.receive))),
+    );
+    const messages = Array.from(decoded) as ReadonlyArray<Record<string, unknown>>;
+
+    // Per the fixture meta the approval-roundtrip capture has 58 recv frames.
+    expect(messages.length).toBe(58);
+
+    const approvalRequests = messages.filter((m) => {
+      const method = m.method;
+      return (
+        typeof method === "string" &&
+        (method.startsWith("applyPatchApproval") ||
+          method.startsWith("execCommandApproval") ||
+          method.includes("requestApproval"))
+      );
+    });
+    expect(approvalRequests.length).toBeGreaterThan(0);
+
+    // Final frame must still be the terminal turn/completed notification.
+    const last = messages.at(-1);
+    expect(last?.method).toBe("turn/completed");
+  });
+});
