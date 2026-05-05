@@ -266,4 +266,27 @@ describe("DaytonaAdapter", () => {
       await rm(transferRoot, { recursive: true, force: true });
     }
   }, 300_000);
+
+  test("executeCommand returns stdout and stderr separately", async () => {
+    const spec = buildTestSandboxSpec({
+      testRunId,
+      labels: {
+        purpose: "execute",
+      },
+    });
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        const handle = yield* adapter.createSandbox(spec);
+        return yield* adapter.executeCommand(handle, "echo hello");
+      }),
+    );
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: "hello\n",
+      stderr: "",
+    });
+  }, 300_000);
 });

@@ -1,5 +1,7 @@
+import { Buffer } from "node:buffer";
+
 import { Daytona, DaytonaNotFoundError, type Sandbox } from "@daytona/sdk";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, ParseResult, Schema } from "effect";
 
 import {
   DaytonaSandboxCreateError,
@@ -72,6 +74,50 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+const CommandEnvelopeSchema = Schema.Struct({
+  exitCode: Schema.Number,
+  stdoutBase64: Schema.String,
+  stderrBase64: Schema.String,
+});
+
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\"'\"'")}'`;
+
+const buildCommandEnvelope = (command: string): string =>
+  [
+    "stdout_file=$(mktemp)",
+    "stderr_file=$(mktemp)",
+    `bash -lc ${shellQuote(command)} >\"$stdout_file\" 2>\"$stderr_file\"`,
+    "status=$?",
+    'printf \'{"exitCode":%s,"stdoutBase64":"\' "$status"',
+    'base64 -w 0 "$stdout_file"',
+    'printf \'","stderrBase64":"\'',
+    'base64 -w 0 "$stderr_file"',
+    "printf '\"}\\n'",
+    'rm -f "$stdout_file" "$stderr_file"',
+    "exit 0",
+  ].join("\n");
+
+const decodeCommandEnvelope = (
+  sandboxId: string,
+  content: string,
+): Effect.Effect<DaytonaCommandResult, DaytonaSandboxOpError> =>
+  Schema.decodeUnknown(Schema.parseJson(CommandEnvelopeSchema))(content).pipe(
+    Effect.map((envelope) => ({
+      exitCode: envelope.exitCode,
+      stdout: Buffer.from(envelope.stdoutBase64, "base64").toString("utf8"),
+      stderr: Buffer.from(envelope.stderrBase64, "base64").toString("utf8"),
+    })),
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxOpError({
+          operation: "executeCommand",
+          sandboxId,
+          reason: `command envelope decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
 
 const createDaytonaClient = (config: DaytonaConfig): Daytona =>
   new Daytona({
@@ -292,16 +338,12 @@ const executeCommand = (
       Effect.tryPromise({
         try: async () => {
           const result = await sandbox.process.executeCommand(
-            command,
+            buildCommandEnvelope(command),
             options.cwd,
             options.env,
             options.timeoutSec,
           );
-          return {
-            exitCode: result.exitCode,
-            stdout: result.result,
-            stderr: "",
-          };
+          return result.result;
         },
         catch: (error) => {
           if (isDaytonaNotFound(error)) {
@@ -318,7 +360,7 @@ const executeCommand = (
             reason: describeUnknown(error),
           });
         },
-      }),
+      }).pipe(Effect.flatMap((content) => decodeCommandEnvelope(handle.id, content))),
     ),
     Effect.withSpan("DaytonaAdapter.executeCommand"),
   );
