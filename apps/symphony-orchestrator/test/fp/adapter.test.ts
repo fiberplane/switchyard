@@ -120,4 +120,18 @@ describe("FpAdapter", () => {
 
     expect(updated.status).toBe("in-progress");
   });
+
+  test("setProperty updates a custom property", async () => {
+    const scratch = await createScratchIssue(`scratch property ${crypto.randomUUID()}`);
+
+    const updated = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* FpAdapter;
+        yield* adapter.setProperty(scratch.displayId, "symphony_state", "active");
+        return yield* adapter.showIssue(scratch.displayId);
+      }),
+    );
+
+    expect(updated.properties.symphony_state).toBe("active");
+  });
 });
