@@ -8,11 +8,21 @@ import { FpBinaryLive } from "../../src/fp/binary.js";
 import { FpIssueDetailSchema, FpIssueListSchema } from "../../src/fp/models.js";
 import {
   type FpTestProject,
+  runFpSuccess,
   setupFpProject,
 } from "./test-helpers/setup-fp-project.js";
 import { type SeededIssues, seedTestIssues } from "./test-helpers/seed.js";
 
 const fixturePath = (name: string) => `test/fixtures/fp/${name}`;
+
+const ScratchIssueSchema = Schema.Struct({
+  id: Schema.String,
+  shortId: Schema.String,
+  displayId: Schema.String,
+  title: Schema.String,
+  status: Schema.String,
+  parent: Schema.NullOr(Schema.String),
+});
 
 let project: FpTestProject;
 let seeds: SeededIssues;
@@ -34,6 +44,21 @@ const runWithAdapter = <A, E>(effect: Effect.Effect<A, E, FpAdapter>) =>
       Effect.provide(NodeContext.layer),
     ),
   );
+
+const createScratchIssue = async (title: string) => {
+  const output = await runFpSuccess(project, [
+    "issue",
+    "create",
+    "--title",
+    title,
+    "--description",
+    "scratch issue for fp adapter write-path tests",
+    "--format",
+    "json",
+  ]);
+
+  return Effect.runPromise(Schema.decodeUnknown(Schema.parseJson(ScratchIssueSchema))(output));
+};
 
 describe("FpIssueListSchema", () => {
   test("decodes the recorded issue list fixture", async () => {
@@ -80,5 +105,19 @@ describe("FpAdapter", () => {
 
     expect(detail.displayId).toBe(seeds.todoIdle.displayId);
     expect(detail.properties.symphony_state).toBe(seeds.todoIdle.symphonyState);
+  });
+
+  test("setStatus updates an issue status", async () => {
+    const scratch = await createScratchIssue(`scratch status ${crypto.randomUUID()}`);
+
+    const updated = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* FpAdapter;
+        yield* adapter.setStatus(scratch.displayId, "in-progress");
+        return yield* adapter.showIssue(scratch.displayId);
+      }),
+    );
+
+    expect(updated.status).toBe("in-progress");
   });
 });

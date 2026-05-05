@@ -1,5 +1,5 @@
 import { Command, CommandExecutor } from "@effect/platform";
-import { Context, Effect, Layer } from "effect";
+import { Chunk, Context, Effect, Layer, Stream } from "effect";
 
 import { FpBinaryNotFoundError, FpCommandError, FpDecodeError } from "./errors.js";
 import { FpBinary, type FpBinaryShape } from "./binary.js";
@@ -23,6 +23,10 @@ export type FpAdapterShape = {
   readonly showIssue: (
     id: string,
   ) => Effect.Effect<FpIssueDetail, FpBinaryNotFoundError | FpCommandError | FpDecodeError>;
+  readonly setStatus: (
+    id: string,
+    status: FpIssueStatus,
+  ) => Effect.Effect<void, FpBinaryNotFoundError | FpCommandError>;
 };
 
 export class FpAdapter extends Context.Tag("FpAdapter")<FpAdapter, FpAdapterShape>() {}
@@ -39,6 +43,23 @@ const commandError = (command: readonly string[], stderr: string, exitCode = -1)
     exitCode,
   });
 
+const decodeOutput = (chunks: Chunk.Chunk<Uint8Array>): string => {
+  const arrays = Chunk.toReadonlyArray(chunks);
+  const length = arrays.reduce((total, bytes) => total + bytes.byteLength, 0);
+  const output = new Uint8Array(length);
+  let offset = 0;
+
+  for (const bytes of arrays) {
+    output.set(bytes, offset);
+    offset += bytes.byteLength;
+  }
+
+  return new TextDecoder().decode(output);
+};
+
+const collectOutput = <E, R>(stream: Stream.Stream<Uint8Array, E, R>) =>
+  Stream.runCollect(stream).pipe(Effect.map(decodeOutput));
+
 const runFpCommand = (
   args: readonly string[],
   options: FpAdapterOptions,
@@ -53,7 +74,27 @@ const runFpCommand = (
       Command.env(currentEnv(options)),
     );
 
-    return yield* executor.string(command).pipe(
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const process = yield* executor.start(command);
+        const result = yield* Effect.all(
+          {
+            stdout: collectOutput(process.stdout),
+            stderr: collectOutput(process.stderr),
+            exitCode: process.exitCode,
+          },
+          { concurrency: "unbounded" },
+        );
+
+        if (result.exitCode !== 0) {
+          return yield* Effect.fail(
+            commandError(commandParts, result.stderr.trim(), result.exitCode),
+          );
+        }
+
+        return result.stdout;
+      }),
+    ).pipe(
       Effect.catchTags({
         BadArgument: (error) => Effect.fail(commandError(commandParts, error.message)),
         SystemError: (error) => Effect.fail(commandError(commandParts, error.message)),
@@ -83,6 +124,10 @@ export const FpAdapterLive = (options: FpAdapterOptions = {}) =>
         showIssue: (id) =>
           runFpCommand(["issue", "show", id, "--format", "json"], options, fpBinary, executor).pipe(
             Effect.flatMap((output) => decodeFpIssueDetailJson(output, `fp issue show ${id}`)),
+          ),
+        setStatus: (id, status) =>
+          runFpCommand(["issue", "update", id, "--status", status], options, fpBinary, executor).pipe(
+            Effect.asVoid,
           ),
       };
     }),
