@@ -61,6 +61,12 @@ export const DaytonaCommandResultSchema = Schema.Struct({
 });
 export type DaytonaCommandResult = Schema.Schema.Type<typeof DaytonaCommandResultSchema>;
 
+export const DaytonaFileTransferSchema = Schema.Struct({
+  src: NonEmptyString,
+  dst: NonEmptyString,
+});
+export type DaytonaFileTransfer = Schema.Schema.Type<typeof DaytonaFileTransferSchema>;
+
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 

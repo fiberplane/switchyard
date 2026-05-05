@@ -11,6 +11,7 @@ import type {
   DaytonaCommandOptions,
   DaytonaCommandResult,
   DaytonaConfig,
+  DaytonaFileTransfer,
   DaytonaSandboxSpec,
   SandboxHandle,
 } from "./models.js";
@@ -28,6 +29,10 @@ export type DaytonaAdapterShape = {
     command: string,
     options?: DaytonaCommandOptions,
   ) => Effect.Effect<DaytonaCommandResult, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
+  readonly uploadFiles: (
+    handle: SandboxHandle,
+    files: readonly DaytonaFileTransfer[],
+  ) => Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
 };
 
 export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
@@ -314,6 +319,41 @@ const executeCommand = (
     Effect.withSpan("DaytonaAdapter.executeCommand"),
   );
 
+const uploadFiles = (
+  client: Daytona,
+  handle: SandboxHandle,
+  files: readonly DaytonaFileTransfer[],
+): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  getSandbox(client, handle.id, "uploadFiles").pipe(
+    Effect.flatMap((sandbox) =>
+      Effect.tryPromise({
+        try: () =>
+          sandbox.fs.uploadFiles(
+            files.map((file) => ({
+              source: file.src,
+              destination: file.dst,
+            })),
+          ),
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSandboxNotFoundError({
+              sandboxId: handle.id,
+              operation: "uploadFiles",
+              reason: describeUnknown(error),
+            });
+          }
+
+          return new DaytonaSandboxOpError({
+            operation: "uploadFiles",
+            sandboxId: handle.id,
+            reason: describeUnknown(error),
+          });
+        },
+      }),
+    ),
+    Effect.withSpan("DaytonaAdapter.uploadFiles"),
+  );
+
 export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapterOptions = {}) =>
   Layer.effect(
     DaytonaAdapter,
@@ -330,6 +370,7 @@ export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapte
         deleteSandbox: (handle) => deleteSandbox(client, handle),
         executeCommand: (handle, command, options) =>
           executeCommand(client, handle, command, options),
+        uploadFiles: (handle, files) => uploadFiles(client, handle, files),
       };
     }),
   );

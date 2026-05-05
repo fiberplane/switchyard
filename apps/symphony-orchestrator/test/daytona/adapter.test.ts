@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { NodeContext } from "@effect/platform-node";
 import { Effect, Either } from "effect";
@@ -197,6 +200,38 @@ describe("DaytonaAdapter", () => {
         expect(result.left.sandboxId.length).toBeGreaterThan(0);
         expect(result.left.operation).toBe("executeCommand");
       }
+    }
+  }, 300_000);
+
+  test("uploadFiles places a non-empty archive in the sandbox", async () => {
+    const uploadRoot = await mkdtemp(join(tmpdir(), "switchyard-daytona-upload-"));
+    const archivePath = join(uploadRoot, "repo.tgz");
+    await writeFile(archivePath, "switchyard upload fixture\n");
+
+    try {
+      const spec = buildTestSandboxSpec({
+        testRunId,
+        labels: {
+          purpose: "upload",
+        },
+      });
+
+      const result = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* DaytonaAdapter;
+          const handle = yield* adapter.createSandbox(spec);
+          yield* adapter.uploadFiles(handle, [{ src: archivePath, dst: "/tmp/repo.tgz" }]);
+          return yield* adapter.executeCommand(
+            handle,
+            "test -s /tmp/repo.tgz && ls -l /tmp/repo.tgz",
+          );
+        }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("/tmp/repo.tgz");
+    } finally {
+      await rm(uploadRoot, { recursive: true, force: true });
     }
   }, 300_000);
 });
