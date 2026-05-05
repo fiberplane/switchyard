@@ -1,0 +1,47 @@
+# QA happy-path WORKFLOW.md template.
+#
+# Substitute the four <DAYTONA_*> placeholders before running the orchestrator. The orchestrator
+# does NOT interpolate $VAR references in YAML (locked in SWYRD-ozdpzajz §4 out-of-scope and
+# spec lines 415-420). Either hand-edit, or pipe through `envsubst` after exporting matching
+# DAYTONA_* env vars.
+#
+# Field shape source: apps/symphony-orchestrator/src/workflow/models.ts
+# Decoded by: apps/symphony-orchestrator/src/workflow/loader.ts (parseYaml + Schema.decodeUnknown)
+
+tracker:
+  kind: fp
+  dispatchFilter:
+    property: symphony_ready
+    value: "true"
+
+polling:
+  intervalMs: 5000
+
+agent:
+  maxConcurrentAgents: 1
+  maxAttempts: 1 # locked at 1 for v1; no auto-retry (ADR D5)
+
+sandbox:
+  kind: daytona
+  apiUrl: <DAYTONA_API_URL> # e.g. http://localhost:33000/api
+  apiKey: <DAYTONA_API_KEY> # admin key from helpers/setup-daytona-test-stack.md
+  target: <DAYTONA_TARGET> # e.g. us  (per spec line 89; not "local")
+  snapshot: <DAYTONA_SNAPSHOT> # symphony-codex-bun (codex-cli 0.128.0 + bun 1.3.13)
+  language: typescript
+  autoStopInterval: 15
+  autoDeleteInterval: -1 # never auto-delete; v1 leaves cleanup manual (SWYRD-xlgiuegf)
+  repoPath: /workspace/repo # canonical sandbox path; spec line 798
+  sourceStrategy: archive # `git archive` tarball into sandbox
+  artifactStrategy: bundle # `git bundle` out of sandbox
+
+codex:
+  command: codex app-server
+  turnTimeoutMs: 3600000 # 1 hour per-turn deadline (locked in osqltjnr §7)
+  # `approvalPolicy`, `sandbox`, and `sandboxPolicy` are optional and decode to schema defaults
+  # of `"never"`, `"danger-full-access"`, and `{ type: "dangerFullAccess" }` respectively (see
+  # apps/symphony-orchestrator/src/workflow/models.ts:50-62). The scenario assertions about
+  # protocol-shape (e.g., scenario 01 step 6 expects `approvalPolicy: "never"` in `thread/start`)
+  # depend on those defaults — only override if a derived scenario needs different values.
+
+integration:
+  branchPrefix: symphony/
