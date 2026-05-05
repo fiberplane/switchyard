@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
+import { NodeContext } from "@effect/platform-node";
 import { Effect, Either } from "effect";
 
+import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaConfigError } from "../../src/daytona/errors.js";
 import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
+import { daytonaTestConfig, ensureStackUp } from "./test-helpers/stack.js";
 
 describe("DaytonaConfig", () => {
   test("decodes config from a complete env", async () => {
@@ -44,4 +47,25 @@ describe("DaytonaConfig", () => {
       }
     }
   });
+});
+
+describe("DaytonaAdapter", () => {
+  test("constructs a client against the test stack", async () => {
+    await ensureStackUp();
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          yield* DaytonaAdapter;
+        }).pipe(
+          Effect.provide(
+            DaytonaAdapterLive(daytonaTestConfig, {
+              probeOnInit: true,
+            }),
+          ),
+          Effect.provide(NodeContext.layer),
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  }, 180_000);
 });

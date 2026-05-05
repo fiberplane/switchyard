@@ -7,9 +7,12 @@
     "format:check": "oxfmt --check src/ test/",
     "lint": "oxlint src/ test/",
     "test": "bun test",
+    "test:daytona:up": "docker compose -p switchyard-test -f test/daytona/compose.test.yaml up -d",
+    "test:daytona:down": "docker compose -p switchyard-test -f test/daytona/compose.test.yaml down -v",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
+    "@daytona/sdk": "0.171.0",
     "@effect/platform": "0.95.0",
     "@effect/platform-node": "0.105.0",
     "effect": "3.20.0",
