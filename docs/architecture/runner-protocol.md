@@ -30,13 +30,13 @@ shapes against real codex 0.128.0. The single source of truth is `approvalRespon
 `runner/turn.ts` (exported and reused by the protocol-drift canary so production and the
 canary share one table).
 
-| Server-initiated method                              | Reply shape                                     | Notes                                                        |
-| ---------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `applyPatchApproval`                                 | `{ decision: "approved" }`                      | Legacy approval method                                       |
-| `execCommandApproval`                                | `{ decision: "approved" }`                      | Legacy approval method                                       |
-| `item/fileChange/requestApproval`                    | `{ decision: "accept" }`                        | v2 — verified against `approval-roundtrip.jsonl`             |
-| `item/commandExecution/requestApproval`              | `{ decision: "accept" }`                        | v2                                                           |
-| `item/permissions/requestApproval`                   | `{ permissions, scope: "turn" }`                | Echo `network` + `fileSystem` from the request when non-null; other keys not forwarded |
+| Server-initiated method                 | Reply shape                      | Notes                                                                                  |
+| --------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------- |
+| `applyPatchApproval`                    | `{ decision: "approved" }`       | Legacy approval method                                                                 |
+| `execCommandApproval`                   | `{ decision: "approved" }`       | Legacy approval method                                                                 |
+| `item/fileChange/requestApproval`       | `{ decision: "accept" }`         | v2 — verified against `approval-roundtrip.jsonl`                                       |
+| `item/commandExecution/requestApproval` | `{ decision: "accept" }`         | v2                                                                                     |
+| `item/permissions/requestApproval`      | `{ permissions, scope: "turn" }` | Echo `network` + `fileSystem` from the request when non-null; other keys not forwarded |
 
 The reply id is **the server's id**. Server-initiated requests carry their own id namespace
 that can collide numerically with the client's monotonic allocator (both can be `1`); the
