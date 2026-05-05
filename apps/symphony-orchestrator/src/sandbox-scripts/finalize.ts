@@ -5,14 +5,15 @@ import type { DaytonaSandboxNotFoundError, DaytonaSandboxOpError } from "../dayt
 import type { SandboxHandle } from "../daytona/models.js";
 import { SandboxScriptError } from "./errors.js";
 import type { FinalizeBundleOptions, SandboxBundleResult } from "./models.js";
-
-const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\"'\"'")}'`;
+import { shellQuote } from "./shell-quote.js";
 
 // Sentinel form for the count probe: bare positional parsing ("last numeric line
 // of stdout") is fragile because `git bundle create` may write progress to stdout
 // in some versions. The `__commits=` prefix gives us a stable line to grep for
-// regardless of what bundle-create chose to print.
-const COMMITS_SENTINEL = /^__commits=(\d+)$/m;
+// regardless of what bundle-create chose to print. We take the *last* match so
+// that any future script changes that print the sentinel multiple times still
+// reflect the final committed state.
+const COMMITS_SENTINEL = /^__commits=(\d+)$/gm;
 
 export const buildFinalizeScript = (options: FinalizeBundleOptions): string => {
   const repo = shellQuote(options.repoPath);
@@ -50,8 +51,9 @@ export const runFinalize = (
         }),
       );
     }
-    const match = COMMITS_SENTINEL.exec(result.stdout);
-    if (match === null) {
+    const matches = [...result.stdout.matchAll(COMMITS_SENTINEL)];
+    const last = matches.at(-1);
+    if (last === undefined) {
       return yield* Effect.fail(
         new SandboxScriptError({
           operation: "finalizeBundle",
@@ -63,6 +65,13 @@ export const runFinalize = (
     }
     return {
       bundlePath: options.bundlePath,
-      commitsBeyondBase: Number(match[1]),
+      commitsBeyondBase: Number(last[1]),
     };
-  });
+  }).pipe(
+    Effect.withSpan("SandboxScriptService.finalizeBundle", {
+      attributes: {
+        repoPath: options.repoPath,
+        bundlePath: options.bundlePath,
+      },
+    }),
+  );

@@ -131,13 +131,32 @@ describe("SandboxScriptService.finalizeBundle", () => {
             handle,
             `cd ${SANDBOX_REPO_PATH} && git bundle verify ${SANDBOX_BUNDLE_PATH}`,
           );
-          return { result, verify };
+          const heads = yield* adapter.executeCommand(
+            handle,
+            `cd ${SANDBOX_REPO_PATH} && git bundle list-heads ${SANDBOX_BUNDLE_PATH}`,
+          );
+          const baseRev = yield* adapter.executeCommand(
+            handle,
+            `cd ${SANDBOX_REPO_PATH} && git rev-parse symphony-base`,
+          );
+          return { result, verify, heads, baseRev };
         }),
       );
 
       expect(probes.result.bundlePath).toBe(SANDBOX_BUNDLE_PATH);
       expect(probes.result.commitsBeyondBase).toBe(0);
       expect(probes.verify.exitCode).toBe(0);
+      // The bundle's single ref must be HEAD pointing at the symphony-base
+      // commit — guards against a regression that produced a 0-commit count
+      // but a wrong tip (e.g., bundling something other than HEAD).
+      expect(probes.heads.exitCode).toBe(0);
+      const headLines = probes.heads.stdout
+        .trim()
+        .split("\n")
+        .filter((line) => line !== "");
+      expect(headLines).toHaveLength(1);
+      const baseSha = probes.baseRev.stdout.trim();
+      expect(headLines[0]).toBe(`${baseSha} HEAD`);
     } finally {
       await archive.cleanup();
     }

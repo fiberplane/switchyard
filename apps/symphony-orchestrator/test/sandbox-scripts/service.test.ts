@@ -114,7 +114,7 @@ describe("SandboxScriptService round-trip", () => {
         .split("\n")
         .filter((line) => line !== "");
       expect(headLines).toHaveLength(1);
-      expect(headLines[0]).toMatch(/HEAD$/);
+      expect(headLines[0]).toMatch(/^[0-9a-f]{40} HEAD$/);
     } finally {
       await archive.cleanup();
       await rm(downloadRoot, { recursive: true, force: true });

@@ -148,6 +148,10 @@ Patch-based artifacts (`git diff --binary > symphony-result.patch`) were rejecte
 flatten history into a single squashed diff — the commit-by-commit thought process is a primary
 review artifact, not noise.
 
+The in-sandbox bundle command lives in `apps/symphony-orchestrator/src/sandbox-scripts/finalize.ts`
+(`SandboxScriptService.finalizeBundle`); the host-side fetch + branch-create lives in
+`apps/symphony-orchestrator/src/integration/bundle.ts`.
+
 ### D8. `codex app-server`, not `codex exec --json`
 
 Upstream Symphony defaults to `codex app-server` and is structured around its session/thread/turn

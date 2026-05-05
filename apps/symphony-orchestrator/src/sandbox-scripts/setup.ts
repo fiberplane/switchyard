@@ -9,8 +9,7 @@ import {
   SANDBOX_GIT_AUTHOR_NAME,
   type SetupRepoOptions,
 } from "./models.js";
-
-const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\"'\"'")}'`;
+import { shellQuote } from "./shell-quote.js";
 
 // Setup is non-idempotent by design: ADR D6 says one issue dispatches into one
 // fresh sandbox, so a second `setupRepo` would hit `git tag` collisions on
@@ -24,6 +23,12 @@ export const buildSetupScript = (options: SetupRepoOptions): string => {
   // mutate any global git state inside the sandbox.
   const authorName = shellQuote(SANDBOX_GIT_AUTHOR_NAME);
   const authorEmail = shellQuote(SANDBOX_GIT_AUTHOR_EMAIL);
+  // We deliberately omit `git config --global --add safe.directory <repo>`.
+  // The current Daytona base image runs `tar -xzf` and `git init` under the
+  // same uid, so dubious-ownership refusal does not trigger. If a future image
+  // runs sandbox commands as a different uid (e.g., separate exec user), add it
+  // back as the first line under `cd ${repo}`. The smoke playground used it
+  // because its exec context differs from the production sandbox.executeCommand.
   return [
     "set -euo pipefail",
     `mkdir -p ${repo} ${symphony}`,
@@ -54,5 +59,12 @@ export const runSetup = (
         }),
       );
     }
-    return undefined;
-  });
+  }).pipe(
+    Effect.withSpan("SandboxScriptService.setupRepo", {
+      attributes: {
+        archivePath: options.archivePath,
+        repoPath: options.repoPath,
+        symphonyDir: options.symphonyDir,
+      },
+    }),
+  );

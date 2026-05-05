@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { SandboxScriptError } from "../../../src/sandbox-scripts/errors.js";
+import { SeedArchiveError } from "./errors.js";
 
 export type SeededArchive = {
   readonly archivePath: string;
@@ -14,8 +14,7 @@ const sh = async (cwd: string, args: readonly string[]): Promise<void> => {
   const proc = Bun.spawn([...args], { cwd, stdout: "pipe", stderr: "pipe" });
   const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
   if (exitCode !== 0) {
-    throw new SandboxScriptError({
-      operation: "setupRepo",
+    throw new SeedArchiveError({
       command: args.join(" "),
       exitCode,
       stderr,
