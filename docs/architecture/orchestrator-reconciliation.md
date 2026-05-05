@@ -3,7 +3,7 @@
 **Status:** Accepted (v1)
 **Date:** 2026-05-05
 **Source-of-truth ticket:** `SWYRD-osqltjnr` (orchestrator service)
-**Drift-bound files (anchor-stamped):** `apps/symphony-orchestrator/src/orchestrator/service.ts` *(pending — file does not exist yet; bind on first commit of service.ts under `SWYRD-osqltjnr`)*
+**Drift-bound files (anchor-stamped):** `apps/symphony-orchestrator/src/orchestrator/service.ts` _(pending — file does not exist yet; bind on first commit of service.ts under `SWYRD-osqltjnr`)_
 
 ## Context
 
@@ -61,7 +61,7 @@ Concrete edge cases this leaves on the floor:
 
 - Human flips `status=done` on an in-flight issue. There is no merge: the orchestrator continues to `runOne` completion and issues a blind `markCompleted` (or `markNeedsAttention`) write on its own terminal transition, with no read-then-decide against the intervening human edit. ADR D4 makes the orchestrator the sole `fp` writer, so this is "last write wins" only by construction — there's no contention model to lose. The human can re-edit afterward. v1 accepts this because the cost of detection (re-fetch on every tick) is paid every tick to handle a near-zero-frequency failure mode.
 - Human deletes the issue from fp mid-flight. `runOne` continues until it tries `markCompleted/markNeedsAttention` and that fp write fails. Per the failure matrix in `SWYRD-osqltjnr` §7b (row F15), the write is retried once then logged. The running-set entry releases via finalizer regardless.
-- Issue's `dependencies` field changes mid-flight (parent now blocks). v1 doesn't re-validate eligibility once `runOne` starts. The orchestrator integrates the worker's branch normally; the dependency change matters only for the *next* tick's eligibility scan.
+- Issue's `dependencies` field changes mid-flight (parent now blocks). v1 doesn't re-validate eligibility once `runOne` starts. The orchestrator integrates the worker's branch normally; the dependency change matters only for the _next_ tick's eligibility scan.
 
 These are accepted v1 trade-offs. None of them are silent corruption — the worst case is "orchestrator wins the race against a manual fp edit", and the human can re-edit.
 
@@ -71,18 +71,19 @@ These are accepted v1 trade-offs. None of them are silent corruption — the wor
 
 ```ts
 runOneTick = Effect.gen(function* () {
-  const { agent } = yield* WorkflowService
-  const runningSet = yield* Ref.get(runningSetRef)                  // current set
-  const scan = yield* FpService.fetchCandidates(runningSet.entriesById) // running-set passed verbatim
-  const verdict = selector.select({                                  // pure
+  const { agent } = yield* WorkflowService;
+  const runningSet = yield* Ref.get(runningSetRef); // current set
+  const scan = yield* FpService.fetchCandidates(runningSet.entriesById); // running-set passed verbatim
+  const verdict = selector.select({
+    // pure
     scan,
     runningSet,
     maxConcurrentAgents: agent.maxConcurrentAgents,
-  })
+  });
   if (verdict.toDispatch.length > 0) {
-    yield* runOne(verdict.toDispatch[0])                             // v1 single-flight
+    yield* runOne(verdict.toDispatch[0]); // v1 single-flight
   }
-})
+});
 ```
 
 No reconcile step at the top. With single-flight + serialized ticks (above), the running-set state at the top of tick N+1 is exactly the state at the bottom of tick N — the prior tick's `runOne` either ran to completion (releasing its entry via finalizer) or no entry was added. No transient or stale entries can exist across the tick boundary.
