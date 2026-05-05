@@ -20,3 +20,19 @@ export class ProtocolParseError extends Data.TaggedError("ProtocolParseError")<{
     return `Runner transport JSON parse failed on frame: ${this.reason}\n  line: ${this.line}`;
   }
 }
+
+export class ProtocolSendError extends Data.TaggedError("ProtocolSendError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner transport send failed: ${this.reason}`;
+  }
+}
+
+export class ProtocolRecvError extends Data.TaggedError("ProtocolRecvError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner transport receive stream failed: ${this.reason}`;
+  }
+}

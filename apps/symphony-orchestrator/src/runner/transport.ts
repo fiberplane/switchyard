@@ -1,6 +1,17 @@
 import { Effect, ParseResult, Ref, Schema, Stream } from "effect";
 
-import { PARSE_ERROR_LINE_TRUNCATION, ProtocolFramingError, ProtocolParseError } from "./errors.js";
+import {
+  PARSE_ERROR_LINE_TRUNCATION,
+  ProtocolFramingError,
+  ProtocolParseError,
+  ProtocolRecvError,
+  ProtocolSendError,
+} from "./errors.js";
+
+export type ProtocolStream = {
+  readonly send: (bytes: Uint8Array) => Effect.Effect<void, ProtocolSendError>;
+  readonly receive: Stream.Stream<Uint8Array, ProtocolRecvError>;
+};
 
 const NEWLINE = "\n";
 
