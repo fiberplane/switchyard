@@ -487,6 +487,62 @@ describe("DaytonaSession round-trip", () => {
     expect(secondResult).toContain("reuse-ok");
   }, 90_000);
 
+  test("mid-stream scope exit terminates the in-sandbox command", async () => {
+    // Start an infinite loop, consume exactly one chunk, then exit the
+    // scope. After scope finalization deletes the session, the in-sandbox
+    // shell process should be gone — verify via a side-channel pgrep.
+    const longCommand = "while true; do echo tick; sleep 0.05; done";
+
+    const sessionId = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, longCommand);
+          // Pull exactly one chunk then return; scope exit handles cleanup.
+          const oneChunk = yield* stream.receive.pipe(
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.timeoutFail({
+              duration: "10 seconds",
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId: stream.sessionId,
+                  commandId: stream.commandId,
+                  reason: "first chunk did not arrive within 10s",
+                }),
+            }),
+          );
+          expect(Chunk.size(oneChunk)).toBeGreaterThan(0);
+          return stream.sessionId;
+        }),
+      ),
+    );
+
+    // Give scope finalization a moment to call deleteSession.
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Verify the session is gone: search for processes whose command line
+    // contains the unique trap-echo string the wrapper installed. Exclude
+    // pgrep's own command line (which references the trap echo via our
+    // search query) by filtering for the literal `trap` keyword in the
+    // matched process line.
+    const trapMarker = `echo $? > /tmp/${sessionId}-exit`;
+    const sweep = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* adapter.executeCommand(
+          sharedHandle,
+          `ps axww -o pid,command | grep -F ${JSON.stringify(trapMarker)} | grep -v 'grep -F' | grep -v 'ps axww' || true`,
+        );
+      }),
+    );
+    const stillRunning = (sweep.stdout ?? "").split("\n").filter((line) => line.trim().length > 0);
+    if (stillRunning.length > 0) {
+      console.error("post-scope ps output:", JSON.stringify(sweep.stdout));
+    }
+    expect(stillRunning.length).toBe(0);
+  }, 90_000);
+
   test("waitExit reports a non-zero exit code as data", async () => {
     const result = await runWithSession(
       Effect.scoped(
