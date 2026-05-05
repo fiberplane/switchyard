@@ -3,7 +3,7 @@
 Status: Draft for product/design exploration.
 Visual direction: 1950s American switchyard — enamel signage, signal lamps, switch
 stands, Solari split-flap boards. Utilitarian, period equipment that happens to be
-beautiful. The railroad world is the *interface vocabulary*, not decoration.
+beautiful. The railroad world is the _interface vocabulary_, not decoration.
 
 ## Synopsis
 
@@ -452,21 +452,21 @@ rest of the dashboard largely designs itself.
 
 Honest handles for the designer; not labels in the UI.
 
-| System object       | Railroad object                                            |
-| ------------------- | ---------------------------------------------------------- |
-| `fp` issue          | Manifest / waybill                                         |
-| Ready queue         | Cars on the inbound siding                                 |
-| Dispatch            | Switchman throwing a switch                                |
-| Orchestrator        | Yardmaster at the panel                                    |
-| Daytona sandbox     | Service track / locomotive shed                            |
-| Codex worker turn   | A train moving through the yard                            |
-| Artifact bundle     | Freight delivered                                          |
-| Host branch         | Made-up train on the outbound siding, ready for review     |
-| `symphony_state`    | Aspect on the issue's home signal                          |
-| Slot capacity       | Switch lever frame; one lever per concurrent slot          |
-| Handoff chain       | Track schematic with a switch at each phase boundary       |
-| Run history         | Timetable / train sheet                                    |
-| Operator            | Dispatcher                                                 |
+| System object     | Railroad object                                        |
+| ----------------- | ------------------------------------------------------ |
+| `fp` issue        | Manifest / waybill                                     |
+| Ready queue       | Cars on the inbound siding                             |
+| Dispatch          | Switchman throwing a switch                            |
+| Orchestrator      | Yardmaster at the panel                                |
+| Daytona sandbox   | Service track / locomotive shed                        |
+| Codex worker turn | A train moving through the yard                        |
+| Artifact bundle   | Freight delivered                                      |
+| Host branch       | Made-up train on the outbound siding, ready for review |
+| `symphony_state`  | Aspect on the issue's home signal                      |
+| Slot capacity     | Switch lever frame; one lever per concurrent slot      |
+| Handoff chain     | Track schematic with a switch at each phase boundary   |
+| Run history       | Timetable / train sheet                                |
+| Operator          | Dispatcher                                             |
 
 ### Palette: Enamel Sign
 
@@ -490,14 +490,14 @@ State chips are lamp roundels. Consistent shape and size across the UI; can stac
 vertically to mimic a real signal head when an entity carries multiple signals
 (durable status plus runtime state, for example).
 
-| Lamp aspect    | State                          |
-| -------------- | ------------------------------ |
-| Red            | Needs attention                |
-| Amber          | Running / in progress          |
-| Green          | Integrated                     |
-| White          | Ready (clear board)            |
-| Blue (lunar)   | Idle / not yet ready           |
-| Dark / off     | Not dispatched                 |
+| Lamp aspect  | State                 |
+| ------------ | --------------------- |
+| Red          | Needs attention       |
+| Amber        | Running / in progress |
+| Green        | Integrated            |
+| White        | Ready (clear board)   |
+| Blue (lunar) | Idle / not yet ready  |
+| Dark / off   | Not dispatched        |
 
 Signal lamps are the only place the saturated palette runs free.
 
@@ -505,19 +505,19 @@ Signal lamps are the only place the saturated palette runs free.
 
 Three layers, each doing a different job.
 
-| Layer              | Role                                | Type                                                |
-| ------------------ | ----------------------------------- | --------------------------------------------------- |
-| Base (~90%)        | Body, tables, dense data            | Trade Gothic / Bureau Grot — calm, dense, readable  |
-| Structural accents | Labels, section headers, chip text  | Gorton-style engraved (e.g. F37 Gorton)             |
-| Moments of delight | Counters, live totals, durations    | Split-flap / Solari-style numerals                  |
-| Identifiers        | SHAs, branch names, sandbox ids     | A grotesk mono; first-class typography              |
+| Layer              | Role                               | Type                                               |
+| ------------------ | ---------------------------------- | -------------------------------------------------- |
+| Base (~90%)        | Body, tables, dense data           | Trade Gothic / Bureau Grot — calm, dense, readable |
+| Structural accents | Labels, section headers, chip text | Gorton-style engraved (e.g. F37 Gorton)            |
+| Moments of delight | Counters, live totals, durations   | Split-flap / Solari-style numerals                 |
+| Identifiers        | SHAs, branch names, sandbox ids    | A grotesk mono; first-class typography             |
 
 Trade Gothic carries the room; Gorton gives it edges; split-flap gives it time.
 
 ### Geometry Rule
 
 Straight lines, ninety-degree corners, or a single fixed sweep radius modeled on a
-real track easement. Curves appear *only* at functional junctions — a switch where
+real track easement. Curves appear _only_ at functional junctions — a switch where
 the handoff chain branches, a return loop in an empty state. No decorative curves,
 no glassmorphism, no drop shadows. Rules and dividers behave like rails: paired
 parallel lines, with crossties as a tertiary divider where rows need to feel like
@@ -546,7 +546,7 @@ illustration earns attention by being rare.
   lamps.
 
 The world is unpopulated. No mascots, no anthropomorphic engines, no Thomas-the-
-Tank-Engine energy. What's playful is the *machinery* — the switches, lamps, levers,
+Tank-Engine energy. What's playful is the _machinery_ — the switches, lamps, levers,
 and boards.
 
 ### What To Avoid
