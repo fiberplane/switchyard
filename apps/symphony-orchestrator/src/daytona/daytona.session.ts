@@ -62,6 +62,11 @@ export type ProtocolStream = {
     DaytonaSessionExitInfo,
     DaytonaSessionNotFoundError | DaytonaSessionOpError
   >;
+  // Idempotent. Callers who want to release the session before the scope
+  // exits can yield* stream.close. The same Effect is registered as the
+  // scope finalizer via Effect.acquireRelease, so consumers who rely on
+  // scope-driven cleanup don't need to call close themselves.
+  readonly close: Effect.Effect<void>;
 };
 
 export type DaytonaSessionStartError =
@@ -89,6 +94,7 @@ const generateSessionId = (): string => `swyrd-${crypto.randomUUID()}`;
 const getSandboxForSession = (
   client: Daytona,
   sandboxId: string,
+  sessionId: string,
 ): Effect.Effect<Sandbox, DaytonaSandboxNotFoundError | DaytonaSessionOpError> =>
   Effect.tryPromise({
     try: () => client.get(sandboxId),
@@ -102,7 +108,7 @@ const getSandboxForSession = (
       }
 
       return new DaytonaSessionOpError({
-        sessionId: "n/a",
+        sessionId,
         operation: "getSandbox",
         reason: describeUnknown(error),
       });
@@ -348,20 +354,20 @@ const buildLogStreams = (
 // Workaround: every start()'s user command is wrapped with a shell EXIT
 // trap that writes the exit code to /tmp/<sessionId>-exit. A scope-bound
 // "exit watcher" fork polls that file via sandbox.process.executeCommand
-// every WAIT_EXIT_POLL_DELAY_MS until either the file appears or the
-// deadline expires. On observed exit, the watcher resolves a shared
-// Deferred AND interrupts the streaming fork AND shuts down the
-// stdout/stderr queues — driving deterministic receive-stream completion
-// regardless of whether the SDK's WebSocket has closed yet. waitExit is a
-// thin wrapper around Deferred.await.
+// every WAIT_EXIT_POLL_DELAY_MS *forever* — the consumer's scope governs
+// lifetime, not a wall-clock deadline. On observed exit the watcher
+// resolves a shared Deferred AND interrupts the streaming fork AND shuts
+// down the stdout/stderr queues — driving deterministic receive-stream
+// completion regardless of whether the SDK's WebSocket has closed yet.
+// waitExit is a thin wrapper around Deferred.await.
 //
 // Backport-worthy: production Daytona Cloud may populate Command.exitCode
 // or close the streaming WebSocket on command exit. If it does, this
 // wrapper + file-poll can be retired (or downgraded to OSS-only).
 const WAIT_EXIT_POLL_DELAY_MS = 200;
-const WAIT_EXIT_DEADLINE_MS = 30_000;
 
 const exitFilePath = (sessionId: string): string => `/tmp/${sessionId}-exit`;
+const pidFilePath = (sessionId: string): string => `/tmp/${sessionId}-pid`;
 
 // The session shell does not auto-exit when a runAsync command's body
 // finishes — it stays open waiting for more session input until an explicit
@@ -370,9 +376,17 @@ const exitFilePath = (sessionId: string): string => `/tmp/${sessionId}-exit`;
 // chunks, then exit explicitly so the EXIT trap fires and the exit-code
 // file gets written. If the user's command runs `exit N` itself, the shell
 // exits before reaching the sleep+exit lines and the trap still captures N.
+//
+// We also write the wrapper bash's PID to /tmp/<sessionId>-pid at startup
+// so the SIGKILL detector can distinguish "wrapper still alive" from
+// "wrapper killed before trap fired" without relying on a wall-clock
+// deadline. The trap removes the PID file on clean exit so the absence
+// of the PID file (without a corresponding exit file) is a reliable
+// SIGKILL signal.
 const wrapCommandWithExitTrap = (sessionId: string, command: string): string =>
   [
-    `trap 'echo $? > ${exitFilePath(sessionId)}' EXIT`,
+    `echo $$ > ${pidFilePath(sessionId)}`,
+    `trap 'echo $? > ${exitFilePath(sessionId)}; rm -f ${pidFilePath(sessionId)}' EXIT`,
     command,
     "__SWYRD_RC=$?",
     "sleep 0.1",
@@ -428,30 +442,80 @@ const readExitFile = (
   );
 };
 
-const pollExitWithDeadline = (
+// pollExitOrSigkill polls the exit-code file forever, but ALSO checks the
+// wrapper PID file on each iteration. If the PID file is gone AND the
+// exit file is also gone, the wrapper was killed before its trap could
+// fire (SIGKILL or equivalent), and we surface that as a typed failure
+// instead of polling indefinitely. Lifetime is governed by the consumer's
+// scope, not a wall-clock deadline — codex app-server turns can run for
+// minutes.
+const pollExitOrSigkill = (
   sandbox: Sandbox,
   sessionId: string,
-): Effect.Effect<DaytonaSessionExitInfo, DaytonaSessionNotFoundError | DaytonaSessionOpError> =>
-  Effect.gen(function* () {
+): Effect.Effect<DaytonaSessionExitInfo, DaytonaSessionNotFoundError | DaytonaSessionOpError> => {
+  const exitFile = exitFilePath(sessionId);
+  const pidFile = pidFilePath(sessionId);
+
+  // Probe: returns exit code 0 if either (a) the exit-code file exists
+  // (clean exit imminent — readExitFile catches it on the next tick) or
+  // (b) the wrapper PID is still alive AND not a zombie. Returns non-zero
+  // if both conditions fail, which means the wrapper died before its
+  // trap could run (SIGKILL or equivalent). Uses `/proc/<pid>/exe`
+  // existence rather than `kill -0` because `kill -0` returns success
+  // for zombie processes (the PID exists in the process table even
+  // though the program is dead); the `exe` symlink is removed when the
+  // process actually exits, so its presence is the cleaner liveness test.
+  const probeCommand = `test -e ${exitFile} || { pid=$(cat ${pidFile} 2>/dev/null) && [ -n "$pid" ] && [ -e /proc/$pid/exe ]; }`;
+
+  return Effect.gen(function* () {
     while (true) {
       const found = yield* readExitFile(sandbox, sessionId);
       if (Option.isSome(found)) {
         return found.value;
       }
+      // Check whether the wrapper PID file is still present. If the trap
+      // ran cleanly the exit file is written first (we'd have caught it
+      // above), then the PID file is removed. If the wrapper was killed,
+      // the PID file disappears via the sandbox's normal /proc cleanup
+      // (the file persists but the PID is gone) — we additionally probe
+      // /proc/<pid> via `kill -0`. To keep the probe simple, we use the
+      // file-existence test and accept that a brief race window between
+      // trap-write-exit and trap-rm-pid produces no false positive (both
+      // files coexist for a few microseconds; the next poll observes
+      // exit and returns success).
+      const probe = yield* Effect.tryPromise({
+        try: () => sandbox.process.executeCommand(probeCommand),
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSessionNotFoundError({
+              sessionId,
+              operation: "sigkillProbe",
+              reason: describeUnknown(error),
+            });
+          }
+          return new DaytonaSessionOpError({
+            sessionId,
+            operation: "sigkillProbe",
+            reason: describeUnknown(error),
+          });
+        },
+      });
+
+      if (probe.exitCode !== 0) {
+        // Both files gone — wrapper killed before trap could fire.
+        return yield* Effect.fail(
+          new DaytonaSessionOpError({
+            sessionId,
+            operation: "waitExit",
+            reason: "wrapper process disappeared before EXIT trap fired (likely SIGKILL)",
+          }),
+        );
+      }
+
       yield* Effect.sleep(`${WAIT_EXIT_POLL_DELAY_MS} millis`);
     }
-  }).pipe(
-    Effect.timeoutFail({
-      duration: `${WAIT_EXIT_DEADLINE_MS} millis`,
-      onTimeout: () =>
-        new DaytonaSessionOpError({
-          sessionId,
-          operation: "waitExit",
-          reason: `exit-code poll deadline exceeded after ${WAIT_EXIT_DEADLINE_MS}ms`,
-        }),
-    }),
-    Effect.withSpan("DaytonaSession.exitWatcher"),
-  );
+  }).pipe(Effect.withSpan("DaytonaSession.exitWatcher"));
+};
 
 const start = (
   client: Daytona,
@@ -459,12 +523,20 @@ const start = (
   command: string,
 ): Effect.Effect<ProtocolStream, DaytonaSessionStartError, Scope.Scope> =>
   Effect.gen(function* () {
-    const sandbox = yield* getSandboxForSession(client, handle.id);
+    // Generate sessionId before any SDK call so error paths always carry a
+    // real id (no "n/a" magic string in DaytonaSessionOpError).
     const sessionId = generateSessionId();
+    const sandbox = yield* getSandboxForSession(client, handle.id, sessionId);
 
-    yield* Effect.acquireRelease(createSession(sandbox, handle.id, sessionId), () =>
-      releaseSession(sandbox, sessionId),
+    const closeOnce = yield* Ref.make(false);
+    const close = Ref.getAndSet(closeOnce, true).pipe(
+      Effect.flatMap((alreadyClosed) =>
+        alreadyClosed ? Effect.void : releaseSession(sandbox, sessionId),
+      ),
+      Effect.withSpan("DaytonaSession.close"),
     );
+
+    yield* Effect.acquireRelease(createSession(sandbox, handle.id, sessionId), () => close);
 
     const wrappedCommand = wrapCommandWithExitTrap(sessionId, command);
     const commandId = yield* executeSessionCommand(sandbox, sessionId, wrappedCommand);
@@ -477,17 +549,17 @@ const start = (
     const rig = yield* buildLogStreams(sandbox, sessionId, commandId, exitDeferred);
 
     yield* Effect.forkScoped(
-      pollExitWithDeadline(sandbox, sessionId).pipe(
+      pollExitOrSigkill(sandbox, sessionId).pipe(
         Effect.matchCauseEffect({
           onSuccess: (info) =>
             Deferred.succeed(exitDeferred, info).pipe(
               Effect.zipRight(Fiber.interrupt(rig.driverFiber)),
               Effect.zipRight(rig.shutdown),
             ),
-          // Watcher failed (deadline / SDK error). Mirror to the receive
-          // stream so consumers observe a typed failure instead of a clean
-          // termination; the driver may still be hanging on the SDK's
-          // streaming Promise, so we also interrupt it explicitly.
+          // Watcher failed (SIGKILL detected or SDK error). Mirror to the
+          // receive stream so consumers observe a typed failure instead of
+          // a clean termination; the driver may still be hanging on the
+          // SDK's streaming Promise, so we also interrupt it explicitly.
           onFailure: (cause) =>
             Effect.all(
               [
@@ -540,6 +612,7 @@ const start = (
       stderr: rig.stderr,
       send,
       waitExit,
+      close,
     };
 
     return stream;
