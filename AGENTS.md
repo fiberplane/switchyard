@@ -56,12 +56,11 @@ bun run test                      # Tests (all workspaces, fan-out via --filter 
 EFFECT_TRACE=1 bun run <command>  # Enable trace + structured log output
 ```
 
-> **Don't run bare `bun test` from the repo root.** It walks the cwd and picks up
-> `references/` (gitignored upstream mirrors like `references/effect/`), producing
-> ~870 import failures and appearing to hang. `bunfig.toml` declares
-> `pathIgnorePatterns = ["references/**"]`, but Bun 1.3.x does not yet honor the
-> bunfig key — only the `--path-ignore-patterns` CLI flag works. Use `bun run test`
-> (workspace-filtered) or scope by workspace, e.g.
+> **`bun test` from the repo root walks the cwd**, including `references/`
+> (gitignored upstream mirrors like `references/effect/`). `bunfig.toml` prunes
+> that path via `pathIgnorePatterns`, which requires Bun >= 1.3.13 — older Bun
+> silently ignores the key and tries to load ~1000 upstream test files. Prefer
+> `bun run test` (fans out via `--filter '*'`) or scope by workspace, e.g.
 > `bun run --filter @switchyard/symphony-orchestrator test`.
 
 `bun run check` does not run tests or `format:check`. Before closing code tasks, run all three:
