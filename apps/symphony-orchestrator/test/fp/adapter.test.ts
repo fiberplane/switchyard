@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect";
 
 import { FpAdapter, FpAdapterLive } from "../../src/fp/adapter.js";
 import { FpBinaryLive } from "../../src/fp/binary.js";
-import { FpIssueListSchema } from "../../src/fp/models.js";
+import { FpIssueDetailSchema, FpIssueListSchema } from "../../src/fp/models.js";
 import {
   type FpTestProject,
   setupFpProject,
@@ -45,6 +45,15 @@ describe("FpIssueListSchema", () => {
     expect(decoded.issues[0]?.shortId).toBe("xyfynabp");
     expect(decoded.issues[0]?.status).toBe("in-progress");
   });
+
+  test("decodes the recorded issue show fixture", async () => {
+    const decoded = await Effect.runPromise(
+      Schema.decodeUnknown(FpIssueDetailSchema)(await Bun.file(fixturePath("issue-show.json")).json()),
+    );
+
+    expect(decoded.displayId).toBe("SWY-lutdubtu");
+    expect(decoded.properties.symphony_state).toBe("idle");
+  });
 });
 
 describe("FpAdapter", () => {
@@ -59,5 +68,17 @@ describe("FpAdapter", () => {
 
     expect(seed?.title).toBe(seeds.todoIdle.title);
     expect(seed?.status).toBe("todo");
+  });
+
+  test("showIssue returns issue detail with custom properties", async () => {
+    const detail = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* FpAdapter;
+        return yield* adapter.showIssue(seeds.todoIdle.displayId);
+      }),
+    );
+
+    expect(detail.displayId).toBe(seeds.todoIdle.displayId);
+    expect(detail.properties.symphony_state).toBe(seeds.todoIdle.symphonyState);
   });
 });

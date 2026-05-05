@@ -3,7 +3,13 @@ import { Context, Effect, Layer } from "effect";
 
 import { FpBinaryNotFoundError, FpCommandError, FpDecodeError } from "./errors.js";
 import { FpBinary, type FpBinaryShape } from "./binary.js";
-import { decodeFpIssueListJson, type FpIssue, type FpIssueStatus } from "./models.js";
+import {
+  decodeFpIssueDetailJson,
+  decodeFpIssueListJson,
+  type FpIssue,
+  type FpIssueDetail,
+  type FpIssueStatus,
+} from "./models.js";
 
 export type FpAdapterOptions = {
   readonly cwd?: string;
@@ -14,6 +20,9 @@ export type FpAdapterShape = {
   readonly listIssuesByStatus: (
     status: FpIssueStatus,
   ) => Effect.Effect<readonly FpIssue[], FpBinaryNotFoundError | FpCommandError | FpDecodeError>;
+  readonly showIssue: (
+    id: string,
+  ) => Effect.Effect<FpIssueDetail, FpBinaryNotFoundError | FpCommandError | FpDecodeError>;
 };
 
 export class FpAdapter extends Context.Tag("FpAdapter")<FpAdapter, FpAdapterShape>() {}
@@ -70,6 +79,10 @@ export const FpAdapterLive = (options: FpAdapterOptions = {}) =>
             Effect.flatMap((output) =>
               decodeFpIssueListJson(output, `fp issue list --status ${status} --format json`),
             ),
+          ),
+        showIssue: (id) =>
+          runFpCommand(["issue", "show", id, "--format", "json"], options, fpBinary, executor).pipe(
+            Effect.flatMap((output) => decodeFpIssueDetailJson(output, `fp issue show ${id}`)),
           ),
       };
     }),

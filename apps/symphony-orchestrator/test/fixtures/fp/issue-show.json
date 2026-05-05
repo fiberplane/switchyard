@@ -1,0 +1,18 @@
+{
+  "id": "lutdubtuuvftpjllzlfgxzjcouikpqyt",
+  "displayId": "SWY-lutdubtu",
+  "title": "Seed idle",
+  "description": "seed",
+  "status": "todo",
+  "priority": null,
+  "parent": null,
+  "dependencies": [],
+  "revisions": [],
+  "author": "claude",
+  "createdAt": "2026-05-05T00:01:37.375Z",
+  "updatedAt": "2026-05-05T00:01:37.400Z",
+  "properties": {
+    "symphony_state": "idle"
+  },
+  "comments": []
+}
