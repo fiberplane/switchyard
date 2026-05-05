@@ -44,7 +44,6 @@ import { SandboxScriptServiceLive } from "../../src/sandbox-scripts/service.js";
 import { daytonaTestConfig, ensureStackUp } from "../daytona/test-helpers/stack.js";
 import { ensureTestSnapshot } from "../daytona/test-helpers/snapshot.js";
 import { sweepOrphanedTestSandboxes } from "../daytona/test-helpers/sweep.js";
-import { fixtureEligible } from "./test-helpers/fixture-issue.js";
 import {
   createSymphonyFpFixture,
   rearmFpIssue,
@@ -297,6 +296,3 @@ describe("OrchestratorService integration — cycles 13a/13b/13c/13d", () => {
   );
 });
 
-// Compile-time touch: keep `fixtureEligible` referenced even when the suite
-// skips, so re-importing the fixture from another test stays a single source.
-void fixtureEligible;
