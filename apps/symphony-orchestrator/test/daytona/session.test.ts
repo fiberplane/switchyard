@@ -7,6 +7,7 @@ import { Cause, Chunk, Effect, Either, Exit, ParseResult, Schema, Stream } from 
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaSession, DaytonaSessionLive } from "../../src/daytona/daytona.session.js";
 import {
+  DaytonaSandboxNotFoundError,
   DaytonaSessionCreateError,
   DaytonaSessionExecError,
   DaytonaSessionInputError,
@@ -587,6 +588,95 @@ describe("DaytonaSession round-trip", () => {
     expect(total).toContain("line-1000\n");
     expect(heapDeltaBytes).toBeLessThan(heapBudgetBytes);
   }, 90_000);
+
+  test("send fails with DaytonaSessionNotFoundError after the session is yanked", async () => {
+    await ensureEchoLoopUploaded();
+
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, peerCommand);
+
+          // Wait for "ready" so we know the loop is reading stdin.
+          const received: string[] = [];
+          yield* Effect.forkScoped(
+            stream.receive.pipe(
+              Stream.tap((chunk) =>
+                Effect.sync(() => {
+                  received.push(chunk);
+                }),
+              ),
+              Stream.runDrain,
+              Effect.ignore,
+            ),
+          );
+
+          yield* Effect.gen(function* () {
+            const deadline = Date.now() + 10_000;
+            while (!received.join("").includes("ready") && Date.now() < deadline) {
+              yield* Effect.sleep("100 millis");
+            }
+          });
+
+          // Directly delete the session via the SDK — bypass the scope
+          // finalizer to simulate a yanked-session race.
+          const { Daytona } = yield* Effect.promise(() => import("@daytona/sdk"));
+          const client = new Daytona({
+            apiKey: daytonaTestConfig.apiKey,
+            apiUrl: daytonaTestConfig.apiUrl,
+            target: daytonaTestConfig.target,
+            _experimental: { otelEnabled: false },
+          });
+          const sandbox = yield* Effect.promise(() => client.get(sharedHandle.id));
+          yield* Effect.promise(() => sandbox.process.deleteSession(stream.sessionId));
+
+          // Now send should fail with DaytonaSessionNotFoundError.
+          return yield* Effect.either(stream.send("after-delete\n"));
+        }),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSessionNotFoundError);
+    }
+  }, 90_000);
+
+  test("start against a deleted sandbox fails with DaytonaSandboxNotFoundError", async () => {
+    // Provision a transient sandbox, delete it, then attempt to start a
+    // session against the stale handle. The createSession boundary should
+    // surface the sandbox-vanish as DaytonaSandboxNotFoundError so callers
+    // can route to recreate-sandbox logic instead of retry-session logic.
+    const transientRunId = crypto.randomUUID();
+    const transientHandle = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* adapter.createSandbox(buildTestSandboxSpec({ testRunId: transientRunId }));
+      }),
+    );
+
+    await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        yield* adapter.deleteSandbox(transientHandle);
+      }),
+    );
+
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          return yield* Effect.either(session.start(transientHandle, "echo will-not-run"));
+        }),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSandboxNotFoundError);
+    }
+  }, 300_000);
 
   test("waitExit reports a non-zero exit code as data", async () => {
     const result = await runWithSession(
