@@ -289,4 +289,27 @@ describe("DaytonaAdapter", () => {
       stderr: "",
     });
   }, 300_000);
+
+  test("executeCommand returns non-zero exit as data", async () => {
+    const spec = buildTestSandboxSpec({
+      testRunId,
+      labels: {
+        purpose: "execute-nonzero",
+      },
+    });
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        const handle = yield* adapter.createSandbox(spec);
+        return yield* adapter.executeCommand(handle, "echo nope >&2; exit 17");
+      }),
+    );
+
+    expect(result).toEqual({
+      exitCode: 17,
+      stdout: "",
+      stderr: "nope\n",
+    });
+  }, 300_000);
 });
