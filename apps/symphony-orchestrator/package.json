@@ -5,6 +5,7 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "EFFECT_TRACE=1 bun run src/index.ts",
+    "dispatch": "EFFECT_TRACE=${EFFECT_TRACE:-1} LOG_LEVEL=${LOG_LEVEL:-debug} bun run src/index.ts -- --workflow \"${INIT_CWD:-$PWD}/WORKFLOW.md\" 2>&1 | tee \"${ORCHESTRATOR_LOG:-/tmp/orchestrator.log}\"",
     "format": "oxfmt --write src/ test/",
     "format:check": "oxfmt --check src/ test/",
     "lint": "oxlint src/ test/",
