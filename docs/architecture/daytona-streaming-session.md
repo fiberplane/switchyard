@@ -205,7 +205,7 @@ log annotations in the drop-queue logger (`sessionId`, `commandId`, `channel`,
 ## Test-isolation pattern
 
 Inherited from the gzszputs leaf — no new infrastructure. Test sandboxes use the same
-`switchyard-test` Daytona stack on the `+30000` port range, the same `symphony-test-base`
+`switchyard-test` Daytona stack on the `+30000` port range, the same `symphony-test-codex`
 snapshot, and the same `app=symphony-test` + `test_run_id` labels via
 `buildTestSandboxSpec`. The session tests pass no caller labels beyond what
 `buildTestSandboxSpec` supplies; cleanup via `deleteByTestRunId` (paginated, from gzszputs

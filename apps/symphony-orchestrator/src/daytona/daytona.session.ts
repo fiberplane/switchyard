@@ -181,6 +181,51 @@ const executeSessionCommand = (
     Effect.map(({ cmdId }) => cmdId),
   );
 
+const waitForSessionInputPipe = (
+  sandbox: Sandbox,
+  sessionId: string,
+  commandId: string,
+): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> => {
+  const inputPipe = `/home/daytona/.daytona/sessions/${sessionId}/${commandId}/input.pipe`;
+  const deadline = Date.now() + 5_000;
+
+  const poll = (): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> =>
+    Effect.tryPromise({
+      try: () => sandbox.process.executeCommand(`test -p ${inputPipe}`),
+      catch: (error) => {
+        if (isDaytonaNotFound(error)) {
+          return new DaytonaSessionNotFoundError({
+            sessionId,
+            operation: "waitForSessionInputPipe",
+            reason: describeUnknown(error),
+          });
+        }
+
+        return new DaytonaSessionExecError({
+          sessionId,
+          reason: describeUnknown(error),
+        });
+      },
+    }).pipe(
+      Effect.flatMap((result) => {
+        if (result.exitCode === 0) {
+          return Effect.void;
+        }
+        if (Date.now() >= deadline) {
+          return Effect.fail(
+            new DaytonaSessionExecError({
+              sessionId,
+              reason: `input pipe was not ready for command ${commandId} within 5000ms`,
+            }),
+          );
+        }
+        return Effect.sleep("50 millis").pipe(Effect.zipRight(poll()));
+      }),
+    );
+
+  return poll().pipe(Effect.withSpan("DaytonaSession.waitForInputPipe"));
+};
+
 type DropEvent = {
   readonly channel: "stdout" | "stderr";
   readonly droppedBytes: number;
@@ -468,6 +513,7 @@ const pollExitOrSigkill = (
   const probeCommand = `test -e ${exitFile} || { pid=$(cat ${pidFile} 2>/dev/null) && [ -n "$pid" ] && [ -e /proc/$pid/exe ]; }`;
 
   return Effect.gen(function* () {
+    let missingSince: number | undefined;
     while (true) {
       const found = yield* readExitFile(sandbox, sessionId);
       if (Option.isSome(found)) {
@@ -502,6 +548,11 @@ const pollExitOrSigkill = (
       });
 
       if (probe.exitCode !== 0) {
+        missingSince ??= Date.now();
+        if (Date.now() - missingSince < STREAM_COMPLETION_GRACE_MS) {
+          yield* Effect.sleep(`${WAIT_EXIT_POLL_DELAY_MS} millis`);
+          continue;
+        }
         // Both files gone — wrapper killed before trap could fire.
         return yield* Effect.fail(
           new DaytonaSessionOpError({
@@ -512,6 +563,7 @@ const pollExitOrSigkill = (
         );
       }
 
+      missingSince = undefined;
       yield* Effect.sleep(`${WAIT_EXIT_POLL_DELAY_MS} millis`);
     }
   }).pipe(Effect.withSpan("DaytonaSession.exitWatcher"));
@@ -540,6 +592,7 @@ const start = (
 
     const wrappedCommand = wrapCommandWithExitTrap(sessionId, command);
     const commandId = yield* executeSessionCommand(sandbox, sessionId, wrappedCommand);
+    yield* waitForSessionInputPipe(sandbox, sessionId, commandId);
 
     const exitDeferred = yield* Deferred.make<
       DaytonaSessionExitInfo,

@@ -64,7 +64,7 @@ import { writeTranscript } from "./transcript.js";
 // `daytona.createSandbox` then sets `CODEX_HOME` to the parent dir so codex
 // picks up the auth on app-server start. Locked path; productionized API-key
 // path is deferred to SWYRD-jbzbqkon.
-const SANDBOX_CODEX_HOME = "/workspace/codex-home";
+const SANDBOX_CODEX_HOME = "/tmp";
 const SANDBOX_CODEX_AUTH_PATH = `${SANDBOX_CODEX_HOME}/auth.json`;
 
 // `cd ${SANDBOX_REPO_PATH} && codex app-server` — NOT `exec codex app-server`.

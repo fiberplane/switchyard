@@ -3,8 +3,8 @@ import { Daytona, DaytonaNotFoundError, Image } from "@daytona/sdk";
 import { DaytonaTestSnapshotError } from "./errors.js";
 import { daytonaTestConfig, ensureStackUp } from "./stack.js";
 
-const snapshotName = "symphony-test-base";
-const inactiveSnapshotName = "symphony-test-inactive";
+const snapshotName = "symphony-test-codex";
+const inactiveSnapshotName = "symphony-test-codex-inactive";
 const dockerfilePath = new URL("../Dockerfile.snapshot", import.meta.url).pathname;
 const snapshotDeadlineMs = 600_000;
 const snapshotPollMs = 2_000;

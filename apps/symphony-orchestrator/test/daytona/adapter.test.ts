@@ -26,7 +26,7 @@ describe("DaytonaConfig", () => {
         DAYTONA_API_URL: "http://localhost:33000/api",
         DAYTONA_API_KEY: "switchyard-test-api-key",
         DAYTONA_TARGET: "local",
-        DAYTONA_SNAPSHOT: "symphony-test-base",
+        DAYTONA_SNAPSHOT: "symphony-test-codex",
       }),
     );
 
@@ -34,7 +34,7 @@ describe("DaytonaConfig", () => {
       apiUrl: "http://localhost:33000/api",
       apiKey: "switchyard-test-api-key",
       target: "local",
-      snapshotName: "symphony-test-base",
+      snapshotName: "symphony-test-codex",
     });
   });
 
@@ -44,7 +44,7 @@ describe("DaytonaConfig", () => {
         decodeDaytonaConfigEnv({
           DAYTONA_API_URL: "http://localhost:33000/api",
           DAYTONA_TARGET: "local",
-          DAYTONA_SNAPSHOT: "symphony-test-base",
+          DAYTONA_SNAPSHOT: "symphony-test-codex",
         }),
       ),
     );
@@ -130,7 +130,7 @@ describe("DaytonaAdapter", () => {
       runWithAdapter(
         Effect.gen(function* () {
           const adapter = yield* DaytonaAdapter;
-          return yield* adapter.assertSnapshot("symphony-test-base");
+          return yield* adapter.assertSnapshot("symphony-test-codex");
         }),
       ),
     ).resolves.toBeUndefined();
@@ -255,6 +255,46 @@ describe("DaytonaAdapter", () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("/tmp/repo.tgz");
+    } finally {
+      await rm(uploadRoot, { recursive: true, force: true });
+    }
+  }, 300_000);
+
+  test("uploadFiles transfers multiple files without truncating later entries", async () => {
+    const uploadRoot = await mkdtemp(join(tmpdir(), "switchyard-daytona-upload-many-"));
+    const firstPath = join(uploadRoot, "first.txt");
+    const secondPath = join(uploadRoot, "second.txt");
+    const thirdPath = join(uploadRoot, "third.txt");
+    await writeFile(firstPath, "first\n");
+    await writeFile(secondPath, "second\n");
+    await writeFile(thirdPath, "third\n");
+
+    try {
+      const spec = buildTestSandboxSpec({
+        testRunId,
+        labels: {
+          purpose: "upload-many",
+        },
+      });
+
+      const result = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* DaytonaAdapter;
+          const handle = yield* adapter.createSandbox(spec);
+          yield* adapter.uploadFiles(handle, [
+            { src: firstPath, dst: "/tmp/first.txt" },
+            { src: secondPath, dst: "/tmp/second.txt" },
+            { src: thirdPath, dst: "/tmp/third.txt" },
+          ]);
+          return yield* adapter.executeCommand(
+            handle,
+            "wc -c /tmp/first.txt /tmp/second.txt /tmp/third.txt && cat /tmp/first.txt /tmp/second.txt /tmp/third.txt",
+          );
+        }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("first\nsecond\nthird\n");
     } finally {
       await rm(uploadRoot, { recursive: true, force: true });
     }

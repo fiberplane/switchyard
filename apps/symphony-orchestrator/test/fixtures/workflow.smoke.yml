@@ -16,7 +16,7 @@ sandbox:
   apiUrl: http://localhost:33000/api
   apiKey: switchyard-test-api-key
   target: us
-  snapshot: symphony-test-base
+  snapshot: symphony-test-codex
   language: typescript
   autoStopInterval: 15
   autoDeleteInterval: -1

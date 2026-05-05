@@ -8,7 +8,7 @@ export const daytonaTestConfig: DaytonaConfig = {
   apiUrl: "http://localhost:33000/api",
   apiKey: "switchyard-test-api-key",
   target: "us",
-  snapshotName: "symphony-test-base",
+  snapshotName: "symphony-test-codex",
 };
 
 const appRoot = new URL("../../../", import.meta.url);

@@ -30,7 +30,7 @@ import { wire, writeFakeCodexAuth } from "./test-helpers/wire.js";
 const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   maxConcurrentAgents: 1,
   turnTimeoutMs: 60_000,
-  snapshotName: "symphony-test-base",
+  snapshotName: "symphony-test-codex",
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath,
@@ -163,10 +163,15 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       expect(upload.files.map((f) => f.dst)).toEqual([
         "/tmp/repo.tgz",
         "/tmp/prompt.md",
-        "/workspace/codex-home/auth.json",
+        "/tmp/auth.json",
       ]);
     } else {
       throw new Error("expected uploadFiles call");
+    }
+
+    const sandbox = daytona.calls.find((call) => call.kind === "createSandbox");
+    if (sandbox?.kind === "createSandbox") {
+      expect(sandbox.spec.envVars.CODEX_HOME).toBe("/tmp");
     }
 
     // The artifact record was written with status=integrated.

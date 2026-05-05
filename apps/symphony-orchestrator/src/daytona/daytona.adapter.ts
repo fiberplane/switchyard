@@ -454,13 +454,11 @@ const uploadFiles = (
   getSandbox(client, handle.id, "uploadFiles").pipe(
     Effect.flatMap((sandbox) =>
       Effect.tryPromise({
-        try: () =>
-          sandbox.fs.uploadFiles(
-            files.map((file) => ({
-              source: file.src,
-              destination: file.dst,
-            })),
-          ),
+        try: async () => {
+          for (const file of files) {
+            await sandbox.fs.uploadFiles([{ source: file.src, destination: file.dst }]);
+          }
+        },
         catch: (error) => {
           if (isDaytonaNotFound(error)) {
             return new DaytonaSandboxNotFoundError({

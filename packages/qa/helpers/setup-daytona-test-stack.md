@@ -27,7 +27,7 @@ automatically; for QA scenarios you bring it up yourself.
   DNS workaround, snapshot mechanics, troubleshooting). **Read this first.**
 - `apps/symphony-orchestrator/test/daytona/compose.test.yaml` — the canonical compose file.
 - `apps/symphony-orchestrator/test/daytona/compose.test.macos.yaml` — macOS overlay.
-- `apps/symphony-orchestrator/test/daytona/Dockerfile.snapshot` — the `symphony-test-base`
+- `apps/symphony-orchestrator/test/daytona/Dockerfile.snapshot` — the `symphony-test-codex`
   snapshot used by integration tests.
 - `apps/symphony-orchestrator/package.json` — the `test:daytona:up` / `test:daytona:down`
   scripts.
@@ -39,7 +39,7 @@ The QA scenarios use the `symphony-codex-bun` snapshot (per spec `### Smoke Evid
 `ripgrep`, `procps`, `@openai/codex@0.128.0`, and `bun@1.3.13`.
 
 If `symphony-codex-bun` does not exist on your local Daytona target, build it the same way the
-2026-05-04 smoke did. The image is **separate** from the integration test's `symphony-test-base`
+2026-05-04 smoke did. The image is **separate** from the integration test's `symphony-test-codex`
 snapshot; the test stack defines its own minimal snapshot for adapter / session unit tests, and
 QA scenarios use the codex-equipped one.
 

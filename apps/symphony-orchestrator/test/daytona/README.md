@@ -95,7 +95,7 @@ test/daytona/compose.sh config | grep -E "PROXY_(DOMAIN|TEMPLATE_URL)"
 
 ## Snapshot
 
-`test-helpers/snapshot.ts` creates `symphony-test-base` on first use from
+`test-helpers/snapshot.ts` creates `symphony-test-codex` on first use from
 `Dockerfile.snapshot`. The image is Ubuntu 22.04 with bash, coreutils, curl, git, sudo, and tar,
 running as the `daytona` user with a long-running entrypoint.
 
