@@ -427,6 +427,157 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
   });
 });
 
+describe("OrchestratorService.runOne — failure-matrix routing (B2 fix)", () => {
+  test("F3: sandbox create failure → markNeedsAttention with `sandbox create failed: ...`", async () => {
+    const { DaytonaSandboxCreateError } = await import("../../src/daytona/errors.js");
+    const issue = fixtureEligible("f3");
+    const fp = makeFpMock({});
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const daytona = makeDaytonaAdapterMock({
+      createSandbox: () =>
+        Effect.fail(
+          new DaytonaSandboxCreateError({
+            sandboxName: "swy-f3-1",
+            reason: "no slots available",
+          }),
+        ) as unknown as Effect.Effect<never, never>,
+    });
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("sandbox create failed: no slots available");
+    const na = fp.calls.find((c) => c.kind === "markNeedsAttention");
+    expect(na).toBeDefined();
+  });
+
+  test("F5: setup-script failure → markNeedsAttention with `sandbox setup failed: ...`", async () => {
+    const issue = fixtureEligible("f5");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const { SandboxScriptError } = await import("../../src/sandbox-scripts/errors.js");
+    const customScripts = {
+      setupRepo: () =>
+        Effect.fail(
+          new SandboxScriptError({
+            operation: "setupRepo" as const,
+            command: "tar ...",
+            exitCode: 1,
+            stderr: "tar: not found",
+          }),
+        ) as Effect.Effect<never, never>,
+      finalizeBundle: () =>
+        Effect.succeed({ bundlePath: "/tmp/.symphony/work.bundle", commitsBeyondBase: 1 }),
+    };
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: customScripts,
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("sandbox setup failed: tar: not found");
+    expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
+  });
+
+  test("F13: integrate-bundle failure → markNeedsAttention with `bundle integration failed: ...`", async () => {
+    const issue = fixtureEligible("f13");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const { GitCommandError } = await import("../../src/integration/errors.js");
+    const integration = makeIntegrationMock({
+      integrate: () =>
+        Effect.fail(
+          new GitCommandError({
+            command: ["git", "fetch"],
+            stderr: "broken bundle",
+            exitCode: 128,
+          }),
+        ) as Effect.Effect<never, never>,
+    });
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("bundle integration failed: broken bundle");
+    expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
+  });
+});
+
+describe("OrchestratorService.stop", () => {
+  test("interrupts in-flight runOne and parks issue at needs-attention", async () => {
+    const issue = fixtureEligible("interrupt");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    // Session that pre-loads initialize+thread-start replies but withholds
+    // the turn-completed notification, so runTurn hangs.
+    const replies = codexResponses();
+    const stallingSession = makeDaytonaSessionMock({
+      perSendReplies: [replies[0]!, replies[1]!, [replies[2]![0]!]],
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        const fiber = yield* Effect.fork(orch.runOne(issue));
+        // Give runOne a moment to enter the turn.
+        yield* Effect.sleep("100 millis");
+        yield* orch.stop;
+        // The fiber should be interrupted; await to drain.
+        yield* Effect.fiberId.pipe(Effect.zipRight(Effect.exit(Effect.suspend(() => fiber.await))));
+      }).pipe(Effect.provide(wire({ fp, daytona, session: stallingSession, integration, artifact, config }))),
+    );
+
+    // Stop should have written markNeedsAttention with the locked string.
+    const na = fp.calls.find((c) => c.kind === "markNeedsAttention");
+    expect(na).toBeDefined();
+    if (na?.kind === "markNeedsAttention") {
+      expect(na.error).toBe("orchestrator interrupted by signal");
+    }
+  });
+});
+
 describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", () => {
   test("non-completed turn outcome routes to needs-attention with `protocol stream <kind>` last_error", async () => {
     const issue = fixtureEligible("proto");

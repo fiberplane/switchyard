@@ -3,6 +3,8 @@
 // pipeline ordering, failure-matrix routing, and three-comment cadence are
 // load-bearing; see docs/architecture/orchestrator-runone.md (drift-bound).
 
+import { dirname } from "node:path";
+
 import { Context, Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
 
 import { Error as PlatformError, FileSystem } from "@effect/platform";
@@ -314,18 +316,28 @@ const runOneImpl = (
       // Both temp dirs are also cleaned via finalizers (LIFO order: temp dirs
       // are cleaned AFTER the running-set release because they're registered
       // later — but order doesn't matter for these independent resources).
+      //
+      // Post-claim failure-matrix routing (B2): the inner pipeline can fail
+      // with SandboxSetupError / IntegrationFailedError / TranscriptWriteError
+      // / FpWriteFailedError. Those tags get caught at the bottom of this
+      // scoped block and routed to the prescribed markNeedsAttention write
+      // before being absorbed into a `needs-attention` RunOneResult — so the
+      // fp issue is NEVER left at status=in-progress without a last_error.
       return yield* Effect.scoped(
         Effect.gen(function* () {
           // Register the running-set release finalizer FIRST so it runs LAST
           // on scope exit (LIFO) — guarantees the slot frees regardless of
           // outcome (success, failure, interrupt). Spec line 327 invariant.
           yield* Effect.addFinalizer(() => releaseEffect(issueId)(ref));
-          // Tempdir cleanup finalizers (the prompt + source archive dirs).
+          // Tempdir cleanup finalizers (the prompt + source archive parent
+          // directories — see prompt/models.ts and integration/service.ts:
+          // both producers create per-render tempdirs and the contract is
+          // "caller removes dirname(...)" not just the file).
           yield* Effect.addFinalizer(() =>
-            fs.remove(rendered.hostPath, { recursive: false }).pipe(Effect.ignore),
+            fs.remove(dirname(rendered.hostPath), { recursive: true }).pipe(Effect.ignore),
           );
           yield* Effect.addFinalizer(() =>
-            fs.remove(handoff.archivePath, { recursive: false }).pipe(Effect.ignore),
+            fs.remove(dirname(handoff.archivePath), { recursive: true }).pipe(Effect.ignore),
           );
 
           // Step 3: claim into running set. Failure here is AlreadyClaimedError
@@ -460,29 +472,37 @@ const runOneImpl = (
             );
           yield* writeTranscript(runDir, turnResult.events);
 
-          // Convert non-completed TurnOutcome to a ProtocolStreamError now
-          // that the transcript is written; salvage attempt for finalize+
-          // download still proceeds (best-effort) below.
+          // F7: non-completed TurnOutcome. Best-effort finalize + download for
+          // forensics, then surface needs-attention. We swallow finalize/
+          // download errors here so the original protocol-stream error stays
+          // the lastError on the issue (F7's salvage is *additive* — it tries
+          // to grab forensic artifacts; the issue is already lost).
           const outcomeProtocol = turnOutcomeToProtocol(issueId, attempt, turnResult);
           if (outcomeProtocol !== null) {
-            // F7 row: protocol stream non-completed terminal event. Best-effort
-            // finalize + download for forensics, then surface needs-attention.
-            yield* attemptSalvage({
-              attempt,
-              fp,
+            yield* salvageBundle({
               handle,
-              integration,
-              issueId,
               runDir,
               scripts,
-              artifactStore,
-              startedAt,
-              fs,
               daytona,
-              ref,
-              issue,
-            }, outcomeProtocol);
-            return resultNeedsAttention(issueId, attempt, outcomeProtocol);
+            }).pipe(Effect.ignore);
+            const lastError = `protocol stream ${outcomeProtocol.kind}: ${truncateLastError(outcomeProtocol.reason)}`;
+            const record = makeRecord({
+              status: "needs-attention",
+              branch: "",
+              baseRev: handoff.baseRev,
+              workerStatus: Option.none(),
+              startedAt,
+              attempt,
+            });
+            yield* artifactStore
+              .writeRecord(issueId, attempt, record)
+              .pipe(Effect.mapError(mapArtifactWriteError));
+            yield* writeFp(
+              fp.markNeedsAttention(issueId, lastError),
+              issueId,
+              "markNeedsAttention(protocol)",
+            );
+            return resultFromError(issueId, attempt, lastError, undefined, undefined);
           }
 
           // Step 13: finalize the bundle inside the sandbox (separate session).
@@ -685,7 +705,85 @@ const runOneImpl = (
             summary: decoded.outcome.summary,
             lastError: undefined,
           };
-        }),
+        }).pipe(
+          // Failure-matrix routing for post-claim throws (F3-F6, F8, F9, F13,
+          // F14). Each tag maps to the prescribed `symphony_last_error` head
+          // string, writes an outcome record (status=needs-attention), and
+          // calls markNeedsAttention. The terminal markNeedsAttention itself
+          // can fail — F15 says retry once then leave at in-progress; we
+          // collapse the second failure into the returned RunOneResult so the
+          // running-set finalizer still fires.
+          Effect.catchTags({
+            SandboxSetupError: (err) =>
+              routePostClaimFailure({
+                ref,
+                fp,
+                artifactStore,
+                issueId,
+                attempt,
+                baseRev: handoff.baseRev,
+                lastError: sandboxSetupLastError(err),
+                comment: sandboxSetupLastError(err),
+                startedAt,
+              }),
+            ProtocolStreamError: (err) =>
+              routePostClaimFailure({
+                ref,
+                fp,
+                artifactStore,
+                issueId,
+                attempt,
+                baseRev: handoff.baseRev,
+                lastError: `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`,
+                comment: `protocol stream ${err.kind}: ${err.reason}`,
+                startedAt,
+              }),
+            IntegrationFailedError: (err) =>
+              routePostClaimFailure({
+                ref,
+                fp,
+                artifactStore,
+                issueId,
+                attempt,
+                baseRev: handoff.baseRev,
+                lastError: `bundle integration failed: ${truncateLastError(err.reason)}`,
+                comment: `bundle integration failed: ${err.reason}`,
+                startedAt,
+              }),
+            TranscriptWriteError: (err) =>
+              routePostClaimFailure({
+                ref,
+                fp,
+                artifactStore,
+                issueId,
+                attempt,
+                baseRev: handoff.baseRev,
+                lastError: `${err.operation} failed: ${truncateLastError(err.reason)}`,
+                comment: `${err.operation} failed at ${err.path}: ${err.reason}`,
+                startedAt,
+              }),
+            // FpWriteFailedError on intermediate writes (claim, addComment,
+            // setAttempt, setArtifact) — best-effort log + park. The slot
+            // still releases via finalizer.
+            FpWriteFailedError: (err) =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning("fp write failed; leaving issue at in-progress").pipe(
+                  Effect.annotateLogs({
+                    issue_id: err.issueId,
+                    operation: err.operation,
+                    reason: err.reason,
+                  }),
+                );
+                return resultFromError(
+                  err.issueId,
+                  attempt,
+                  `fp write ${err.operation} failed: ${truncateLastError(err.reason)}`,
+                  undefined,
+                  undefined,
+                );
+              }),
+          }),
+        ),
       );
     }).pipe(
       Effect.withSpan("OrchestratorService.runOne", {
@@ -739,60 +837,94 @@ const resultFromError = (
   lastError,
 });
 
-const resultNeedsAttention = (
-  issueId: string,
-  attempt: number,
-  err: ProtocolStreamError,
-): RunOneResult => ({
-  issueId,
-  attempt,
-  status: "needs-attention",
-  branch: undefined,
-  summary: undefined,
-  lastError: `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`,
-});
 
-// Best-effort F7 salvage: protocol stream failed mid-turn or returned a
-// non-completed TurnOutcome. Try to finalize+download whatever bundle exists
-// in the sandbox; if even that fails, just record the needs-attention state.
-const attemptSalvage = (
+// Best-effort F7 salvage: try to finalize the in-sandbox bundle and download
+// it for forensics. Errors here are intentionally absorbed by the caller
+// (Effect.ignore at the call site) so the original ProtocolStreamError stays
+// the lastError on the issue. The bundle, if it lands, sits at runDir/work.bundle
+// for human inspection — we deliberately do NOT integrate it (per the F7 row).
+const salvageBundle = (
   ctx: {
-    readonly attempt: number;
-    readonly fp: Context.Tag.Service<FpService>;
     readonly handle: SandboxHandle;
-    readonly integration: Context.Tag.Service<IntegrationService>;
-    readonly issueId: string;
     readonly runDir: string;
     readonly scripts: Context.Tag.Service<SandboxScriptService>;
-    readonly artifactStore: Context.Tag.Service<ArtifactStore>;
-    readonly startedAt: string;
-    readonly fs: FileSystem.FileSystem;
     readonly daytona: Context.Tag.Service<DaytonaAdapter>;
-    readonly ref: Ref.Ref<RunningSet>;
-    readonly issue: EligibleIssue;
   },
-  err: ProtocolStreamError,
-): Effect.Effect<void, OrchestratorError, FileSystem.FileSystem> =>
+): Effect.Effect<void, never, never> =>
   Effect.gen(function* () {
-    // Best-effort finalize + download. Wrap in catchAll so failure of the
-    // salvage path doesn't mask the original protocol error.
-    const lastError = `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`;
+    const bundle = yield* ctx.scripts.finalizeBundle(ctx.handle, {
+      repoPath: SANDBOX_REPO_PATH,
+      bundlePath: SANDBOX_BUNDLE_PATH,
+    });
+    yield* ctx.daytona.downloadFiles(ctx.handle, [
+      { src: bundle.bundlePath, dst: `${ctx.runDir}/work.bundle` },
+      {
+        src: `${SANDBOX_SYMPHONY_DIR}/outcome.json`,
+        dst: `${ctx.runDir}/outcome.json`,
+      },
+    ]);
+  }).pipe(Effect.ignore);
+
+// Sandbox-step → `symphony_last_error` head string mapping per the failure
+// matrix. Single source of truth so a typo in the prefix doesn't drift across
+// branches.
+const sandboxSetupLastError = (err: SandboxSetupError): string => {
+  const stagePrefix: Record<SandboxSetupError["stage"], string> = {
+    create: "sandbox create failed",
+    upload: "sandbox upload failed",
+    setup: "sandbox setup failed",
+    "session-start": "codex app-server start failed",
+    finalize: "bundle finalize failed",
+    download: "artifact download failed",
+  };
+  return `${stagePrefix[err.stage]}: ${truncateLastError(err.reason)}`;
+};
+
+// Shared post-claim failure router: writes the needs-attention record and
+// marks the issue. Used by every Effect.catchTags branch in the runOneImpl
+// scoped block. Suppresses any FpWriteFailedError on the terminal write so
+// the running-set finalizer still fires (F15 deferral).
+const routePostClaimFailure = (
+  input: {
+    readonly ref: Ref.Ref<RunningSet>;
+    readonly fp: Context.Tag.Service<FpService>;
+    readonly artifactStore: Context.Tag.Service<ArtifactStore>;
+    readonly issueId: string;
+    readonly attempt: number;
+    readonly baseRev: string;
+    readonly lastError: string;
+    readonly comment: string;
+    readonly startedAt: string;
+  },
+): Effect.Effect<RunOneResult, never, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
     const record = makeRecord({
       status: "needs-attention",
       branch: "",
-      baseRev: "",
+      baseRev: input.baseRev,
       workerStatus: Option.none(),
-      startedAt: ctx.startedAt,
-      attempt: ctx.attempt,
+      startedAt: input.startedAt,
+      attempt: input.attempt,
     });
-    yield* ctx.artifactStore
-      .writeRecord(ctx.issueId, ctx.attempt, record)
-      .pipe(Effect.mapError(mapArtifactWriteError));
-    yield* writeFp(
-      ctx.fp.markNeedsAttention(ctx.issueId, lastError),
-      ctx.issueId,
-      "markNeedsAttention(salvage)",
-    );
+    // Best-effort record write — don't let an FS failure mask the routing.
+    yield* input.artifactStore
+      .writeRecord(input.issueId, input.attempt, record)
+      .pipe(Effect.ignore);
+    // Best-effort fp write — log and continue if it fails (F15: retry-once
+    // not yet implemented; tracked for later).
+    yield* input.fp
+      .markNeedsAttention(input.issueId, input.comment)
+      .pipe(
+        Effect.catchAll((err) =>
+          Effect.logWarning("markNeedsAttention failed; issue stays at in-progress").pipe(
+            Effect.annotateLogs({
+              issue_id: input.issueId,
+              reason: "stderr" in err ? err.stderr : err._tag,
+            }),
+          ),
+        ),
+      );
+    return resultFromError(input.issueId, input.attempt, input.lastError, undefined, undefined);
   });
 
 // Per-tick driver. Synchronous (no internal sleep) — index.ts wraps in a
@@ -843,7 +975,7 @@ const runOneTickImpl = (
     // selector already truncated to the slot budget, but we additionally cap
     // at 1 here per the explicit "one issue per tick" decision.
     const issue = verdict.toDispatch[0]!;
-    const result = yield* runOneImpl(
+    const dispatchOutcome = yield* runOneImpl(
       config,
       ref,
       fp,
@@ -854,12 +986,57 @@ const runOneTickImpl = (
       prompt,
       scripts,
       runner,
-    )(issue);
-    dispatched.push({
-      issueId: result.issueId,
-      displayId: issue.detail.displayId,
-      attempt: result.attempt,
-    });
+    )(issue).pipe(
+      // Pre-claim failures (DispatchError, MissingCodexAuthError,
+      // UnparseableAttemptError, AlreadyClaimedError) are "log + skip" per
+      // §5b rule 1 — they MUST NOT kill the tick. Catch them here so the
+      // tick continues to the next poll interval; the issue stays at todo
+      // and will be re-evaluated.
+      Effect.catchTags({
+        DispatchError: (err) =>
+          Effect.logWarning("dispatch failed pre-claim; skipping candidate").pipe(
+            Effect.annotateLogs({
+              issue_id: err.issueId ?? "",
+              stage: err.stage,
+              reason: err.reason,
+            }),
+            Effect.as(null),
+          ),
+        MissingCodexAuthError: (err) =>
+          Effect.logError("codex auth missing; orchestrator cannot dispatch").pipe(
+            Effect.annotateLogs({ path: err.path, reason: err.reason }),
+            Effect.as(null),
+          ),
+        UnparseableAttemptError: (err) =>
+          Effect.gen(function* () {
+            yield* Effect.logWarning("unparseable symphony_attempt; parking issue").pipe(
+              Effect.annotateLogs({ issue_id: err.issueId, raw: err.raw }),
+            );
+            yield* fp
+              .markNeedsAttention(err.issueId, `unparseable symphony_attempt: ${err.raw}`)
+              .pipe(Effect.ignore);
+            return null;
+          }),
+        AlreadyClaimedError: (err) =>
+          Effect.logDebug("issue already claimed (race); skipping").pipe(
+            Effect.annotateLogs({ issue_id: err.issueId }),
+            Effect.as(null),
+          ),
+      }),
+    );
+    if (dispatchOutcome !== null) {
+      dispatched.push({
+        issueId: dispatchOutcome.issueId,
+        displayId: issue.detail.displayId,
+        attempt: dispatchOutcome.attempt,
+      });
+    } else {
+      skipped.push({
+        issueId: issue.detail.id,
+        displayId: issue.detail.displayId,
+        reason: "pre-claim-failure",
+      });
+    }
     return { dispatched, skipped };
   }).pipe(Effect.withSpan("OrchestratorService.runOneTick"));
 
@@ -877,12 +1054,37 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
       const scripts = yield* SandboxScriptService;
       const runner = yield* AgentRunner;
       // In-flight runOne fiber tracker. `stop` interrupts whichever runOne is
-      // in flight (if any) and lets the outer scope's finalizers fire.
-      const inFlight = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<unknown, unknown>>>(
-        Option.none(),
-      );
-      return {
-        runOne: (issue) =>
+      // in flight (if any) and parks the issue at needs-attention with the
+      // signal-interrupt last_error. Set on dispatch, cleared on completion.
+      const inFlight = yield* Ref.make<
+        Option.Option<{
+          readonly issueId: string;
+          readonly fiber: Fiber.RuntimeFiber<RunOneResult, OrchestratorError>;
+        }>
+      >(Option.none());
+
+      const trackInFlight = <A, E extends OrchestratorError>(
+        issueId: string,
+        effect: Effect.Effect<A, E, FileSystem.FileSystem>,
+      ): Effect.Effect<A, E, FileSystem.FileSystem> =>
+        Effect.gen(function* () {
+          const fiber = yield* Effect.fork(effect);
+          yield* Ref.set(
+            inFlight,
+            Option.some({
+              issueId,
+              fiber: fiber as Fiber.RuntimeFiber<RunOneResult, OrchestratorError>,
+            }),
+          );
+          const result = yield* Fiber.join(fiber).pipe(
+            Effect.ensuring(Ref.set(inFlight, Option.none())),
+          );
+          return result;
+        });
+
+      const runOne = (issue: EligibleIssue) =>
+        trackInFlight(
+          issue.detail.id,
           runOneImpl(
             config,
             ref,
@@ -895,7 +1097,12 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
             scripts,
             runner,
           )(issue),
-        runOneTick: runOneTickImpl(
+        );
+
+      // Same fork-and-track wrapping for runOneTick — stop must interrupt the
+      // runOne fired from inside a tick too.
+      const runOneTick: Effect.Effect<TickResult, OrchestratorError, FileSystem.FileSystem> =
+        runOneTickImpl(
           config,
           ref,
           fp,
@@ -906,12 +1113,27 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
           prompt,
           scripts,
           runner,
-        ),
+        );
+
+      return {
+        runOne,
+        runOneTick,
         stop: Effect.gen(function* () {
           const current = yield* Ref.get(inFlight);
-          if (Option.isSome(current)) {
-            yield* Fiber.interrupt(current.value);
+          if (Option.isNone(current)) {
+            return;
           }
+          // Interrupt the in-flight runOne fiber. Its outer scope finalizers
+          // (running-set release, tempdir cleanup) fire as part of the
+          // interrupt cleanup. Then mark needs-attention with the locked
+          // SIGINT/SIGTERM error string.
+          yield* Fiber.interrupt(current.value.fiber);
+          yield* fp
+            .markNeedsAttention(
+              current.value.issueId,
+              "orchestrator interrupted by signal",
+            )
+            .pipe(Effect.ignore);
         }),
       };
     }),

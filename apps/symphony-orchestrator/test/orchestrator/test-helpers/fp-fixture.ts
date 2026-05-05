@@ -6,7 +6,16 @@
 // real `fp` binary against a real fp project without bleeding state between
 // tests.
 
+import { Schema } from "effect";
+
 import { setupFpProject, runFpSuccess, type FpTestProject } from "../../fp/test-helpers/setup-fp-project.js";
+
+const FpCreatedIssueSchema = Schema.Struct({
+  id: Schema.String,
+  displayId: Schema.String,
+});
+
+const decodeCreatedIssue = Schema.decodeUnknownSync(Schema.parseJson(FpCreatedIssueSchema));
 
 export type SymphonyFpFixture = {
   readonly project: FpTestProject;
@@ -44,7 +53,7 @@ export const createSymphonyFpFixture = async (
     "--format",
     "json",
   ]);
-  const created = JSON.parse(stdout) as { id: string; displayId: string };
+  const created = decodeCreatedIssue(stdout);
 
   return {
     project,
@@ -58,6 +67,9 @@ export const createSymphonyFpFixture = async (
 
 // Re-arm an existing fp issue from `needs-attention` back into eligibility
 // for cycle 13d. Sets symphony_state=idle, symphony_ready=true, status=todo.
+// Deliberately does NOT touch symphony_attempt: the orchestrator reads the
+// prior attempt and increments, and 13d's whole point is that the second
+// dispatch lands on attempt=2. Resetting attempt would mask that contract.
 export const rearmFpIssue = async (
   fixture: SymphonyFpFixture,
 ): Promise<void> => {

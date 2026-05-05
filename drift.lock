@@ -9,7 +9,7 @@ docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/models.ts 
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/symphony-properties.ts sig:eeb16ec80944614b
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/errors.ts sig:2e599bb0981cc19e
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/selector.ts sig:880dcf0fb9410d79
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/service.ts sig:d528a977e3f46728
+docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/service.ts sig:cf46df7e3b87790a
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/state.ts sig:b3d88b342c0bb21f
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/transcript.ts sig:fc09e718f2cc3d86
 docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/protocol/InitializeCapabilities.ts sig:0b1b1bec7250bd1e
