@@ -1,0 +1,5 @@
+docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/adapter.ts sig:f01143378adfc686
+docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/eligibility.ts sig:c40686bc1da4f53a
+docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/errors.ts sig:b55a6fb6d3decb85
+docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/models.ts sig:e915a696c34306a0
+docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/symphony-properties.ts sig:eeb16ec80944614b

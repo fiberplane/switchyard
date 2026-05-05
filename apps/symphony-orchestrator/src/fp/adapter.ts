@@ -16,6 +16,12 @@ export type FpAdapterOptions = {
   readonly env?: Record<string, string | undefined>;
 };
 
+export type FpUpdateIssueInput = {
+  readonly status?: FpIssueStatus;
+  readonly properties?: Readonly<Record<string, string>>;
+  readonly comment?: string;
+};
+
 export type FpAdapterShape = {
   readonly listIssuesByStatus: (
     status: FpIssueStatus,
@@ -35,6 +41,10 @@ export type FpAdapterShape = {
   readonly addComment: (
     id: string,
     body: string,
+  ) => Effect.Effect<void, FpBinaryNotFoundError | FpCommandError>;
+  readonly updateIssue: (
+    id: string,
+    input: FpUpdateIssueInput,
   ) => Effect.Effect<void, FpBinaryNotFoundError | FpCommandError>;
 };
 
@@ -152,6 +162,30 @@ export const FpAdapterLive = (options: FpAdapterOptions = {}) =>
           runFpCommand(["comment", "add", id, body], options, fpBinary, executor).pipe(
             Effect.asVoid,
           ),
+        updateIssue: (id, input) => {
+          const propertyEntries =
+            input.properties === undefined ? [] : Object.entries(input.properties);
+          // Empty input is a no-op: fp would reject "no changes", and the service-level
+          // contract is "atomic batched write or skip" rather than "always invoke fp".
+          if (
+            input.status === undefined &&
+            propertyEntries.length === 0 &&
+            input.comment === undefined
+          ) {
+            return Effect.void;
+          }
+          const args: string[] = ["issue", "update", id];
+          if (input.status !== undefined) {
+            args.push("--status", input.status);
+          }
+          for (const [key, value] of propertyEntries) {
+            args.push("--property", `${key}=${value}`);
+          }
+          if (input.comment !== undefined) {
+            args.push("--comment", input.comment);
+          }
+          return runFpCommand(args, options, fpBinary, executor).pipe(Effect.asVoid);
+        },
       };
     }),
   );
