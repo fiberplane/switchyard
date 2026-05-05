@@ -4,9 +4,9 @@ import { NodeContext } from "@effect/platform-node";
 import { Effect, Either } from "effect";
 
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
-import { DaytonaConfigError } from "../../src/daytona/errors.js";
+import { DaytonaConfigError, DaytonaSnapshotError } from "../../src/daytona/errors.js";
 import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
-import { ensureTestSnapshot } from "./test-helpers/snapshot.js";
+import { ensureInactiveTestSnapshot, ensureTestSnapshot } from "./test-helpers/snapshot.js";
 import { daytonaTestConfig, ensureStackUp } from "./test-helpers/stack.js";
 
 describe("DaytonaConfig", () => {
@@ -90,5 +90,45 @@ describe("DaytonaAdapter", () => {
         }),
       ),
     ).resolves.toBeUndefined();
+  }, 300_000);
+
+  test("assertSnapshot maps a missing snapshot to DaytonaSnapshotError", async () => {
+    await ensureStackUp();
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* Effect.either(adapter.assertSnapshot("does-not-exist"));
+      }),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSnapshotError);
+      if (result.left instanceof DaytonaSnapshotError) {
+        expect(result.left.snapshotName).toBe("does-not-exist");
+      }
+    }
+  }, 180_000);
+
+  test("assertSnapshot maps an inactive snapshot to DaytonaSnapshotError", async () => {
+    await ensureStackUp();
+    const inactiveSnapshotName = await ensureInactiveTestSnapshot();
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* Effect.either(adapter.assertSnapshot(inactiveSnapshotName));
+      }),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSnapshotError);
+      if (result.left instanceof DaytonaSnapshotError) {
+        expect(result.left.snapshotName).toBe(inactiveSnapshotName);
+        expect(result.left.state).toBe("inactive");
+      }
+    }
   }, 300_000);
 });

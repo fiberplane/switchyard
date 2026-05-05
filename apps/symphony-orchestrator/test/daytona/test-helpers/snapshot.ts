@@ -3,6 +3,7 @@ import { Daytona, DaytonaNotFoundError, Image } from "@daytona/sdk";
 import { daytonaTestConfig, ensureStackUp } from "./stack.js";
 
 const snapshotName = "symphony-test-base";
+const inactiveSnapshotName = "symphony-test-inactive";
 const dockerfilePath = new URL("../Dockerfile.snapshot", import.meta.url).pathname;
 const snapshotDeadlineMs = 600_000;
 const snapshotPollMs = 2_000;
@@ -36,17 +37,37 @@ const makeDaytona = (): Daytona =>
     },
   });
 
-const waitForActiveSnapshot = async (daytona: Daytona): Promise<void> => {
+const readResponseBody = async (response: Response): Promise<string> => {
+  const body = await response.text();
+  return body.length === 0 ? "<empty body>" : body;
+};
+
+const deactivateSnapshot = async (snapshotId: string): Promise<void> => {
+  const response = await fetch(`${daytonaTestConfig.apiUrl}/snapshots/${snapshotId}/deactivate`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${daytonaTestConfig.apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new DaytonaTestSnapshotError(
+      `Failed to deactivate snapshot ${snapshotId}: HTTP ${response.status} ${await readResponseBody(response)}`,
+    );
+  }
+};
+
+const waitForActiveSnapshot = async (daytona: Daytona, name: string): Promise<void> => {
   const deadline = Date.now() + snapshotDeadlineMs;
 
   while (Date.now() < deadline) {
-    const snapshot = await daytona.snapshot.get(snapshotName);
+    const snapshot = await daytona.snapshot.get(name);
     if (snapshot.state === "active") {
       return;
     }
     if (snapshot.state === "error" || snapshot.state === "build_failed") {
       throw new DaytonaTestSnapshotError(
-        `Snapshot ${snapshotName} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
+        `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
       );
     }
     if (snapshot.state === "inactive") {
@@ -57,7 +78,33 @@ const waitForActiveSnapshot = async (daytona: Daytona): Promise<void> => {
   }
 
   throw new DaytonaTestSnapshotError(
-    `Snapshot ${snapshotName} did not become active within ${snapshotDeadlineMs}ms`,
+    `Snapshot ${name} did not become active within ${snapshotDeadlineMs}ms`,
+  );
+};
+
+const waitForSnapshotState = async (
+  daytona: Daytona,
+  name: string,
+  expectedState: string,
+): Promise<void> => {
+  const deadline = Date.now() + snapshotDeadlineMs;
+
+  while (Date.now() < deadline) {
+    const snapshot = await daytona.snapshot.get(name);
+    if (snapshot.state === expectedState) {
+      return;
+    }
+    if (snapshot.state === "error" || snapshot.state === "build_failed") {
+      throw new DaytonaTestSnapshotError(
+        `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
+      );
+    }
+
+    await sleep(snapshotPollMs);
+  }
+
+  throw new DaytonaTestSnapshotError(
+    `Snapshot ${name} did not become ${expectedState} within ${snapshotDeadlineMs}ms`,
   );
 };
 
@@ -67,7 +114,7 @@ export const ensureTestSnapshot = async (): Promise<void> => {
 
   try {
     await daytona.snapshot.get(snapshotName);
-    await waitForActiveSnapshot(daytona);
+    await waitForActiveSnapshot(daytona, snapshotName);
     return;
   } catch (error) {
     if (!(error instanceof DaytonaNotFoundError)) {
@@ -91,7 +138,7 @@ export const ensureTestSnapshot = async (): Promise<void> => {
     );
 
     if (snapshot.state !== "active") {
-      await waitForActiveSnapshot(daytona);
+      await waitForActiveSnapshot(daytona, snapshotName);
     }
   } catch (error) {
     if (error instanceof DaytonaTestSnapshotError) {
@@ -101,4 +148,50 @@ export const ensureTestSnapshot = async (): Promise<void> => {
       `Failed to create Daytona test snapshot ${snapshotName}: ${describeUnknown(error)}`,
     );
   }
+};
+
+const ensureCreatedSnapshot = async (daytona: Daytona, name: string): Promise<void> => {
+  try {
+    await daytona.snapshot.get(name);
+    return;
+  } catch (error) {
+    if (!(error instanceof DaytonaNotFoundError)) {
+      throw error;
+    }
+  }
+
+  await daytona.snapshot.create(
+    {
+      name,
+      image: Image.fromDockerfile(dockerfilePath),
+      resources: {
+        cpu: 1,
+        memory: 1,
+        disk: 3,
+      },
+      entrypoint: ["/bin/bash"],
+    },
+    { timeout: 600 },
+  );
+};
+
+export const ensureInactiveTestSnapshot = async (): Promise<string> => {
+  await ensureStackUp();
+  const daytona = makeDaytona();
+  await ensureCreatedSnapshot(daytona, inactiveSnapshotName);
+
+  const snapshot = await daytona.snapshot.get(inactiveSnapshotName);
+  if (snapshot.state === "inactive") {
+    return inactiveSnapshotName;
+  }
+
+  if (snapshot.state !== "active") {
+    await waitForActiveSnapshot(daytona, inactiveSnapshotName);
+  }
+
+  const activeSnapshot = await daytona.snapshot.get(inactiveSnapshotName);
+  await deactivateSnapshot(activeSnapshot.id);
+  await waitForSnapshotState(daytona, inactiveSnapshotName, "inactive");
+
+  return inactiveSnapshotName;
 };
