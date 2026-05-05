@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "EFFECT_TRACE=1 bun run src/index.ts",
     "format": "oxfmt --write src/ test/",
     "format:check": "oxfmt --check src/ test/",
     "lint": "oxlint src/ test/",
@@ -14,6 +16,7 @@
   "dependencies": {
     "@daytona/sdk": "0.171.0",
     "@effect/platform": "0.95.0",
+    "@effect/platform-bun": "0.85.0",
     "@effect/platform-node": "0.105.0",
     "effect": "3.20.0",
     "yaml": "2.8.4"

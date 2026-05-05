@@ -223,7 +223,9 @@ Per-tick driver:
 1. Read the running set; bail with empty `TickResult` if `availableSlots <= 0`.
 2. Call `fp.fetchCandidates(runningIds)` and run the selector.
 3. Dispatch at most one issue per tick (single-flight v1 — `maxConcurrentAgents=1`).
-4. Return `TickResult { dispatched, skipped }` synchronously.
+4. Dispatch through the same tracked `runOne` wrapper as direct callers, so `stop` can interrupt a
+   run that began from the poll loop.
+5. Return `TickResult { dispatched, skipped }` synchronously.
 
 Index.ts wraps `runOneTick` in `Effect.repeat(Schedule.spaced(intervalMs))` so the loop
 stays testable without a real interval. Concurrency >1 is deferred (see ADR D3).
@@ -234,7 +236,7 @@ stays testable without a real interval. Concurrency >1 is deferred (see ADR D3).
 outer scope's finalizers fire. The interrupt path is per spec §7 SIGINT/SIGTERM lock:
 fp write `symphony_last_error="orchestrator interrupted by signal"` and park
 `needs-attention`. Index.ts wires `process.on("SIGINT"/"SIGTERM", ...)` to call
-`Effect.runPromise(orch.stop)`.
+the shutdown branch, which runs `orch.stop` and exits the poll loop cleanly.
 
 ## Where this doc lives
 

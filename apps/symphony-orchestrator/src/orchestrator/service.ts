@@ -925,13 +925,9 @@ const runOneTickImpl = (
   config: OrchestratorServiceConfig,
   ref: Ref.Ref<RunningSet>,
   fp: Context.Tag.Service<FpService>,
-  daytona: Context.Tag.Service<DaytonaAdapter>,
-  session: Context.Tag.Service<DaytonaSession>,
-  integration: Context.Tag.Service<IntegrationService>,
-  artifactStore: Context.Tag.Service<ArtifactStore>,
-  prompt: Context.Tag.Service<WorkerPromptService>,
-  scripts: Context.Tag.Service<SandboxScriptService>,
-  runner: Context.Tag.Service<AgentRunner>,
+  runOne: (
+    issue: EligibleIssue,
+  ) => Effect.Effect<RunOneResult, OrchestratorError, FileSystem.FileSystem>,
 ): Effect.Effect<TickResult, OrchestratorError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const runningSet = yield* Ref.get(ref);
@@ -966,18 +962,7 @@ const runOneTickImpl = (
     // selector already truncated to the slot budget, but we additionally cap
     // at 1 here per the explicit "one issue per tick" decision.
     const issue = verdict.toDispatch[0]!;
-    const dispatchOutcome = yield* runOneImpl(
-      config,
-      ref,
-      fp,
-      daytona,
-      session,
-      integration,
-      artifactStore,
-      prompt,
-      scripts,
-      runner,
-    )(issue).pipe(
+    const dispatchOutcome = yield* runOne(issue).pipe(
       // Pre-claim failures (DispatchError, MissingCodexAuthError,
       // UnparseableAttemptError, AlreadyClaimedError) are "log + skip" per
       // §5b rule 1 — they MUST NOT kill the tick. Catch them here so the
@@ -1090,21 +1075,10 @@ export const OrchestratorServiceLive = (config: OrchestratorServiceConfig) =>
           )(issue),
         );
 
-      // Same fork-and-track wrapping for runOneTick — stop must interrupt the
-      // runOne fired from inside a tick too.
+      // runOneTick dispatches through the tracked runOne wrapper — stop must
+      // interrupt the runOne fired from inside a tick too.
       const runOneTick: Effect.Effect<TickResult, OrchestratorError, FileSystem.FileSystem> =
-        runOneTickImpl(
-          config,
-          ref,
-          fp,
-          daytona,
-          session,
-          integration,
-          artifactStore,
-          prompt,
-          scripts,
-          runner,
-        );
+        runOneTickImpl(config, ref, fp, runOne);
 
       return {
         runOne,

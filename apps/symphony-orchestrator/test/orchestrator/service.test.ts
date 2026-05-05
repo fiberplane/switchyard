@@ -563,6 +563,42 @@ describe("OrchestratorService.stop", () => {
       expect(na.error).toBe("orchestrator interrupted by signal");
     }
   });
+
+  test("interrupts in-flight runOne started by runOneTick", async () => {
+    const issue = fixtureEligible("tick-interrupt");
+    const fp = makeFpMock({
+      fetchCandidates: () => Effect.succeed({ eligible: [issue], rejected: [] }),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const replies = codexResponses();
+    const stallingSession = makeDaytonaSessionMock({
+      perSendReplies: [replies[0]!, replies[1]!, [replies[2]![0]!]],
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        const fiber = yield* Effect.fork(orch.runOneTick);
+        yield* Effect.sleep("100 millis");
+        yield* orch.stop;
+        yield* Effect.fiberId.pipe(Effect.zipRight(Effect.exit(Effect.suspend(() => fiber.await))));
+      }).pipe(
+        Effect.provide(
+          wire({ fp, daytona, session: stallingSession, integration, artifact, config }),
+        ),
+      ),
+    );
+
+    const na = fp.calls.find((c) => c.kind === "markNeedsAttention");
+    expect(na).toBeDefined();
+    if (na?.kind === "markNeedsAttention") {
+      expect(na.error).toBe("orchestrator interrupted by signal");
+    }
+  });
 });
 
 describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", () => {

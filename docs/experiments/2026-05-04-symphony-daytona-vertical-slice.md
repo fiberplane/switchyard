@@ -663,6 +663,9 @@ the sandbox (e.g., exploratory tasks) — see fp issue `SWYRD-yailwgkj`.
 
 ## Orchestrator Flow
 
+The executable entry point accepts `--workflow <path>` and defaults to `./WORKFLOW.md`, resolved
+relative to the orchestrator process's current working directory.
+
 One poll tick:
 
 ```text
@@ -737,7 +740,7 @@ apps/symphony-orchestrator/
       errors.ts
     artifact/
       models.ts              # WorkerOutcome, OrchestratorRecord schemas
-      store.ts               # `.symphony/runs/<issue>/<attempt>/` layout
+      store.ts               # `.symphony/runs/<issue>/<attempt>/` layout, rooted at orchestrator CWD
       errors.ts
     prompt/                  # worker prompt rendering; sibling to workflow/
       models.ts
@@ -767,7 +770,7 @@ Rules:
 - Errors use `Data.TaggedError` in-process and `Schema.ErrorClass` if serialized.
 - `Effect.runPromise` or `Effect.runMain` appears only in the entry point.
 - Structured logs always include `issue_id`, `issue_display_id`, `attempt`, and `sandbox_id` when
-  available.
+  available; logger bootstrap details live in `docs/architecture/observability.md`.
 - The runner module is deliberately decomposed across multiple files (transport / events /
   session / turn). Brettimus's reference implementation packs this into one ~1200-line file; for
   Switchyard, keep each concern in its own file so the protocol surface stays inspectable.

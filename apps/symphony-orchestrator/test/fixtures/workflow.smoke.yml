@@ -1,0 +1,32 @@
+tracker:
+  kind: fp
+  dispatchFilter:
+    property: symphony_ready
+    value: "true"
+
+polling:
+  intervalMs: 1000000
+
+agent:
+  maxConcurrentAgents: 1
+  maxAttempts: 1
+
+sandbox:
+  kind: daytona
+  apiUrl: http://localhost:33000/api
+  apiKey: switchyard-test-api-key
+  target: us
+  snapshot: symphony-test-base
+  language: typescript
+  autoStopInterval: 15
+  autoDeleteInterval: -1
+  repoPath: /workspace/repo
+  sourceStrategy: archive
+  artifactStrategy: bundle
+
+codex:
+  command: codex app-server
+  turnTimeoutMs: 3600000
+
+integration:
+  branchPrefix: symphony/

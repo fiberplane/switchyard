@@ -8,13 +8,13 @@
 import { ensureInactiveTestSnapshot, ensureTestSnapshot } from "./test-helpers/snapshot.js";
 
 const start = Date.now();
-console.log("[warm] ensuring symphony-test-base...");
+process.stdout.write("[warm] ensuring symphony-test-base...\n");
 await ensureTestSnapshot();
-console.log(`[warm] symphony-test-base ready (+${Date.now() - start}ms)`);
+process.stdout.write(`[warm] symphony-test-base ready (+${Date.now() - start}ms)\n`);
 
 const inactiveStart = Date.now();
-console.log("[warm] ensuring symphony-test-inactive...");
+process.stdout.write("[warm] ensuring symphony-test-inactive...\n");
 const inactiveName = await ensureInactiveTestSnapshot();
-console.log(`[warm] ${inactiveName} ready (+${Date.now() - inactiveStart}ms)`);
+process.stdout.write(`[warm] ${inactiveName} ready (+${Date.now() - inactiveStart}ms)\n`);
 
-console.log(`[warm] done in ${Date.now() - start}ms`);
+process.stdout.write(`[warm] done in ${Date.now() - start}ms\n`);
