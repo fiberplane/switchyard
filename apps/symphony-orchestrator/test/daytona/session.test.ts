@@ -317,6 +317,20 @@ describe("DaytonaSession round-trip", () => {
     expect(result.exitCode).toBe(0);
   }, 60_000);
 
+  test("waitExit reports a non-zero exit code as data", async () => {
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "exit 17");
+          return yield* stream.waitExit;
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(17);
+  }, 60_000);
+
   test("stderr stream demuxes from stdout", async () => {
     const result = await runWithSession(
       Effect.scoped(
