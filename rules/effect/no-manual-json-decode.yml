@@ -47,6 +47,7 @@ note: |
   `docs/patterns/data-validation.md` for the broader schema-first pattern.
 
 ignores:
+  - "apps/symphony-orchestrator/src/runner/protocol/**"
   - "**/*.test.ts"
   - "**/*.spec.ts"
   - "**/node_modules/**"

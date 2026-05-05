@@ -61,6 +61,7 @@ note: |
   layer stack. See `docs/patterns/effect.md` "HttpClient over raw fetch".
 
 ignores:
+  - "apps/symphony-orchestrator/src/runner/protocol/**"
   - "**/*.test.ts"
   - "**/*.spec.ts"
   - "**/node_modules/**"

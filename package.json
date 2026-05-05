@@ -7,6 +7,7 @@
     "playgrounds/*"
   ],
   "scripts": {
+    "codegen": "bun run scripts/codex-ts-codegen.ts",
     "lint": "oxlint",
     "lint:ast": "bunx @ast-grep/cli scan",
     "lint:drift": "node scripts/drift-check.mjs",

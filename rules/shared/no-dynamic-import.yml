@@ -28,6 +28,7 @@ note: |
   ```
 
 ignores:
+  - "apps/symphony-orchestrator/src/runner/protocol/**"
   - "**/*.test.ts"
   - "**/*.test.tsx"
   - "**/*.spec.ts"

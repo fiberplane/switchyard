@@ -32,6 +32,7 @@ note: |
   Opacity modifiers on semantic tokens are fine: text-foreground/80, bg-primary/20.
 
 ignores:
+  - "apps/symphony-orchestrator/src/runner/protocol/**"
   - "**/*.test.ts"
   - "**/*.spec.ts"
   - "**/node_modules/**"

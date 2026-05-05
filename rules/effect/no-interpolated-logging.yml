@@ -62,6 +62,7 @@ note: |
   - logger.error("Issue " + issueId + " failed")
 
 ignores:
+  - "apps/symphony-orchestrator/src/runner/protocol/**"
   - "**/*.test.ts"
   - "**/*.spec.ts"
   - "**/node_modules/**"

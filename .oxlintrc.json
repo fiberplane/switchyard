@@ -18,7 +18,8 @@
     ".pi/",
     "references/",
     "dist/",
-    "node_modules/"
+    "node_modules/",
+    "apps/symphony-orchestrator/src/runner/protocol/"
   ],
   "overrides": [
     {
