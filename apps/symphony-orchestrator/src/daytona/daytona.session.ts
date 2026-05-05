@@ -188,17 +188,30 @@ const offerOrEnqueueDrop = (
   }
 };
 
+// The grace window the driver waits, after the SDK's streaming Promise has
+// resolved cleanly, for the watcher's exit-file observation to catch up.
+// If the watcher does not resolve the shared exitDeferred within this
+// window, the stream is treated as "WebSocket closed but no clean exit
+// was observed" — which the cycle 10 contract maps to
+// DaytonaSessionLogError (likely SIGKILL or trap aborted).
+const STREAM_COMPLETION_GRACE_MS = 2_000;
+
 type LogStreamRig = {
   readonly receive: Stream.Stream<string, DaytonaSessionLogError>;
   readonly stderr: Stream.Stream<string, DaytonaSessionLogError>;
   readonly shutdown: Effect.Effect<void>;
-  readonly driverFiber: Fiber.RuntimeFiber<void, DaytonaSessionLogError>;
+  readonly errorRef: Ref.Ref<Option.Option<DaytonaSessionLogError>>;
+  readonly driverFiber: Fiber.RuntimeFiber<void, never>;
 };
 
 const buildLogStreams = (
   sandbox: Sandbox,
   sessionId: string,
   commandId: string,
+  exitDeferred: Deferred.Deferred<
+    DaytonaSessionExitInfo,
+    DaytonaSessionNotFoundError | DaytonaSessionOpError
+  >,
 ): Effect.Effect<LogStreamRig, never, Scope.Scope> =>
   Effect.gen(function* () {
     const stdoutQueue = yield* Queue.bounded<string>(STDOUT_QUEUE_CAPACITY);
@@ -228,6 +241,22 @@ const buildLogStreams = (
       { concurrency: "unbounded", discard: true },
     );
 
+    const setLogError = (err: DaytonaSessionLogError) =>
+      Effect.all(
+        [
+          Ref.set(errorRef, Option.some(err)),
+          Deferred.fail(
+            exitDeferred,
+            new DaytonaSessionOpError({
+              sessionId,
+              operation: "waitExit",
+              reason: `stream completed without observing exit code: ${err.reason}`,
+            }),
+          ).pipe(Effect.ignore),
+        ],
+        { concurrency: "unbounded", discard: true },
+      );
+
     const driver = Effect.tryPromise({
       try: () =>
         sandbox.process.getSessionCommandLogs(
@@ -247,7 +276,39 @@ const buildLogStreams = (
           reason: describeUnknown(error),
         }),
     }).pipe(
-      Effect.tapError((err) => Ref.set(errorRef, Option.some(err))),
+      Effect.matchEffect({
+        // SDK's streaming Promise rejected — WebSocket-level error.
+        onFailure: setLogError,
+        // SDK's streaming Promise resolved cleanly. Wait briefly for the
+        // watcher to observe the exit-file (clean exit ⇒ Deferred succeeds).
+        // If the watcher hasn't observed within the grace window, treat as
+        // a non-clean termination (e.g., SIGKILL — trap couldn't fire).
+        onSuccess: () =>
+          Deferred.await(exitDeferred).pipe(
+            Effect.timeoutFail({
+              duration: `${STREAM_COMPLETION_GRACE_MS} millis`,
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId,
+                  commandId,
+                  reason: `stream WebSocket closed but exit-code file not observed within ${STREAM_COMPLETION_GRACE_MS}ms (likely SIGKILL or trap aborted)`,
+                }),
+            }),
+            Effect.matchEffect({
+              onFailure: (err) =>
+                err._tag === "DaytonaSessionLogError"
+                  ? setLogError(err)
+                  : setLogError(
+                      new DaytonaSessionLogError({
+                        sessionId,
+                        commandId,
+                        reason: `waitExit failed during stream-completion grace: ${err.reason}`,
+                      }),
+                    ),
+              onSuccess: () => Effect.void,
+            }),
+          ),
+      }),
       Effect.ensuring(shutdown),
       Effect.withSpan("DaytonaSession.streamLogs"),
     );
@@ -263,7 +324,7 @@ const buildLogStreams = (
     const receive = Stream.fromQueue(stdoutQueue).pipe(Stream.concat(checkError));
     const stderr = Stream.fromQueue(stderrQueue).pipe(Stream.concat(checkError));
 
-    return { receive, stderr, shutdown, driverFiber };
+    return { receive, stderr, shutdown, errorRef, driverFiber };
   });
 
 // Exit detection workaround for the OSS Daytona test stack. Two SDK
@@ -399,12 +460,13 @@ const start = (
 
     const wrappedCommand = wrapCommandWithExitTrap(sessionId, command);
     const commandId = yield* executeSessionCommand(sandbox, sessionId, wrappedCommand);
-    const rig = yield* buildLogStreams(sandbox, sessionId, commandId);
 
     const exitDeferred = yield* Deferred.make<
       DaytonaSessionExitInfo,
       DaytonaSessionNotFoundError | DaytonaSessionOpError
     >();
+
+    const rig = yield* buildLogStreams(sandbox, sessionId, commandId, exitDeferred);
 
     yield* Effect.forkScoped(
       pollExitWithDeadline(sandbox, sessionId).pipe(
@@ -414,8 +476,29 @@ const start = (
               Effect.zipRight(Fiber.interrupt(rig.driverFiber)),
               Effect.zipRight(rig.shutdown),
             ),
+          // Watcher failed (deadline / SDK error). Mirror to the receive
+          // stream so consumers observe a typed failure instead of a clean
+          // termination; the driver may still be hanging on the SDK's
+          // streaming Promise, so we also interrupt it explicitly.
           onFailure: (cause) =>
-            Deferred.failCause(exitDeferred, cause).pipe(Effect.zipRight(rig.shutdown)),
+            Effect.all(
+              [
+                Ref.set(
+                  rig.errorRef,
+                  Option.some(
+                    new DaytonaSessionLogError({
+                      sessionId,
+                      commandId,
+                      reason: "exit watcher failed before observing exit",
+                    }),
+                  ),
+                ),
+                Deferred.failCause(exitDeferred, cause).pipe(Effect.ignore),
+                Fiber.interrupt(rig.driverFiber),
+                rig.shutdown,
+              ],
+              { concurrency: "unbounded", discard: true },
+            ),
         }),
       ),
     );

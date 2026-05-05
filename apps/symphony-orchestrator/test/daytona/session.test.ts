@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 import { NodeContext } from "@effect/platform-node";
-import { Chunk, Effect, Either, ParseResult, Schema, Stream } from "effect";
+import { Cause, Chunk, Effect, Either, Exit, ParseResult, Schema, Stream } from "effect";
 
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaSession, DaytonaSessionLive } from "../../src/daytona/daytona.session.js";
@@ -316,6 +316,76 @@ describe("DaytonaSession round-trip", () => {
 
     expect(result.exitCode).toBe(0);
   }, 60_000);
+
+  test("receive fails with DaytonaSessionLogError when the wrapper shell is SIGKILLed", async () => {
+    // SIGKILLing the wrapper shell (the one that holds the EXIT trap)
+    // prevents the trap from firing, so the exit-code file is never written.
+    // The streaming WebSocket closes when the SDK detects the wrapper died,
+    // and the driver's clean-completion grace window expires without
+    // observing the exit Deferred — surfacing as DaytonaSessionLogError on
+    // the receive stream. Inside the wrapper, `$$` is the wrapper bash's
+    // PID (the SDK runs `bash -c <wrapped>`, so $$ is that bash).
+    const exit = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "echo SWYRD_PID:$$; sleep 60");
+
+          const received: string[] = [];
+          const collectFiber = yield* Effect.fork(
+            stream.receive.pipe(
+              Stream.tap((chunk) =>
+                Effect.sync(() => {
+                  received.push(chunk);
+                }),
+              ),
+              Stream.runDrain,
+              Effect.exit,
+            ),
+          );
+
+          const pid = yield* Effect.gen(function* () {
+            const deadline = Date.now() + 10_000;
+            while (Date.now() < deadline) {
+              const all = received.join("");
+              const match = all.match(/SWYRD_PID:(\d+)/);
+              if (match) {
+                return match[1];
+              }
+              yield* Effect.sleep("100 millis");
+            }
+            return null;
+          });
+          expect(pid).not.toBeNull();
+
+          // SIGKILL the wrapper shell via a side-channel executeCommand.
+          yield* Effect.promise(() =>
+            runWithAdapter(
+              Effect.gen(function* () {
+                const adapter = yield* DaytonaAdapter;
+                yield* adapter.executeCommand(sharedHandle, `kill -9 ${pid}`);
+              }),
+            ).catch(() => undefined),
+          );
+
+          const receiveExit = yield* collectFiber.pipe(Effect.timeoutOption("35 seconds"));
+          return receiveExit;
+        }),
+      ),
+    );
+
+    expect(exit._tag).toBe("Some");
+    if (exit._tag === "Some") {
+      const inner = exit.value;
+      expect(Exit.isFailure(inner)).toBe(true);
+      if (Exit.isFailure(inner)) {
+        const failures = Cause.failures(inner.cause);
+        const arr = Chunk.toReadonlyArray(failures);
+        expect(arr.length).toBeGreaterThan(0);
+        expect(arr[0]).toBeInstanceOf(DaytonaSessionLogError);
+      }
+    }
+  }, 90_000);
 
   test("waitExit reports a non-zero exit code as data", async () => {
     const result = await runWithSession(
