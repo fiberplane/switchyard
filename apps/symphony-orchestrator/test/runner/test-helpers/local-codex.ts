@@ -39,7 +39,9 @@ const copyCodexAuth = (fromPath: string, intoPath: string): Effect.Effect<void> 
 const setupRepo = (): Effect.Effect<SpawnResult, LocalCodexUnavailableError> =>
   Effect.gen(function* () {
     const codexAuthPath =
-      globalThis.process.env.CODEX_AUTH_JSON ?? `${globalThis.process.env.HOME}/.codex/auth.json`;
+      globalThis.process.env.SWITCHYARD_CODEX_AUTH ??
+      globalThis.process.env.CODEX_AUTH_JSON ??
+      `${globalThis.process.env.HOME}/.codex/auth.json`;
     if (!(yield* Effect.promise(() => Bun.file(codexAuthPath).exists()))) {
       return yield* Effect.fail(
         new LocalCodexUnavailableError({
