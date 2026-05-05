@@ -8,6 +8,7 @@ import {
   frameMessages,
   parseFrames,
 } from "../../src/runner/transport.js";
+import { loadFixtureProtocolStream } from "./test-helpers/fixture-stream.js";
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -89,5 +90,35 @@ describe("encodeMessage", () => {
       Stream.runCollect(parseFrames(frameMessages(Stream.make(bytes)))),
     );
     expect(Array.from(recovered)).toEqual([msg]);
+  });
+});
+
+describe("transport composed over happy-path fixture", () => {
+  it("decodes every recv frame to an object whose top-level keys match the recorded shape", async () => {
+    const helper = await Effect.runPromise(loadFixtureProtocolStream("happy-path-turn.jsonl"));
+    const decoded = await Effect.runPromise(
+      Stream.runCollect(parseFrames(frameMessages(helper.stream.receive))),
+    );
+    const messages = Array.from(decoded) as ReadonlyArray<Record<string, unknown>>;
+
+    // Per the fixture meta the happy-path capture has 20 recv frames.
+    expect(messages.length).toBe(20);
+
+    for (const message of messages) {
+      // Every codex app-server frame is either a JSON-RPC response (id+result/error)
+      // or a notification (method+params). At least one of those keys must be present.
+      const hasResponseShape = "id" in message && ("result" in message || "error" in message);
+      const hasNotificationShape = "method" in message;
+      expect(hasResponseShape || hasNotificationShape).toBe(true);
+    }
+
+    // The handshake responses for id=1 (initialize) and id=2 (thread/start) must be present.
+    const responseIds = messages.filter((m) => "id" in m).map((m) => m.id);
+    expect(responseIds).toContain(1);
+    expect(responseIds).toContain(2);
+
+    // The terminal turn/completed notification must be the final frame.
+    const last = messages.at(-1);
+    expect(last?.method).toBe("turn/completed");
   });
 });
