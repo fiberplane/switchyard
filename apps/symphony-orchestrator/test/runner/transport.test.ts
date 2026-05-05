@@ -11,4 +11,10 @@ describe("frameMessages", () => {
     const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
     expect(Array.from(frames)).toEqual(['{"a":1}', '{"b":2}']);
   });
+
+  it("reassembles a single frame split across two chunks", async () => {
+    const input = Stream.fromIterable([utf8('{"a":'), utf8("1}\n")]);
+    const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
+    expect(Array.from(frames)).toEqual(['{"a":1}']);
+  });
 });
