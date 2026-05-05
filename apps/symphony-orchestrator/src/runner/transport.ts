@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, ParseResult, Schema, Stream } from "effect";
 
 import { ProtocolFramingError } from "./errors.js";
 
@@ -35,3 +35,10 @@ export const frameMessages = <E>(
     Stream.flatMap(Stream.fromIterable),
   );
 };
+
+const decodeJsonUnknown = Schema.decodeUnknown(Schema.parseJson(Schema.Unknown));
+
+export const parseFrames = <E>(
+  lines: Stream.Stream<string, E>,
+): Stream.Stream<unknown, E | ParseResult.ParseError> =>
+  lines.pipe(Stream.mapEffect((line) => decodeJsonUnknown(line)));

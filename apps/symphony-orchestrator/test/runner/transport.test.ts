@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Cause, Effect, Exit, Stream } from "effect";
 
 import { ProtocolFramingError } from "../../src/runner/errors.js";
-import { MAX_LINE_BUFFER_SIZE, frameMessages } from "../../src/runner/transport.js";
+import { MAX_LINE_BUFFER_SIZE, frameMessages, parseFrames } from "../../src/runner/transport.js";
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -30,5 +30,13 @@ describe("frameMessages", () => {
         expect(failure.value).toBeInstanceOf(ProtocolFramingError);
       }
     }
+  });
+});
+
+describe("parseFrames", () => {
+  it("emits parsed values in order for valid JSON frames", async () => {
+    const lines = Stream.fromIterable(['{"a":1}', '{"b":2}', '"hello"']);
+    const parsed = await Effect.runPromise(Stream.runCollect(parseFrames(lines)));
+    expect(Array.from(parsed)).toEqual([{ a: 1 }, { b: 2 }, "hello"]);
   });
 });
