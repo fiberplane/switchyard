@@ -36,7 +36,15 @@ import { DaytonaSessionExecuteResponseSchema } from "./session-models.js";
 // protection only; we have no signal from @daytona/sdk that its WebSocket
 // reader pauses when the callback blocks, so SDK-internal buffering is out
 // of our control and chunks may be dropped when the consumer falls behind.
-const STDOUT_QUEUE_CAPACITY = 64;
+//
+// Capacity is 1024 to absorb a typical codex app-server turn's burst of
+// JSON-RPC frames without dropping. The cycle 13 burst test verifies a
+// 1000-line emission round-trips at this capacity. If real-world traffic
+// exceeds the capacity, drops surface via Effect.logWarning so operators
+// can tune. Backport-worthy: the production runner leaf may want to make
+// this configurable per-session if the orchestrator-service leaf observes
+// real-world drop rates above a threshold.
+const STDOUT_QUEUE_CAPACITY = 1024;
 
 export type DaytonaSessionExitInfo = {
   readonly exitCode: number;

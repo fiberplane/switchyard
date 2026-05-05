@@ -543,6 +543,51 @@ describe("DaytonaSession round-trip", () => {
     expect(stillRunning.length).toBe(0);
   }, 90_000);
 
+  test("receive collects 1000-line burst with bounded orchestrator heap", async () => {
+    // Produce a 1000-line burst and confirm: (a) all 1000 lines arrive,
+    // (b) heap growth stays bounded at the orchestrator (the contract is
+    // heap-protection-only — wire-level backpressure is out of our control
+    // because the SDK does not pause its WebSocket reader on a blocking
+    // callback).
+    const heapBefore = process.memoryUsage().heapUsed;
+
+    const total = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(
+            sharedHandle,
+            "for i in $(seq 1 1000); do echo line-$i; done",
+          );
+          const collected = yield* Stream.runCollect(stream.receive).pipe(
+            Effect.timeoutFail({
+              duration: "30 seconds",
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId: stream.sessionId,
+                  commandId: stream.commandId,
+                  reason: "1000-line burst deadline",
+                }),
+            }),
+          );
+          return Chunk.toReadonlyArray(collected).join("");
+        }),
+      ),
+    );
+
+    const heapAfter = process.memoryUsage().heapUsed;
+    const heapDeltaBytes = heapAfter - heapBefore;
+
+    // Expected total: 1000 lines, each at most ~10 bytes ("line-NNNN\n").
+    // Bound the orchestrator-side heap growth at a generous 50 MB to give
+    // V8 / runtime room without missing real regressions (a buffered
+    // 1000-chunk session is far below this).
+    const heapBudgetBytes = 50 * 1024 * 1024;
+    expect(total).toContain("line-1\n");
+    expect(total).toContain("line-1000\n");
+    expect(heapDeltaBytes).toBeLessThan(heapBudgetBytes);
+  }, 90_000);
+
   test("waitExit reports a non-zero exit code as data", async () => {
     const result = await runWithSession(
       Effect.scoped(
