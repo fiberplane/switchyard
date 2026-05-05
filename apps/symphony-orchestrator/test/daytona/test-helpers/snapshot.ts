@@ -1,5 +1,6 @@
 import { Daytona, DaytonaNotFoundError, Image } from "@daytona/sdk";
 
+import { DaytonaTestSnapshotError } from "./errors.js";
 import { daytonaTestConfig, ensureStackUp } from "./stack.js";
 
 const snapshotName = "symphony-test-base";
@@ -7,13 +8,6 @@ const inactiveSnapshotName = "symphony-test-inactive";
 const dockerfilePath = new URL("../Dockerfile.snapshot", import.meta.url).pathname;
 const snapshotDeadlineMs = 600_000;
 const snapshotPollMs = 2_000;
-
-class DaytonaTestSnapshotError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DaytonaTestSnapshotError";
-  }
-}
 
 const describeUnknown = (error: unknown): string => {
   if (error instanceof Error) {
@@ -51,9 +45,9 @@ const deactivateSnapshot = async (snapshotId: string): Promise<void> => {
   });
 
   if (!response.ok) {
-    throw new DaytonaTestSnapshotError(
-      `Failed to deactivate snapshot ${snapshotId}: HTTP ${response.status} ${await readResponseBody(response)}`,
-    );
+    throw new DaytonaTestSnapshotError({
+      reason: `Failed to deactivate snapshot ${snapshotId}: HTTP ${response.status} ${await readResponseBody(response)}`,
+    });
   }
 };
 
@@ -66,9 +60,9 @@ const waitForActiveSnapshot = async (daytona: Daytona, name: string): Promise<vo
       return;
     }
     if (snapshot.state === "error" || snapshot.state === "build_failed") {
-      throw new DaytonaTestSnapshotError(
-        `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
-      );
+      throw new DaytonaTestSnapshotError({
+        reason: `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
+      });
     }
     if (snapshot.state === "inactive") {
       await daytona.snapshot.activate(snapshot);
@@ -77,9 +71,9 @@ const waitForActiveSnapshot = async (daytona: Daytona, name: string): Promise<vo
     await sleep(snapshotPollMs);
   }
 
-  throw new DaytonaTestSnapshotError(
-    `Snapshot ${name} did not become active within ${snapshotDeadlineMs}ms`,
-  );
+  throw new DaytonaTestSnapshotError({
+    reason: `Snapshot ${name} did not become active within ${snapshotDeadlineMs}ms`,
+  });
 };
 
 const waitForSnapshotState = async (
@@ -95,17 +89,17 @@ const waitForSnapshotState = async (
       return;
     }
     if (snapshot.state === "error" || snapshot.state === "build_failed") {
-      throw new DaytonaTestSnapshotError(
-        `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
-      );
+      throw new DaytonaTestSnapshotError({
+        reason: `Snapshot ${name} is ${snapshot.state}: ${snapshot.errorReason ?? "unknown reason"}`,
+      });
     }
 
     await sleep(snapshotPollMs);
   }
 
-  throw new DaytonaTestSnapshotError(
-    `Snapshot ${name} did not become ${expectedState} within ${snapshotDeadlineMs}ms`,
-  );
+  throw new DaytonaTestSnapshotError({
+    reason: `Snapshot ${name} did not become ${expectedState} within ${snapshotDeadlineMs}ms`,
+  });
 };
 
 export const ensureTestSnapshot = async (): Promise<void> => {
@@ -143,9 +137,9 @@ export const ensureTestSnapshot = async (): Promise<void> => {
     if (error instanceof DaytonaTestSnapshotError) {
       throw error;
     }
-    throw new DaytonaTestSnapshotError(
-      `Failed to create Daytona test snapshot ${snapshotName}: ${describeUnknown(error)}`,
-    );
+    throw new DaytonaTestSnapshotError({
+      reason: `Failed to create Daytona test snapshot ${snapshotName}: ${describeUnknown(error)}`,
+    });
   }
 };
 

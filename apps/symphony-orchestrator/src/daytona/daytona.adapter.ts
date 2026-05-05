@@ -1,6 +1,11 @@
 import { Buffer } from "node:buffer";
 
-import { Daytona, DaytonaNotFoundError, type Sandbox } from "@daytona/sdk";
+import {
+  Daytona,
+  DaytonaNotFoundError,
+  type CreateSandboxFromSnapshotParams,
+  type Sandbox,
+} from "@daytona/sdk";
 import { Context, Effect, Layer, ParseResult, Schema } from "effect";
 
 import {
@@ -9,6 +14,13 @@ import {
   DaytonaSandboxOpError,
   DaytonaSnapshotError,
 } from "./errors.js";
+import {
+  DaytonaDownloadResponsesSchema,
+  DaytonaExecuteResponseSchema,
+  DaytonaSandboxInfoSchema,
+  DaytonaSnapshotInfoSchema,
+  SandboxHandleSchema,
+} from "./models.js";
 import type {
   DaytonaCommandOptions,
   DaytonaCommandResult,
@@ -119,6 +131,81 @@ const decodeCommandEnvelope = (
     ),
   );
 
+const decodeSnapshotInfo = (snapshotName: string, value: unknown) =>
+  Schema.decodeUnknown(DaytonaSnapshotInfoSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSnapshotError({
+          snapshotName,
+          reason: `snapshot response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
+const decodeSandboxHandle = (sandboxName: string, value: unknown) =>
+  Schema.decodeUnknown(SandboxHandleSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxCreateError({
+          sandboxName,
+          reason: `sandbox create response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
+const decodeCreatedSandboxInfo = (sandboxName: string, value: unknown) =>
+  Schema.decodeUnknown(DaytonaSandboxInfoSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxCreateError({
+          sandboxName,
+          reason: `sandbox create response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
+const decodeSandboxInfo = (operation: string, sandboxId: string, value: unknown) =>
+  Schema.decodeUnknown(DaytonaSandboxInfoSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxOpError({
+          operation,
+          sandboxId,
+          reason: `sandbox response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
+const decodeExecuteResponse = (sandboxId: string, value: unknown) =>
+  Schema.decodeUnknown(DaytonaExecuteResponseSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxOpError({
+          operation: "executeCommand",
+          sandboxId,
+          reason: `command response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
+const decodeDownloadResponses = (sandboxId: string, value: unknown) =>
+  Schema.decodeUnknown(DaytonaDownloadResponsesSchema)(value).pipe(
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new DaytonaSandboxOpError({
+          operation: "downloadFiles",
+          sandboxId,
+          reason: `download response decode failed: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+        }),
+      ),
+    ),
+  );
+
 const createDaytonaClient = (config: DaytonaConfig): Daytona =>
   new Daytona({
     apiKey: config.apiKey,
@@ -150,6 +237,7 @@ const assertSnapshot = (client: Daytona, name: string): Effect.Effect<void, Dayt
         reason: describeUnknown(error),
       }),
   }).pipe(
+    Effect.flatMap((snapshot) => decodeSnapshotInfo(name, snapshot)),
     Effect.flatMap((snapshot) => {
       if (snapshot.state === "active") {
         return Effect.void;
@@ -174,24 +262,23 @@ const createSandbox = (
     try: async () => {
       const labels = { ...spec.labels };
       const envVars = { ...spec.envVars };
-      const sandbox = await client.create(
-        {
-          name: spec.name,
-          snapshot: spec.snapshotName,
-          language: spec.language,
-          labels: { ...labels },
-          envVars: { ...envVars },
-          autoStopInterval: spec.autoStopInterval,
-          autoDeleteInterval: spec.autoDeleteInterval,
-        },
-        { timeout: spec.createTimeoutSec ?? 300 },
-      );
+      const createParams: CreateSandboxFromSnapshotParams = {
+        name: spec.name,
+        snapshot: spec.snapshotName,
+        language: spec.language,
+        labels: { ...labels },
+        envVars: { ...envVars },
+        ...(spec.autoStopInterval === undefined ? {} : { autoStopInterval: spec.autoStopInterval }),
+        ...(spec.autoDeleteInterval === undefined
+          ? {}
+          : { autoDeleteInterval: spec.autoDeleteInterval }),
+      };
+      const sandbox = await client.create(createParams, { timeout: spec.createTimeoutSec ?? 300 });
 
       return {
-        id: sandbox.id,
-        name: sandbox.name,
-        labels,
         envVars,
+        labels,
+        sandbox,
       };
     },
     catch: (error) =>
@@ -199,7 +286,21 @@ const createSandbox = (
         sandboxName: spec.name,
         reason: describeUnknown(error),
       }),
-  }).pipe(Effect.withSpan("DaytonaAdapter.createSandbox"));
+  }).pipe(
+    Effect.flatMap(({ envVars, labels, sandbox }) =>
+      decodeCreatedSandboxInfo(spec.name, sandbox).pipe(
+        Effect.flatMap((sandboxInfo) =>
+          decodeSandboxHandle(spec.name, {
+            id: sandboxInfo.id,
+            name: sandboxInfo.name,
+            labels,
+            envVars,
+          }),
+        ),
+      ),
+    ),
+    Effect.withSpan("DaytonaAdapter.createSandbox"),
+  );
 
 const getSandbox = (
   client: Daytona,
@@ -225,17 +326,21 @@ const getSandbox = (
     },
   }).pipe(
     Effect.flatMap((sandbox) => {
-      if (sandbox.state === "destroyed") {
-        return Effect.fail(
-          new DaytonaSandboxNotFoundError({
-            sandboxId,
-            operation,
-            reason: "sandbox is destroyed",
-          }),
-        );
-      }
+      return decodeSandboxInfo(operation, sandboxId, sandbox).pipe(
+        Effect.flatMap((info) => {
+          if (info.state === "destroyed") {
+            return Effect.fail(
+              new DaytonaSandboxNotFoundError({
+                sandboxId,
+                operation,
+                reason: "sandbox is destroyed",
+              }),
+            );
+          }
 
-      return Effect.succeed(sandbox);
+          return Effect.succeed(sandbox);
+        }),
+      );
     }),
   );
 
@@ -281,50 +386,54 @@ const waitForSandboxDeleted = (
   client: Daytona,
   sandboxId: string,
 ): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const deadline = Date.now() + 120_000;
+  Effect.gen(function* () {
+    const deadline = Date.now() + 120_000;
 
-      while (Date.now() < deadline) {
-        try {
-          const sandbox = await client.get(sandboxId);
-          if (sandbox.state === "destroyed") {
-            return;
-          }
-        } catch (error) {
-          if (isDaytonaNotFound(error)) {
-            return;
-          }
-          throw error;
+    const poll = (): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+      Effect.gen(function* () {
+        const sandbox = yield* Effect.tryPromise({
+          try: () => client.get(sandboxId),
+          catch: (error) => {
+            if (isDaytonaNotFound(error)) {
+              return new DaytonaSandboxNotFoundError({
+                sandboxId,
+                operation: "deleteSandbox",
+                reason: describeUnknown(error),
+              });
+            }
+
+            return new DaytonaSandboxOpError({
+              operation: "deleteSandbox",
+              sandboxId,
+              reason: describeUnknown(error),
+            });
+          },
+        }).pipe(Effect.catchTag("DaytonaSandboxNotFoundError", () => Effect.succeed(undefined)));
+
+        if (sandbox === undefined) {
+          return;
         }
 
-        await sleep(500);
-      }
+        const info = yield* decodeSandboxInfo("deleteSandbox", sandboxId, sandbox);
+        if (info.state === "destroyed") {
+          return;
+        }
 
-      throw new DaytonaSandboxOpError({
-        operation: "deleteSandbox",
-        sandboxId,
-        reason: "sandbox did not reach destroyed state within 120000ms",
-      });
-    },
-    catch: (error) => {
-      if (error instanceof DaytonaSandboxOpError) {
-        return error;
-      }
-      if (isDaytonaNotFound(error)) {
-        return new DaytonaSandboxNotFoundError({
-          sandboxId,
-          operation: "deleteSandbox",
-          reason: describeUnknown(error),
-        });
-      }
+        if (Date.now() >= deadline) {
+          return yield* Effect.fail(
+            new DaytonaSandboxOpError({
+              operation: "deleteSandbox",
+              sandboxId,
+              reason: "sandbox did not reach destroyed state within 120000ms",
+            }),
+          );
+        }
 
-      return new DaytonaSandboxOpError({
-        operation: "deleteSandbox",
-        sandboxId,
-        reason: describeUnknown(error),
+        yield* Effect.promise(() => sleep(500));
+        return yield* poll();
       });
-    },
+
+    return yield* poll();
   });
 
 const executeCommand = (
@@ -336,15 +445,13 @@ const executeCommand = (
   getSandbox(client, handle.id, "executeCommand").pipe(
     Effect.flatMap((sandbox) =>
       Effect.tryPromise({
-        try: async () => {
-          const result = await sandbox.process.executeCommand(
+        try: () =>
+          sandbox.process.executeCommand(
             buildCommandEnvelope(command),
             options.cwd,
             options.env,
             options.timeoutSec,
-          );
-          return result.result;
-        },
+          ),
         catch: (error) => {
           if (isDaytonaNotFound(error)) {
             return new DaytonaSandboxNotFoundError({
@@ -360,7 +467,10 @@ const executeCommand = (
             reason: describeUnknown(error),
           });
         },
-      }).pipe(Effect.flatMap((content) => decodeCommandEnvelope(handle.id, content))),
+      }).pipe(
+        Effect.flatMap((response) => decodeExecuteResponse(handle.id, response)),
+        Effect.flatMap((response) => decodeCommandEnvelope(handle.id, response.result)),
+      ),
     ),
     Effect.withSpan("DaytonaAdapter.executeCommand"),
   );
@@ -432,6 +542,7 @@ const downloadFiles = (
         },
       }),
     ),
+    Effect.flatMap((responses) => decodeDownloadResponses(handle.id, responses)),
     Effect.flatMap((responses) => {
       const failed = responses.find((response) => response.error !== undefined);
       if (failed === undefined) {
@@ -442,7 +553,7 @@ const downloadFiles = (
         new DaytonaSandboxOpError({
           operation: "downloadFiles",
           sandboxId: handle.id,
-          reason: `${failed.source}: ${failed.error}`,
+          reason: `${failed.source}: ${failed.error ?? failed.errorDetails?.message ?? "download failed"}`,
         }),
       );
     }),

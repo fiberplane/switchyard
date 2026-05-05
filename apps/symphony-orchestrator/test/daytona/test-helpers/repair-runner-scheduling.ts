@@ -1,12 +1,7 @@
+import { DaytonaRunnerRepairError } from "./errors.js";
+
 const projectName = "switchyard-test";
 const dbContainer = `${projectName}-db-1`;
-
-class DaytonaRunnerRepairError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DaytonaRunnerRepairError";
-  }
-}
 
 const readStream = async (stream: ReadableStream<Uint8Array> | null): Promise<string> => {
   if (stream === null) {
@@ -54,15 +49,15 @@ export const repairRunnerSchedulingIfEnabled = async (target: string): Promise<b
   ]);
 
   if (exitCode !== 0) {
-    throw new DaytonaRunnerRepairError(
-      [
+    throw new DaytonaRunnerRepairError({
+      reason: [
         `Runner scheduling repair failed for Daytona test stack '${projectName}'.`,
         "stdout:",
         stdout.trim(),
         "stderr:",
         stderr.trim(),
       ].join("\n"),
-    );
+    });
   }
 
   return true;

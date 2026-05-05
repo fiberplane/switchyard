@@ -60,6 +60,26 @@ describe("DaytonaConfig", () => {
   });
 });
 
+describe("Daytona test sandbox spec", () => {
+  test("preserves cleanup labels when caller labels collide", () => {
+    const testRunId = crypto.randomUUID();
+    const spec = buildTestSandboxSpec({
+      testRunId,
+      labels: {
+        app: "wrong-app",
+        test_run_id: "wrong-run",
+        created_at_ms: "0",
+        purpose: "label-protection",
+      },
+    });
+
+    expect(spec.labels.app).toBe("symphony-test");
+    expect(spec.labels.test_run_id).toBe(testRunId);
+    expect(spec.labels.created_at_ms).not.toBe("0");
+    expect(spec.labels.purpose).toBe("label-protection");
+  });
+});
+
 describe("DaytonaAdapter", () => {
   const testRunId = crypto.randomUUID();
 

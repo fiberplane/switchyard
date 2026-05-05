@@ -22,10 +22,10 @@ export const buildTestSandboxSpec = (overrides: SandboxSpecOverrides): DaytonaSa
     snapshotName: daytonaTestConfig.snapshotName,
     language: "typescript",
     labels: {
+      ...overrides.labels,
       app: "symphony-test",
       test_run_id: overrides.testRunId,
       created_at_ms: createdAtMs,
-      ...overrides.labels,
     },
     envVars: {
       ...overrides.envVars,

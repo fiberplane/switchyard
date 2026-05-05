@@ -35,6 +35,19 @@ export const SandboxHandleSchema = Schema.Struct({
 });
 export type SandboxHandle = Schema.Schema.Type<typeof SandboxHandleSchema>;
 
+export const DaytonaSnapshotInfoSchema = Schema.Struct({
+  state: NonEmptyString,
+  errorReason: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export type DaytonaSnapshotInfo = Schema.Schema.Type<typeof DaytonaSnapshotInfoSchema>;
+
+export const DaytonaSandboxInfoSchema = Schema.Struct({
+  id: NonEmptyString,
+  name: NonEmptyString,
+  state: Schema.optional(Schema.String),
+});
+export type DaytonaSandboxInfo = Schema.Schema.Type<typeof DaytonaSandboxInfoSchema>;
+
 export const DaytonaSandboxSpecSchema = Schema.Struct({
   name: NonEmptyString,
   snapshotName: NonEmptyString,
@@ -61,11 +74,32 @@ export const DaytonaCommandResultSchema = Schema.Struct({
 });
 export type DaytonaCommandResult = Schema.Schema.Type<typeof DaytonaCommandResultSchema>;
 
+export const DaytonaExecuteResponseSchema = Schema.Struct({
+  result: Schema.String,
+});
+export type DaytonaExecuteResponse = Schema.Schema.Type<typeof DaytonaExecuteResponseSchema>;
+
 export const DaytonaFileTransferSchema = Schema.Struct({
   src: NonEmptyString,
   dst: NonEmptyString,
 });
 export type DaytonaFileTransfer = Schema.Schema.Type<typeof DaytonaFileTransferSchema>;
+
+const DaytonaDownloadErrorDetailsSchema = Schema.Struct({
+  message: Schema.String,
+  statusCode: Schema.optional(Schema.Number),
+  errorCode: Schema.optional(Schema.String),
+});
+
+const DaytonaDownloadResponseSchema = Schema.Struct({
+  source: NonEmptyString,
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.String),
+  errorDetails: Schema.optional(DaytonaDownloadErrorDetailsSchema),
+});
+
+export const DaytonaDownloadResponsesSchema = Schema.Array(DaytonaDownloadResponseSchema);
+export type DaytonaDownloadResponse = Schema.Schema.Type<typeof DaytonaDownloadResponseSchema>;
 
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;

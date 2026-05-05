@@ -1,6 +1,7 @@
-import { Daytona } from "@daytona/sdk";
+import { Daytona, type Sandbox } from "@daytona/sdk";
 
 import type { DaytonaConfig } from "../../../src/daytona/models.js";
+import { DaytonaTestStackError } from "./errors.js";
 import { repairRunnerSchedulingIfEnabled } from "./repair-runner-scheduling.js";
 
 export const daytonaTestConfig: DaytonaConfig = {
@@ -14,13 +15,7 @@ const appRoot = new URL("../../../", import.meta.url);
 const stackProject = "switchyard-test";
 const stackUpCommand = "bun run test:daytona:up";
 const healthUrl = "http://localhost:33000/health";
-
-class DaytonaTestStackError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DaytonaTestStackError";
-  }
-}
+const listPageSize = 100;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -47,15 +42,15 @@ const runStackUp = async (): Promise<void> => {
   ]);
 
   if (exitCode !== 0) {
-    throw new DaytonaTestStackError(
-      [
+    throw new DaytonaTestStackError({
+      reason: [
         `Daytona test stack '${stackProject}' failed to boot via '${stackUpCommand}'.`,
         "stdout:",
         stdout.trim(),
         "stderr:",
         stderr.trim(),
       ].join("\n"),
-    );
+    });
   }
 };
 
@@ -77,13 +72,13 @@ const waitForHealth = async (): Promise<void> => {
     await sleep(1_000);
   }
 
-  throw new DaytonaTestStackError(
-    [
+  throw new DaytonaTestStackError({
+    reason: [
       `Daytona test stack '${stackProject}' is not reachable at ${healthUrl}.`,
       `Last health error: ${lastReason}`,
       `Boot it with '${stackUpCommand}' from apps/symphony-orchestrator.`,
     ].join("\n"),
-  );
+  });
 };
 
 export const ensureStackUp = async (): Promise<void> => {
@@ -104,15 +99,23 @@ const makeDaytona = (): Daytona =>
 
 export const listTestSandboxes = async (labels: Record<string, string> = {}) => {
   const daytona = makeDaytona();
-  const response = await daytona.list(
-    {
-      app: "symphony-test",
-      ...labels,
-    },
-    1,
-    100,
-  );
-  return response.items;
+  const testLabels = {
+    app: "symphony-test",
+    ...labels,
+  };
+  const sandboxes: Sandbox[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await daytona.list(testLabels, page, listPageSize);
+    sandboxes.push(...response.items);
+
+    if (page >= response.totalPages || response.items.length === 0) {
+      return sandboxes;
+    }
+
+    page += 1;
+  }
 };
 
 export const deleteByTestRunId = async (testRunId: string): Promise<void> => {
