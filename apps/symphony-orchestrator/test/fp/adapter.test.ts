@@ -48,15 +48,16 @@ describe("FpIssueListSchema", () => {
 });
 
 describe("FpAdapter", () => {
-  test("listIssuesByStatus returns raw fp stdout for a real project", async () => {
-    const stdout = await runWithAdapter(
+  test("listIssuesByStatus returns schema-decoded issues for a real project", async () => {
+    const issues = await runWithAdapter(
       Effect.gen(function* () {
         const adapter = yield* FpAdapter;
         return yield* adapter.listIssuesByStatus("todo");
       }),
     );
+    const seed = issues.find((issue) => issue.shortId === seeds.todoIdle.shortId);
 
-    expect(stdout.trim().startsWith("{")).toBe(true);
-    expect(stdout).toContain(seeds.todoIdle.shortId);
+    expect(seed?.title).toBe(seeds.todoIdle.title);
+    expect(seed?.status).toBe("todo");
   });
 });

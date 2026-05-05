@@ -22,3 +22,13 @@ export class FpCommandError extends Data.TaggedError("FpCommandError")<{
     return `fp command failed: ${this.command.join(" ")} (exit code ${this.exitCode})\n${this.stderr}`;
   }
 }
+
+export class FpDecodeError extends Data.TaggedError("FpDecodeError")<{
+  readonly path: string;
+  readonly reason: string;
+  readonly details: string;
+}> {
+  get message(): string {
+    return `fp output did not match the expected schema at ${this.path}: ${this.reason}\n${this.details}`;
+  }
+}

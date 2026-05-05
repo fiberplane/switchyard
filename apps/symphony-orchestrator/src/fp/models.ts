@@ -1,4 +1,6 @@
-import { Schema } from "effect";
+import { Effect, ParseResult, Schema } from "effect";
+
+import { FpDecodeError } from "./errors.js";
 
 export const FpIssueStatusSchema = Schema.Literal("todo", "in-progress", "done");
 export type FpIssueStatus = Schema.Schema.Type<typeof FpIssueStatusSchema>;
@@ -24,3 +26,20 @@ export const FpIssueListSchema = Schema.Struct({
   issues: Schema.Array(FpIssueSchema),
 });
 export type FpIssueList = Schema.Schema.Type<typeof FpIssueListSchema>;
+
+export const decodeFpIssueListJson = (
+  content: string,
+  path: string,
+): Effect.Effect<readonly FpIssue[], FpDecodeError> =>
+  Schema.decodeUnknown(Schema.parseJson(FpIssueListSchema))(content).pipe(
+    Effect.map((list) => list.issues),
+    Effect.catchTag("ParseError", (error) =>
+      Effect.fail(
+        new FpDecodeError({
+          path,
+          reason: "JSON/schema validation failed",
+          details: ParseResult.TreeFormatter.formatErrorSync(error),
+        }),
+      ),
+    ),
+  );
