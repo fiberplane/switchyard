@@ -25,6 +25,9 @@ export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a D
 ## Workspace
 
 - The local repo is \`/workspace/repo\`. Start there.
+- \`/workspace/repo\` mirrors the host repository root. Treat all file paths as host
+  repo-relative paths (for example, edit \`apps/symphony-orchestrator/test/...\` for
+  orchestrator tests, not top-level \`test/...\`).
 - The starting commit is tagged \`symphony-base\`. Make your changes on top of it.
 - The directory \`/tmp/.symphony/\` is pre-created for you by the orchestrator before your turn starts. Write your outcome envelope there (see below).
 

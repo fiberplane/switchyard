@@ -7,7 +7,7 @@ docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/eligibilit
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/errors.ts sig:b55a6fb6d3decb85
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/models.ts sig:e915a696c34306a0
 docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/symphony-properties.ts sig:eeb16ec80944614b
-docs/architecture/observability.md -> apps/symphony-orchestrator/src/index.ts sig:14155e819f7116f7
+docs/architecture/observability.md -> apps/symphony-orchestrator/src/index.ts sig:e50aa23e5d032c21
 docs/architecture/observability.md -> apps/symphony-orchestrator/src/observability/logger.ts sig:7f1d8b171d799051
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/errors.ts sig:2e599bb0981cc19e
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/selector.ts sig:880dcf0fb9410d79

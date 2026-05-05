@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -68,10 +69,28 @@ export const buildDaytonaLayers = (
 ): Layer.Layer<DaytonaAdapter | DaytonaSession, unknown> =>
   Layer.merge(DaytonaAdapterLive(cfg, options), DaytonaSessionLive(cfg));
 
+export const resolveHostRepoRoot = (cwd: string = process.cwd()): string => {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return cwd;
+  }
+};
+
 export const buildPlatformLayer = (cfg: WorkflowConfig) => {
+  const hostRepoRoot = resolveHostRepoRoot();
   const daytonaLayers = buildDaytonaLayers(toDaytonaConfig(cfg.sandbox));
-  const fpStack = FpServiceLive.pipe(Layer.provide(FpAdapterLive()), Layer.provide(FpBinaryLive()));
-  const integrationStack = IntegrationServiceLive.pipe(Layer.provide(GitAdapterLive()));
+  const fpStack = FpServiceLive.pipe(
+    Layer.provide(FpAdapterLive({ cwd: hostRepoRoot })),
+    Layer.provide(FpBinaryLive()),
+  );
+  const integrationStack = IntegrationServiceLive.pipe(
+    Layer.provide(GitAdapterLive({ cwd: hostRepoRoot })),
+  );
   const sandboxScripts = SandboxScriptServiceLive.pipe(Layer.provide(daytonaLayers));
   const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg));
 
@@ -82,7 +101,7 @@ export const buildPlatformLayer = (cfg: WorkflowConfig) => {
         sandboxScripts,
         WorkerPromptServiceLive,
         AgentRunnerLive,
-        ArtifactStoreLive(path.join(process.cwd(), ".symphony/runs")),
+        ArtifactStoreLive(path.join(hostRepoRoot, ".symphony/runs")),
         integrationStack,
         fpStack,
         WorkflowServiceLive,

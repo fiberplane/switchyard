@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Deferred, Effect, Fiber, Ref } from "effect";
@@ -10,6 +13,7 @@ import {
   installSignalHandlers,
   makeProgram,
   parseCliOptions,
+  resolveHostRepoRoot,
   toDaytonaConfig,
   toOrchestratorConfig,
 } from "../src/index.js";
@@ -96,6 +100,19 @@ describe("orchestrator entrypoint wiring", () => {
         ),
       ),
     );
+  });
+
+  test("resolves the host repo root from a nested application cwd", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "swy-entrypoint-root-"));
+    const nested = join(repoDir, "apps/symphony-orchestrator");
+    try {
+      await Bun.$`mkdir -p ${nested}`;
+      await Bun.$`git init --initial-branch=main --quiet`.cwd(repoDir);
+
+      expect(realpathSync(resolveHostRepoRoot(nested))).toBe(realpathSync(repoDir));
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
   });
 
   test("boots with a test OrchestratorService and runs one tick before interruption", async () => {

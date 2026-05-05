@@ -29,6 +29,8 @@ describe("renderTemplate / WORKER_PROMPT_TEMPLATE", () => {
     // the spec contract; if any drops out, the worker's mental model is incomplete.
     const requiredSubstrings = [
       "/workspace/repo",
+      "mirrors the host repository root",
+      "apps/symphony-orchestrator/test/",
       "symphony-base",
       "outcome.json",
       "no `fp` credentials",
