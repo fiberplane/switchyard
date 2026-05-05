@@ -87,7 +87,7 @@ const buildCommandEnvelope = (command: string): string =>
   [
     "stdout_file=$(mktemp)",
     "stderr_file=$(mktemp)",
-    `bash -lc ${shellQuote(command)} >\"$stdout_file\" 2>\"$stderr_file\"`,
+    `bash -lc ${shellQuote(command)} >"$stdout_file" 2>"$stderr_file"`,
     "status=$?",
     'printf \'{"exitCode":%s,"stdoutBase64":"\' "$status"',
     'base64 -w 0 "$stdout_file"',
