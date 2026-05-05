@@ -623,7 +623,9 @@ Local layout after a run:
 
 Worker commits cross the sandbox boundary as a `git bundle`:
 
-1. Sandbox runs `git bundle create /tmp/.symphony/work.bundle symphony-base..HEAD`.
+1. Sandbox runs `git bundle create /tmp/.symphony/work.bundle HEAD`. The bundle must be
+   self-contained (no `symphony-base..HEAD` range) so the host doesn't need a pre-existing
+   `symphony-base` ref — see ADR D7.
 2. Orchestrator downloads `work.bundle` to `.symphony/runs/<issue-id>/<attempt>/`.
 3. On the host repo:
    ```bash

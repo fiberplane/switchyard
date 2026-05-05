@@ -133,11 +133,16 @@ switch to volume mounts, GitHub clones, or richer host syncs.
 
 ### D7. Artifact return is **`git bundle`**; integration is **branch-on-host**
 
-`git bundle create work.bundle symphony-base..HEAD` round-trips full commit history (the worker's
-commits and commit messages preserved end-to-end). The orchestrator fetches the bundle into the
-host repo as `symphony/<issue-id>` (cut from `symphony-base`). No worktree directories
-proliferate; the host repo accumulates `symphony/*` branches that humans can review and merge.
-The orchestrator never auto-merges to `main`.
+`git bundle create work.bundle HEAD` round-trips full commit history (the worker's
+commits and commit messages preserved end-to-end). The bundle must be **self-contained** — `HEAD`,
+not `symphony-base..HEAD`. The host repo never had `symphony-base` (the tag is created inside the
+sandbox by D6's setup), so a thin range-bundle would fail `git fetch` with "Repository lacks these
+prerequisite commits." The single-commit-history invariant from D6 makes the self-contained
+bundle cheap: it carries `symphony-base` plus the worker's commits, nothing more. The orchestrator
+fetches the bundle into the host repo as `symphony/<issue-id>` (which now anchors at the bundle's
+`symphony-base` commit). No worktree directories proliferate; the host repo accumulates
+`symphony/*` branches that humans can review and merge. The orchestrator never auto-merges to
+`main`.
 
 Patch-based artifacts (`git diff --binary > symphony-result.patch`) were rejected because they
 flatten history into a single squashed diff — the commit-by-commit thought process is a primary
