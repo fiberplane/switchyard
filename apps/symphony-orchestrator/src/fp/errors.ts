@@ -32,11 +32,3 @@ export class FpDecodeError extends Data.TaggedError("FpDecodeError")<{
     return `fp output did not match the expected schema at ${this.path}: ${this.reason}\n${this.details}`;
   }
 }
-
-export class FpIssueNotFoundError extends Data.TaggedError("FpIssueNotFoundError")<{
-  readonly issueId: string;
-}> {
-  get message(): string {
-    return `fp issue not found: ${this.issueId}`;
-  }
-}
