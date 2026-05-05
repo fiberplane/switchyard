@@ -190,10 +190,13 @@ export type DaytonaSessionMock = {
 
 export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSessionMock => {
   const sent: string[] = [];
-  let sendIndex = 0;
   const shape: DaytonaSessionShape = {
     start: () =>
       Effect.gen(function* () {
+        // Per-call (per-runOne) sendIndex so multi-tick tests get a fresh
+        // reply sequence on every session.start. Tests that need cumulative
+        // tracking can read shape.sent() across ticks.
+        let sendIndex = 0;
         // Receive frames are emitted via an unbounded queue. Pre-staged "preface"
         // frames go in immediately; per-send replies are pushed as the runner
         // observes each send (so requests reach pending state before responses

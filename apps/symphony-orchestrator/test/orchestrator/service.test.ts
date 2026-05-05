@@ -315,6 +315,118 @@ describe("OrchestratorService.runOne — cycle 6 worker non-completed (F12)", ()
   });
 });
 
+describe("OrchestratorService.runOneTick — cycles 9-12", () => {
+  test("cycle 9: dispatches a single eligible candidate end-to-end", async () => {
+    const issue = fixtureEligible("tick");
+    const fp = makeFpMock({
+      fetchCandidates: () => Effect.succeed({ eligible: [issue], rejected: [] }),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const tick = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
+    );
+
+    expect(tick.dispatched).toEqual([
+      { issueId: "tick", displayId: "SWY-tick", attempt: 1 },
+    ]);
+    expect(tick.skipped).toEqual([]);
+    // Confirm the issue actually went through runOne (markCompleted fired).
+    expect(fp.calls.some((c) => c.kind === "markCompleted")).toBe(true);
+  });
+
+  test("cycle 10: empty candidate set → no dispatch, no fp writes", async () => {
+    const fp = makeFpMock({
+      fetchCandidates: () => Effect.succeed({ eligible: [], rejected: [] }),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: [] });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const tick = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
+    );
+
+    expect(tick.dispatched).toEqual([]);
+    expect(tick.skipped).toEqual([]);
+    // Only fetchCandidates was called — no claim / setAttempt / etc.
+    const writes = fp.calls.filter((c) => c.kind !== "fetchCandidates");
+    expect(writes).toEqual([]);
+  });
+
+  test("cycle 11: release-and-redispatch — first tick → needs-attention, second tick → another issue", async () => {
+    const issueA = fixtureEligible("first");
+    const issueB = fixtureEligible("second");
+
+    let fetchN = 0;
+    const fp = makeFpMock({
+      fetchCandidates: () =>
+        Effect.suspend(() => {
+          fetchN += 1;
+          // Tick 1: A is eligible. Tick 2: only B is eligible (A is now done /
+          // needs-attention and the test seeds a fresh candidate scan).
+          return Effect.succeed({
+            eligible: fetchN === 1 ? [issueA] : [issueB],
+            rejected: [],
+          });
+        }),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    // First runOne goes malformed → needs-attention. Second runOne succeeds
+    // (default mocks). Both dispatches must complete without slot blockage,
+    // proving the running-set entry was released after the first runOne.
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture", {
+      readOutcome: () =>
+        fetchN === 1
+          ? Effect.fail(
+              new ArtifactDecodeError({
+                path: "/tmp/swy-fixture/outcome.json",
+                reason: "schema validation failed",
+                details: "missing field",
+              }),
+            )
+          : Effect.succeed({ status: "completed", summary: "ok" }),
+    });
+    const config = baseConfig(codexAuthPath);
+
+    const layer = wire({ fp, daytona, session, integration, artifact, config });
+
+    const tick1 = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(layer)),
+    );
+    expect(tick1.dispatched).toEqual([
+      { issueId: "first", displayId: "SWY-first", attempt: 1 },
+    ]);
+
+    const tick2 = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOneTick;
+      }).pipe(Effect.provide(layer)),
+    );
+    expect(tick2.dispatched).toEqual([
+      { issueId: "second", displayId: "SWY-second", attempt: 1 },
+    ]);
+  });
+});
+
 describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", () => {
   test("non-completed turn outcome routes to needs-attention with `protocol stream <kind>` last_error", async () => {
     const issue = fixtureEligible("proto");
