@@ -11,12 +11,12 @@ import {
   FpIssueDetailSchema,
   FpIssueListSchema,
 } from "../../src/fp/models.js";
+import { type SeededIssues, seedTestIssues } from "./test-helpers/seed.js";
 import {
   type FpTestProject,
   runFpSuccess,
   setupFpProject,
 } from "./test-helpers/setup-fp-project.js";
-import { type SeededIssues, seedTestIssues } from "./test-helpers/seed.js";
 
 const fixturePath = (name: string) => `test/fixtures/fp/${name}`;
 
@@ -68,7 +68,9 @@ const createScratchIssue = async (title: string) => {
 describe("FpIssueListSchema", () => {
   test("decodes the recorded issue list fixture", async () => {
     const decoded = await Effect.runPromise(
-      Schema.decodeUnknown(FpIssueListSchema)(await Bun.file(fixturePath("issue-list.json")).json()),
+      Schema.decodeUnknown(FpIssueListSchema)(
+        await Bun.file(fixturePath("issue-list.json")).json(),
+      ),
     );
 
     expect(decoded.issues).toHaveLength(1);
@@ -78,7 +80,9 @@ describe("FpIssueListSchema", () => {
 
   test("decodes the recorded issue show fixture", async () => {
     const decoded = await Effect.runPromise(
-      Schema.decodeUnknown(FpIssueDetailSchema)(await Bun.file(fixturePath("issue-show.json")).json()),
+      Schema.decodeUnknown(FpIssueDetailSchema)(
+        await Bun.file(fixturePath("issue-show.json")).json(),
+      ),
     );
 
     expect(decoded.displayId).toBe("SWY-lutdubtu");

@@ -7,8 +7,8 @@ import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Either } from "effect";
 
-import { FpBinaryNotFoundError } from "../../src/fp/errors.js";
 import { FpBinary, FpBinaryLive, type FpBinaryOptions } from "../../src/fp/binary.js";
+import { FpBinaryNotFoundError } from "../../src/fp/errors.js";
 
 const tempDirs: string[] = [];
 
@@ -37,7 +37,10 @@ const resolveBinary = Effect.gen(function* () {
 const runWithBinary = <A, E>(
   options: FpBinaryOptions,
   effect: Effect.Effect<A, E, FpBinary | FileSystem.FileSystem>,
-) => Effect.runPromise(effect.pipe(Effect.provide(FpBinaryLive(options)), Effect.provide(NodeFileSystem.layer)));
+) =>
+  Effect.runPromise(
+    effect.pipe(Effect.provide(FpBinaryLive(options)), Effect.provide(NodeFileSystem.layer)),
+  );
 
 describe("FpBinary.resolve", () => {
   test("returns the path from SWITCHYARD_FP_BIN when set", async () => {

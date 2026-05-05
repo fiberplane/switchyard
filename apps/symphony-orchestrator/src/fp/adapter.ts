@@ -1,8 +1,8 @@
 import { Command, CommandExecutor } from "@effect/platform";
 import { Chunk, Context, Effect, Layer, Stream } from "effect";
 
-import { FpBinaryNotFoundError, FpCommandError, FpDecodeError } from "./errors.js";
 import { FpBinary, type FpBinaryShape } from "./binary.js";
+import { FpBinaryNotFoundError, FpCommandError, FpDecodeError } from "./errors.js";
 import {
   decodeFpIssueDetailJson,
   decodeFpIssueListJson,
@@ -135,9 +135,12 @@ export const FpAdapterLive = (options: FpAdapterOptions = {}) =>
             Effect.flatMap((output) => decodeFpIssueDetailJson(output, `fp issue show ${id}`)),
           ),
         setStatus: (id, status) =>
-          runFpCommand(["issue", "update", id, "--status", status], options, fpBinary, executor).pipe(
-            Effect.asVoid,
-          ),
+          runFpCommand(
+            ["issue", "update", id, "--status", status],
+            options,
+            fpBinary,
+            executor,
+          ).pipe(Effect.asVoid),
         setProperty: (id, key, value) =>
           runFpCommand(
             ["issue", "update", id, "--property", `${key}=${value}`],

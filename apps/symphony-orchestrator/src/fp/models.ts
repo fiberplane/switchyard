@@ -40,12 +40,9 @@ export const FpIssueDetailSchema = Schema.Struct({
   author: Schema.String,
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  properties: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    {
-      default: () => ({}),
-    },
-  ),
+  properties: Schema.optionalWith(Schema.Record({ key: Schema.String, value: Schema.Unknown }), {
+    default: () => ({}),
+  }),
   comments: Schema.Array(Schema.Unknown),
 });
 export type FpIssueDetail = Schema.Schema.Type<typeof FpIssueDetailSchema>;
