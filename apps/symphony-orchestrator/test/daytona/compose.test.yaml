@@ -90,9 +90,9 @@ services:
       - SSH_GATEWAY_COMMAND=ssh -p 32222 {{TOKEN}}@localhost
       - SSH_GATEWAY_PUBLIC_KEY=c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCZ1FEZUtocFdOYVhVNkpSMnJXekc1NlZJeksrcmsrdForcCtVUmwyeWF5cWRnZGg2bnVOL1NtVnJsYmV4MGlrRVZZemdRWUIwWno5M2dqOVhxSkd4WjJiMHVoSDFzNkp2bnhKZVdIK05rbjBNMzRiRjZkeVloZ3o4M0JaTitWcElJdnVDT1pxYWE4VnlRWjhPdjVLMU00enlmQnFCMld3ejcwZEVWUnFaMnVZckd5U0RqUUIrU3hRQ3phY0djb2JRQTFUd2QxdEJvSk5BaVpPWXFSU3d6TmNoTk5hZHlxSHRGdkZRQ0hhNjZWaVBmQ0FVUGt2cEN6ZGh3TmJGdVhGVWkxbnZOWkx4M056RU41M05LWUhZcWU3Y3dXZkI4QjBoRDhDd3hmSDd6T0o1b1RCMnBMVVlsUWpZRDNsN3k4SkFTbDZpYkpuR1A1SWczVXpZWlRIdUdkNzVXWktnNTRJTVROQlFPMWpJdE9HL0orUm1XbzB0YTdpRkF6ZExyL1BmbDdXTVMwbEZhSm9scTdUVmJLUG1JODFTOU04VEgrbXhLbGZ5b2NqZzhwSUdlQUllcEo3dXl1Vk1xT2wxeVVuSFNycDRlVEVlR0k3NlpCOFRoUzhkYnBLUTIvb2RYMHkwc3FSZDI0Y2lGdnM0dnZVaW80NFdYNlNWRG54dXpWRHc1Rzg9IGRheXRvbmFAMDQwNjZiZDIwY2Vi
       - SSH_GATEWAY_URL=localhost:32222
-      - RUNNER_DECLARATIVE_BUILD_SCORE_THRESHOLD=10
-      - RUNNER_AVAILABILITY_SCORE_THRESHOLD=10
-      - RUNNER_START_SCORE_THRESHOLD=3
+      - RUNNER_DECLARATIVE_BUILD_SCORE_THRESHOLD=1
+      - RUNNER_AVAILABILITY_SCORE_THRESHOLD=1
+      - RUNNER_START_SCORE_THRESHOLD=1
       - SKIP_USER_EMAIL_VERIFICATION=true
       - RUN_MIGRATIONS=true
       - OTEL_COLLECTOR_API_KEY=otel_collector_api_key
@@ -157,7 +157,9 @@ services:
       - RUNNER_DOMAIN=runner
       - SSH_GATEWAY_ENABLE=true
       - SSH_PUBLIC_KEY=c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCZ1FEZUtocFdOYVhVNkpSMnJXekc1NlZJeksrcmsrdForcCtVUmwyeWF5cWRnZGg2bnVOL1NtVnJsYmV4MGlrRVZZemdRWUIwWno5M2dqOVhxSkd4WjJiMHVoSDFzNkp2bnhKZVdIK05rbjBNMzRiRjZkeVloZ3o4M0JaTitWcElJdnVDT1pxYWE4VnlRWjhPdjVLMU00enlmQnFCMld3ejcwZEVWUnFaMnVZckd5U0RqUUIrU3hRQ3phY0djb2JRQTFUd2QxdEJvSk5BaVpPWXFSU3d6TmNoTk5hZHlxSHRGdkZRQ0hhNjZWaVBmQ0FVUGt2cEN6ZGh3TmJGdVhGVWkxbnZOWkx4M056RU41M05LWUhZcWU3Y3dXZkI4QjBoRDhDd3hmSDd6T0o1b1RCMnBMVVlsUWpZRDNsN3k4SkFTbDZpYkpuR1A1SWczVXpZWlRIdUdkNzVXWktnNTRJTVROQlFPMWpJdE9HL0orUm1XbzB0YTdpRkF6ZExyL1BmbDdXTVMwbEZhSm9scTdUVmJLUG1JODFTOU04VEgrbXhLbGZ5b2NqZzhwSUdlQUllcEo3dXl1Vk1xT2wxeVVuSFNycDRlVEVlR0k3NlpCOFRoUzhkYnBLUTIvb2RYMHkwc3FSZDI0Y2lGdnM0dnZVaW80NFdYNlNWRG54dXpWRHc1Rzg9IGRheXRvbmFAMDQwNjZiZDIwY2Vi
-      - INTER_SANDBOX_NETWORK_ENABLED=false
+      - INTER_SANDBOX_NETWORK_ENABLED=true
+    volumes:
+      - ./runner-daemon.json:/etc/docker/daemon.json:ro
     networks:
       - daytona-network
     ports:
@@ -184,13 +186,20 @@ services:
     volumes:
       - ./dex/config.yaml:/etc/dex/config.yaml
       - dex_db:/var/dex
-    entrypoint: ['sh', '-c', 'touch /var/dex/dex.db && exec dex serve /etc/dex/config.yaml']
+    entrypoint: ["sh", "-c", "touch /var/dex/dex.db && exec dex serve /etc/dex/config.yaml"]
     networks:
       - daytona-network
     ports:
       - 35556:5556
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:5556/dex/.well-known/openid-configuration"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "--quiet",
+          "http://localhost:5556/dex/.well-known/openid-configuration",
+        ]
 
   db:
     image: postgres:18
@@ -205,12 +214,12 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:9.2.0
-    entrypoint: ['sh', '-c', 'chmod 600 /pgpass && exec /entrypoint.sh']
+    entrypoint: ["sh", "-c", "chmod 600 /pgpass && exec /entrypoint.sh"]
     environment:
       PGADMIN_DEFAULT_EMAIL: dev@daytona.io
       PGADMIN_DEFAULT_PASSWORD: pgadmin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     user: root
     volumes:
       - ./pgadmin4/servers.json:/pgadmin4/servers.json
@@ -251,12 +260,12 @@ services:
     image: registry:2.8.2
     restart: always
     environment:
-      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Origin: '[http://registry-ui.example.com]'
-      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Methods: '[HEAD,GET,OPTIONS,DELETE]'
-      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Credentials: '[true]'
-      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Headers: '[Authorization,Accept,Cache-Control]'
-      REGISTRY_HTTP_HEADERS_Access-Control-Expose-Headers: '[Docker-Content-Digest]'
-      REGISTRY_STORAGE_DELETE_ENABLED: 'true'
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Origin: "[http://registry-ui.example.com]"
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Methods: "[HEAD,GET,OPTIONS,DELETE]"
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Credentials: "[true]"
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Headers: "[Authorization,Accept,Cache-Control]"
+      REGISTRY_HTTP_HEADERS_Access-Control-Expose-Headers: "[Docker-Content-Digest]"
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
       REGISTRY_HTTP_ADDR: registry:6000
     volumes:
       - registry:/var/lib/registry

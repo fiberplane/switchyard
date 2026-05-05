@@ -3,9 +3,16 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bash ca-certificates coreutils git tar \
+  && apt-get install -y --no-install-recommends bash ca-certificates coreutils curl git sudo tar \
   && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m daytona \
+  && echo "daytona ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/91-daytona \
+  && mkdir -p /workspace \
+  && chown daytona:daytona /workspace
 
 WORKDIR /workspace
 
-CMD ["/bin/bash"]
+USER daytona
+
+ENTRYPOINT ["sleep", "infinity"]

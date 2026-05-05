@@ -1,11 +1,18 @@
 import { Daytona } from "@daytona/sdk";
 import { Context, Effect, Layer } from "effect";
 
-import { DaytonaSandboxOpError, DaytonaSnapshotError } from "./errors.js";
-import type { DaytonaConfig } from "./models.js";
+import {
+  DaytonaSandboxCreateError,
+  DaytonaSandboxOpError,
+  DaytonaSnapshotError,
+} from "./errors.js";
+import type { DaytonaConfig, DaytonaSandboxSpec, SandboxHandle } from "./models.js";
 
 export type DaytonaAdapterShape = {
   readonly assertSnapshot: (name: string) => Effect.Effect<void, DaytonaSnapshotError>;
+  readonly createSandbox: (
+    spec: DaytonaSandboxSpec,
+  ) => Effect.Effect<SandboxHandle, DaytonaSandboxCreateError>;
 };
 
 export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
@@ -46,10 +53,7 @@ const probeDaytonaClient = (client: Daytona): Effect.Effect<void, DaytonaSandbox
       }),
   }).pipe(Effect.asVoid);
 
-const assertSnapshot = (
-  client: Daytona,
-  name: string,
-): Effect.Effect<void, DaytonaSnapshotError> =>
+const assertSnapshot = (client: Daytona, name: string): Effect.Effect<void, DaytonaSnapshotError> =>
   Effect.tryPromise({
     try: () => client.snapshot.get(name),
     catch: (error) =>
@@ -74,10 +78,42 @@ const assertSnapshot = (
     Effect.withSpan("DaytonaAdapter.assertSnapshot"),
   );
 
-export const DaytonaAdapterLive = (
-  config: DaytonaConfig,
-  options: DaytonaAdapterOptions = {},
-) =>
+const createSandbox = (
+  client: Daytona,
+  spec: DaytonaSandboxSpec,
+): Effect.Effect<SandboxHandle, DaytonaSandboxCreateError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const labels = { ...spec.labels };
+      const envVars = { ...spec.envVars };
+      const sandbox = await client.create(
+        {
+          name: spec.name,
+          snapshot: spec.snapshotName,
+          language: spec.language,
+          labels: { ...labels },
+          envVars: { ...envVars },
+          autoStopInterval: spec.autoStopInterval,
+          autoDeleteInterval: spec.autoDeleteInterval,
+        },
+        { timeout: spec.createTimeoutSec ?? 300 },
+      );
+
+      return {
+        id: sandbox.id,
+        name: sandbox.name,
+        labels,
+        envVars,
+      };
+    },
+    catch: (error) =>
+      new DaytonaSandboxCreateError({
+        sandboxName: spec.name,
+        reason: describeUnknown(error),
+      }),
+  }).pipe(Effect.withSpan("DaytonaAdapter.createSandbox"));
+
+export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapterOptions = {}) =>
   Layer.effect(
     DaytonaAdapter,
     Effect.gen(function* () {
@@ -89,6 +125,7 @@ export const DaytonaAdapterLive = (
 
       return {
         assertSnapshot: (name) => assertSnapshot(client, name),
+        createSandbox: (spec) => createSandbox(client, spec),
       };
     }),
   );

@@ -132,7 +132,6 @@ export const ensureTestSnapshot = async (): Promise<void> => {
           memory: 1,
           disk: 3,
         },
-        entrypoint: ["/bin/bash"],
       },
       { timeout: 600 },
     );
@@ -169,7 +168,6 @@ const ensureCreatedSnapshot = async (daytona: Daytona, name: string): Promise<vo
         memory: 1,
         disk: 3,
       },
-      entrypoint: ["/bin/bash"],
     },
     { timeout: 600 },
   );

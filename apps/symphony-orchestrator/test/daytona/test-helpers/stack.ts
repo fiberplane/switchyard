@@ -1,3 +1,5 @@
+import { Daytona } from "@daytona/sdk";
+
 import type { DaytonaConfig } from "../../../src/daytona/models.js";
 import { repairRunnerSchedulingIfEnabled } from "./repair-runner-scheduling.js";
 
@@ -88,4 +90,32 @@ export const ensureStackUp = async (): Promise<void> => {
   await runStackUp();
   await waitForHealth();
   await repairRunnerSchedulingIfEnabled(daytonaTestConfig.target);
+};
+
+const makeDaytona = (): Daytona =>
+  new Daytona({
+    apiKey: daytonaTestConfig.apiKey,
+    apiUrl: daytonaTestConfig.apiUrl,
+    target: daytonaTestConfig.target,
+    _experimental: {
+      otelEnabled: false,
+    },
+  });
+
+export const listTestSandboxes = async (labels: Record<string, string> = {}) => {
+  const daytona = makeDaytona();
+  const response = await daytona.list(
+    {
+      app: "symphony-test",
+      ...labels,
+    },
+    1,
+    100,
+  );
+  return response.items;
+};
+
+export const deleteByTestRunId = async (testRunId: string): Promise<void> => {
+  const sandboxes = await listTestSandboxes({ test_run_id: testRunId });
+  await Promise.allSettled(sandboxes.map((sandbox) => sandbox.delete(120)));
 };

@@ -25,6 +25,28 @@ export const DaytonaConfigSchema = Schema.Struct({
 });
 export type DaytonaConfig = Schema.Schema.Type<typeof DaytonaConfigSchema>;
 
+const StringRecordSchema = Schema.Record({ key: Schema.String, value: Schema.String });
+
+export const SandboxHandleSchema = Schema.Struct({
+  id: NonEmptyString,
+  name: NonEmptyString,
+  labels: StringRecordSchema,
+  envVars: StringRecordSchema,
+});
+export type SandboxHandle = Schema.Schema.Type<typeof SandboxHandleSchema>;
+
+export const DaytonaSandboxSpecSchema = Schema.Struct({
+  name: NonEmptyString,
+  snapshotName: NonEmptyString,
+  language: NonEmptyString,
+  labels: StringRecordSchema,
+  envVars: StringRecordSchema,
+  autoStopInterval: Schema.optional(Schema.Number),
+  autoDeleteInterval: Schema.optional(Schema.Number),
+  createTimeoutSec: Schema.optional(Schema.Number),
+});
+export type DaytonaSandboxSpec = Schema.Schema.Type<typeof DaytonaSandboxSpecSchema>;
+
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 

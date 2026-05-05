@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { NodeContext } from "@effect/platform-node";
 import { Effect, Either } from "effect";
@@ -6,8 +6,9 @@ import { Effect, Either } from "effect";
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaConfigError, DaytonaSnapshotError } from "../../src/daytona/errors.js";
 import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
+import { buildTestSandboxSpec } from "./test-helpers/sandbox-spec.js";
 import { ensureInactiveTestSnapshot, ensureTestSnapshot } from "./test-helpers/snapshot.js";
-import { daytonaTestConfig, ensureStackUp } from "./test-helpers/stack.js";
+import { daytonaTestConfig, deleteByTestRunId, ensureStackUp } from "./test-helpers/stack.js";
 
 describe("DaytonaConfig", () => {
   test("decodes config from a complete env", async () => {
@@ -51,6 +52,17 @@ describe("DaytonaConfig", () => {
 });
 
 describe("DaytonaAdapter", () => {
+  const testRunId = crypto.randomUUID();
+
+  beforeAll(async () => {
+    await ensureStackUp();
+    await ensureTestSnapshot();
+  }, 300_000);
+
+  afterAll(async () => {
+    await deleteByTestRunId(testRunId);
+  }, 180_000);
+
   const runWithAdapter = <A, E>(effect: Effect.Effect<A, E, DaytonaAdapter>) =>
     Effect.runPromise(
       effect.pipe(
@@ -130,5 +142,29 @@ describe("DaytonaAdapter", () => {
         expect(result.left.state).toBe("inactive");
       }
     }
+  }, 300_000);
+
+  test("createSandbox returns an opaque handle with caller-supplied labels", async () => {
+    const spec = buildTestSandboxSpec({
+      testRunId,
+      labels: {
+        purpose: "create",
+      },
+      envVars: {
+        SWITCHYARD_TEST: "create",
+      },
+    });
+
+    const handle = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* adapter.createSandbox(spec);
+      }),
+    );
+
+    expect(handle.id.length).toBeGreaterThan(0);
+    expect(handle.name).toBe(spec.name);
+    expect(handle.labels).toEqual(spec.labels);
+    expect(handle.envVars).toEqual(spec.envVars);
   }, 300_000);
 });
