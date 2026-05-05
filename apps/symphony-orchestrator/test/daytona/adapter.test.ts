@@ -17,6 +17,7 @@ import { decodeDaytonaConfigEnv } from "../../src/daytona/models.js";
 import { buildTestSandboxSpec } from "./test-helpers/sandbox-spec.js";
 import { ensureInactiveTestSnapshot, ensureTestSnapshot } from "./test-helpers/snapshot.js";
 import { daytonaTestConfig, deleteByTestRunId, ensureStackUp } from "./test-helpers/stack.js";
+import { sweepOrphanedTestSandboxes } from "./test-helpers/sweep.js";
 
 describe("DaytonaConfig", () => {
   test("decodes config from a complete env", async () => {
@@ -64,6 +65,7 @@ describe("DaytonaAdapter", () => {
 
   beforeAll(async () => {
     await ensureStackUp();
+    await sweepOrphanedTestSandboxes();
     await ensureTestSnapshot();
   }, 300_000);
 
