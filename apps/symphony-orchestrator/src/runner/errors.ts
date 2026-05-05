@@ -73,3 +73,36 @@ export class RunnerSessionClosedError extends Data.TaggedError("RunnerSessionClo
     return `Runner session closed: ${this.reason}`;
   }
 }
+
+export class RunnerTurnTimeoutError extends Data.TaggedError("RunnerTurnTimeoutError")<{
+  readonly threadId: string;
+  readonly timeoutMs: number;
+}> {
+  get message(): string {
+    return `Runner turn on thread ${this.threadId} timed out after ${this.timeoutMs}ms`;
+  }
+}
+
+export class RunnerTurnFailedError extends Data.TaggedError("RunnerTurnFailedError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner turn failed: ${this.reason}`;
+  }
+}
+
+export class RunnerTurnCancelledError extends Data.TaggedError("RunnerTurnCancelledError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Runner turn was cancelled: ${this.reason}`;
+  }
+}
+
+export class RunnerTurnInputRequiredError extends Data.TaggedError("RunnerTurnInputRequiredError")<{
+  readonly prompt: unknown;
+}> {
+  get message(): string {
+    return `Runner turn requested user input: ${JSON.stringify(this.prompt)}`;
+  }
+}
