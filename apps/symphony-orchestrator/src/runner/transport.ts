@@ -22,6 +22,7 @@ export const frameMessages = <E>(
 ): Stream.Stream<string, E | ProtocolFramingError> =>
   Stream.unwrap(
     Effect.gen(function* () {
+      // Per-subscription decoder + buffer; no shared mutable state across subscribers.
       const decoder = new TextDecoder("utf-8", { fatal: false });
       const bufferRef = yield* Ref.make("");
 
@@ -35,10 +36,13 @@ export const frameMessages = <E>(
           const remainder = parts.pop() ?? "";
 
           if (remainder.length > MAX_LINE_BUFFER_SIZE) {
+            // On overflow we fail the recv stream and do NOT reset the buffer
+            // like brettimus runner.ts:138-141. Stream.concat(main, tail) below
+            // means the tail flush is intentionally skipped on this failure path.
             return yield* Effect.fail(
               new ProtocolFramingError({
-                reason: `line buffer exceeded ${MAX_LINE_BUFFER_SIZE} bytes without a newline`,
-                bufferedBytes: remainder.length,
+                reason: `line buffer exceeded ${MAX_LINE_BUFFER_SIZE} chars without a newline`,
+                bufferedChars: remainder.length,
               }),
             );
           }
@@ -47,14 +51,19 @@ export const frameMessages = <E>(
           return parts.filter((line) => line.length > 0);
         });
 
-      const main = stream.pipe(
-        Stream.mapEffect(chunkFrames),
-        Stream.flatMap(Stream.fromIterable),
-      );
+      const main = stream.pipe(Stream.mapEffect(chunkFrames), Stream.flatMap(Stream.fromIterable));
 
       const tail = Stream.unwrap(
         Ref.get(bufferRef).pipe(
-          Effect.map((buffer) => (buffer.length > 0 ? Stream.make(buffer) : Stream.empty)),
+          Effect.map((buffered) => {
+            // Drain any trailing partial UTF-8 sequence held inside the decoder
+            // before flushing. Without this, a final byte sequence that did not
+            // fall on a code-point boundary would never reach the buffer and
+            // the last frame would be silently truncated.
+            const trailing = decoder.decode();
+            const last = buffered + trailing;
+            return last.length > 0 ? Stream.make(last) : Stream.empty;
+          }),
         ),
       );
 
@@ -69,7 +78,10 @@ const parseLine = (line: string): Effect.Effect<unknown, ProtocolParseError> =>
     Effect.catchTag("ParseError", (parseError) =>
       Effect.fail(
         new ProtocolParseError({
-          reason: ParseResult.TreeFormatter.formatErrorSync(parseError),
+          reason: ParseResult.TreeFormatter.formatErrorSync(parseError).slice(
+            0,
+            PARSE_ERROR_LINE_TRUNCATION,
+          ),
           line: line.slice(0, PARSE_ERROR_LINE_TRUNCATION),
         }),
       ),

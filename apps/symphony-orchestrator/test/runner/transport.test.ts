@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { Cause, Effect, Exit, Stream } from "effect";
 
 import { ProtocolFramingError, ProtocolParseError } from "../../src/runner/errors.js";
@@ -37,9 +38,17 @@ describe("frameMessages", () => {
     expect(Array.from(frames)).toEqual(['{"a":1}']);
   });
 
+  it("skips empty lines between frames", async () => {
+    const input = Stream.make(utf8('{"a":1}\n\n{"b":2}\n'));
+    const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
+    expect(Array.from(frames)).toEqual(['{"a":1}', '{"b":2}']);
+  });
+
   it("fails with ProtocolFramingError when the buffer exceeds MAX_LINE_BUFFER_SIZE", async () => {
     const oversize = utf8("x".repeat(MAX_LINE_BUFFER_SIZE + 1));
-    const exit = await Effect.runPromiseExit(Stream.runCollect(frameMessages(Stream.make(oversize))));
+    const exit = await Effect.runPromiseExit(
+      Stream.runCollect(frameMessages(Stream.make(oversize))),
+    );
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
       const failure = Cause.failureOption(exit.cause);
@@ -52,6 +61,8 @@ describe("frameMessages", () => {
 });
 
 describe("parseFrames", () => {
+  // parseFrames emits any valid JSON value; structural narrowing (object shape,
+  // method/id/result) is deferred to session.ts and the generated bindings.
   it("emits parsed values in order for valid JSON frames", async () => {
     const lines = Stream.fromIterable(['{"a":1}', '{"b":2}', '"hello"']);
     const parsed = await Effect.runPromise(Stream.runCollect(parseFrames(lines)));

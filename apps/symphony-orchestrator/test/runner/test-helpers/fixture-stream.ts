@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { Effect, Schema, Stream } from "effect";
 
-import { ProtocolRecvError, ProtocolSendError } from "../../../src/runner/errors.js";
+import { ProtocolRecvError } from "../../../src/runner/errors.js";
 import type { ProtocolStream } from "../../../src/runner/transport.js";
 
 const FIXTURE_DIR = join(import.meta.dirname, "..", "fixtures");
@@ -71,12 +71,8 @@ export const loadFixtureProtocolStream = (
         Effect.sync(() => {
           sent.push(bytes);
         }).pipe(Effect.asVoid),
-      receive: Stream.fromIterable(recvFrames) as Stream.Stream<Uint8Array, ProtocolRecvError>,
+      receive: Stream.fromIterable<Uint8Array>(recvFrames),
     };
 
     return { stream, sent };
   });
-
-// Re-export ProtocolSendError so test helpers consumers can narrow if needed
-// without reaching into runner/errors.js.
-export { ProtocolSendError };

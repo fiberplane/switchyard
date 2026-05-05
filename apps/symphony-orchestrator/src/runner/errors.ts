@@ -4,11 +4,12 @@ export const PARSE_ERROR_LINE_TRUNCATION = 500;
 
 export class ProtocolFramingError extends Data.TaggedError("ProtocolFramingError")<{
   readonly reason: string;
-  readonly bufferedBytes?: number;
+  readonly bufferedChars?: number;
 }> {
   get message(): string {
-    const bytes = this.bufferedBytes === undefined ? "" : ` (buffered=${this.bufferedBytes}B)`;
-    return `Runner transport framing failed${bytes}: ${this.reason}`;
+    const buffered =
+      this.bufferedChars === undefined ? "" : ` (bufferedChars=${this.bufferedChars})`;
+    return `Runner transport framing failed${buffered}: ${this.reason}`;
   }
 }
 
@@ -17,7 +18,7 @@ export class ProtocolParseError extends Data.TaggedError("ProtocolParseError")<{
   readonly line: string;
 }> {
   get message(): string {
-    return `Runner transport JSON parse failed on frame: ${this.reason}\n  line: ${this.line}`;
+    return `Runner transport JSON parse failed on frame: ${this.reason} | line=${this.line}`;
   }
 }
 

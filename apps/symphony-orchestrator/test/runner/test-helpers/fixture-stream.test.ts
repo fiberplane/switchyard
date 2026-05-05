@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { Effect, Stream } from "effect";
 
 import { loadFixtureProtocolStream } from "./fixture-stream.js";
