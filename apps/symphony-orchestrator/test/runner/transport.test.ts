@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { Effect, Stream } from "effect";
+import { Cause, Effect, Exit, Stream } from "effect";
 
-import { frameMessages } from "../../src/runner/transport.js";
+import { ProtocolFramingError } from "../../src/runner/errors.js";
+import { MAX_LINE_BUFFER_SIZE, frameMessages } from "../../src/runner/transport.js";
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -16,5 +17,18 @@ describe("frameMessages", () => {
     const input = Stream.fromIterable([utf8('{"a":'), utf8("1}\n")]);
     const frames = await Effect.runPromise(Stream.runCollect(frameMessages(input)));
     expect(Array.from(frames)).toEqual(['{"a":1}']);
+  });
+
+  it("fails with ProtocolFramingError when the buffer exceeds MAX_LINE_BUFFER_SIZE", async () => {
+    const oversize = utf8("x".repeat(MAX_LINE_BUFFER_SIZE + 1));
+    const exit = await Effect.runPromiseExit(Stream.runCollect(frameMessages(Stream.make(oversize))));
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const failure = Cause.failureOption(exit.cause);
+      expect(failure._tag).toBe("Some");
+      if (failure._tag === "Some") {
+        expect(failure.value).toBeInstanceOf(ProtocolFramingError);
+      }
+    }
   });
 });
