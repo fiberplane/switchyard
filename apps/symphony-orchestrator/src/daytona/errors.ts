@@ -51,3 +51,61 @@ export class DaytonaSandboxNotFoundError extends Data.TaggedError("DaytonaSandbo
     return `Daytona sandbox ${this.sandboxId} was not found during ${this.operation}: ${this.reason}`;
   }
 }
+
+export class DaytonaSessionCreateError extends Data.TaggedError("DaytonaSessionCreateError")<{
+  readonly sandboxId: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session create against sandbox ${this.sandboxId} failed: ${this.reason}`;
+  }
+}
+
+export class DaytonaSessionExecError extends Data.TaggedError("DaytonaSessionExecError")<{
+  readonly sessionId: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session ${this.sessionId} executeSessionCommand failed: ${this.reason}`;
+  }
+}
+
+export class DaytonaSessionLogError extends Data.TaggedError("DaytonaSessionLogError")<{
+  readonly sessionId: string;
+  readonly commandId: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session ${this.sessionId} command ${this.commandId} log stream failed: ${this.reason}`;
+  }
+}
+
+export class DaytonaSessionInputError extends Data.TaggedError("DaytonaSessionInputError")<{
+  readonly sessionId: string;
+  readonly commandId: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session ${this.sessionId} command ${this.commandId} sendSessionCommandInput failed: ${this.reason}`;
+  }
+}
+
+export class DaytonaSessionNotFoundError extends Data.TaggedError("DaytonaSessionNotFoundError")<{
+  readonly sessionId: string;
+  readonly operation: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session ${this.sessionId} was not found during ${this.operation}: ${this.reason}`;
+  }
+}
+
+export class DaytonaSessionOpError extends Data.TaggedError("DaytonaSessionOpError")<{
+  readonly sessionId: string;
+  readonly operation: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `Daytona session ${this.sessionId} operation ${this.operation} failed: ${this.reason}`;
+  }
+}
