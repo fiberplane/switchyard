@@ -296,7 +296,7 @@ const buildLogStreams = (
             }),
             Effect.matchEffect({
               onFailure: (err) =>
-                err._tag === "DaytonaSessionLogError"
+                err instanceof DaytonaSessionLogError
                   ? setLogError(err)
                   : setLogError(
                       new DaytonaSessionLogError({
