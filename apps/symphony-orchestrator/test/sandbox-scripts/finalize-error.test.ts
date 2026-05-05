@@ -83,7 +83,12 @@ describe("SandboxScriptService.finalizeBundle (errors)", () => {
         if (result.left instanceof SandboxScriptError) {
           expect(result.left.operation).toBe("finalizeBundle");
           expect(result.left.exitCode).not.toBe(0);
-          expect(result.left.stderr.toLowerCase()).toContain("git");
+          // Real stderr is `fatal: need a repository to create a bundle.` —
+          // match on "repository" (or "bundle") rather than the literal "git"
+          // so the assertion stays robust across git versions while still
+          // pinning that the failure came from the bundle command, not from
+          // the wrapping `cd`.
+          expect(result.left.stderr.toLowerCase()).toMatch(/repository|bundle/);
         }
       }
     } finally {

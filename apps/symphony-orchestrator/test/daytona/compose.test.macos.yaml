@@ -1,0 +1,27 @@
+# macOS-specific overlay for the Daytona test stack.
+#
+# Background: macOS does not auto-resolve `*.localhost` subdomains (Linux glibc
+# / systemd handles RFC 6761; macOS only special-cases bare `localhost`). The
+# upstream test compose hard-codes `proxy.localhost` in the API's PROXY_DOMAIN
+# / PROXY_TEMPLATE_URL, which the Daytona SDK then turns into
+# `<port>-<sandboxId>.proxy.localhost` URLs for every post-create sandbox call.
+# Those URLs ENOTFOUND on macOS, so uploadFiles / executeCommand / downloadFiles
+# all fail at the transport boundary.
+#
+# Fix: swap to `*.proxy.127.0.0.1.nip.io`. nip.io is a public wildcard DNS
+# service that resolves `*.<ip>.nip.io` to the embedded IP, so the SDK's URL
+# template renders to a name macOS *can* resolve. No host-side resolver setup,
+# no per-developer /etc/resolver/* writes.
+#
+# Apply via the test/daytona/compose.sh wrapper, which auto-adds this overlay
+# on Darwin only. Linux is unaffected — `proxy.localhost` resolves there.
+#
+# See SWYRD-snbircyn for the spike (option-4 DNS shim was blocked by Bun's
+# node:http compat shim) and the rationale for landing on this overlay.
+services:
+  api:
+    environment:
+      # Map form merges per-key with the base list, so we override exactly
+      # these two without needing to repeat the rest of the api environment.
+      PROXY_DOMAIN: proxy.127.0.0.1.nip.io:34000
+      PROXY_TEMPLATE_URL: http://{{PORT}}-{{sandboxId}}.proxy.127.0.0.1.nip.io:34000
