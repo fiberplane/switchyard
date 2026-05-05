@@ -312,4 +312,29 @@ describe("DaytonaAdapter", () => {
       stderr: "nope\n",
     });
   }, 300_000);
+
+  test("executeCommand maps a missing sandbox handle to DaytonaSandboxNotFoundError", async () => {
+    const missingHandle = {
+      id: crypto.randomUUID(),
+      name: "missing-sandbox",
+      labels: {},
+      envVars: {},
+    };
+
+    const result = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* Effect.either(adapter.executeCommand(missingHandle, "echo never"));
+      }),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(DaytonaSandboxNotFoundError);
+      if (result.left instanceof DaytonaSandboxNotFoundError) {
+        expect(result.left.sandboxId).toBe(missingHandle.id);
+        expect(result.left.operation).toBe("executeCommand");
+      }
+    }
+  }, 180_000);
 });
