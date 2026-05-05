@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import { NodeContext } from "@effect/platform-node";
 import { Chunk, Effect, Either, ParseResult, Schema, Stream } from "effect";
@@ -153,6 +154,27 @@ describe("DaytonaSession round-trip", () => {
     expect(result.commandId.length).toBeGreaterThan(0);
   }, 60_000);
 
+  const echoLoopFixturePath = fileURLToPath(
+    new URL("./fixtures/bash-echo-loop.sh", import.meta.url),
+  );
+  const remoteEchoLoopPath = "/tmp/bash-echo-loop.sh";
+  const peerCommand = `bash ${remoteEchoLoopPath}`;
+  let echoLoopUploaded = false;
+  const ensureEchoLoopUploaded = async (): Promise<void> => {
+    if (echoLoopUploaded) {
+      return;
+    }
+    await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        yield* adapter.uploadFiles(sharedHandle, [
+          { src: echoLoopFixturePath, dst: remoteEchoLoopPath },
+        ]);
+      }),
+    );
+    echoLoopUploaded = true;
+  };
+
   test("receive stream emits stdout chunks in order", async () => {
     const chunks = await runWithSession(
       Effect.scoped(
@@ -181,6 +203,75 @@ describe("DaytonaSession round-trip", () => {
     expect(idxLine1).toBeGreaterThanOrEqual(0);
     expect(idxLine2).toBeGreaterThan(idxLine1);
   }, 60_000);
+
+  test("send/receive round-trip with unicode and shell-special probes", async () => {
+    await ensureEchoLoopUploaded();
+
+    const probes = [
+      "msg-1-plain",
+      "msg-2-numbers-12345",
+      "msg-3-with-spaces and unicode α β γ",
+      "msg-4-binary-ish: \"quotes\" 'apos' $dollar `tick` \\back",
+    ];
+
+    const observed = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, peerCommand);
+
+          // Drive the receive stream into a buffer in a forked fiber so the
+          // test body can poll for echoes without consuming the stream.
+          const receivedChunks: string[] = [];
+          yield* Effect.forkScoped(
+            stream.receive.pipe(
+              Stream.tap((chunk) =>
+                Effect.sync(() => {
+                  receivedChunks.push(chunk);
+                }),
+              ),
+              Stream.runDrain,
+              Effect.ignore,
+            ),
+          );
+
+          const waitFor = (predicate: () => boolean, deadlineMs: number) =>
+            Effect.gen(function* () {
+              const start = Date.now();
+              while (!predicate() && Date.now() - start < deadlineMs) {
+                yield* Effect.sleep("50 millis");
+              }
+              return predicate();
+            });
+
+          // Wait for the bash loop to print "ready".
+          const ready = yield* waitFor(() => receivedChunks.join("").includes("ready"), 10_000);
+          expect(ready).toBe(true);
+
+          for (const probe of probes) {
+            const before = receivedChunks.join("");
+            yield* stream.send(`${probe}\n`);
+            const expected = `echo:${probe}`;
+            const arrived = yield* waitFor(
+              () => receivedChunks.join("").slice(before.length).includes(expected),
+              5_000,
+            );
+            expect(arrived).toBe(true);
+          }
+
+          // Sentinel exit so the bash loop terminates and the stream closes.
+          yield* stream.send("__EXIT__\n");
+
+          return receivedChunks.join("");
+        }),
+      ),
+    );
+
+    for (const probe of probes) {
+      const expected = `echo:${probe}`;
+      expect(observed).toContain(expected);
+    }
+  }, 90_000);
 });
 
 describe("DaytonaSessionExecuteResponseSchema", () => {

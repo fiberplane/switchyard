@@ -273,19 +273,32 @@ const start = (
     const commandId = yield* executeSessionCommand(sandbox, sessionId, command);
     const { receive, stderr } = yield* buildLogStreams(sandbox, sessionId, commandId);
 
+    const send = (data: string) =>
+      Effect.tryPromise({
+        try: () => sandbox.process.sendSessionCommandInput(sessionId, commandId, data),
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSessionNotFoundError({
+              sessionId,
+              operation: "sendSessionCommandInput",
+              reason: describeUnknown(error),
+            });
+          }
+
+          return new DaytonaSessionInputError({
+            sessionId,
+            commandId,
+            reason: describeUnknown(error),
+          });
+        },
+      }).pipe(Effect.asVoid, Effect.withSpan("DaytonaSession.send"));
+
     const stream: ProtocolStream = {
       sessionId,
       commandId,
       receive,
       stderr,
-      send: () =>
-        Effect.fail(
-          new DaytonaSessionInputError({
-            sessionId,
-            commandId,
-            reason: "DaytonaSession.send not yet implemented",
-          }),
-        ),
+      send,
     };
 
     return stream;
