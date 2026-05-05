@@ -42,7 +42,7 @@ In rough order:
 
 - The host's `~/.codex/auth.json`. It's untouched by the orchestrator (only copied into
   sandboxes). Leave it.
-- The `symphony-codex-bun` snapshot. It's slow to rebuild; keep it cached on the test stack.
+- The `symphony-test-codex` snapshot. It's slow to rebuild; keep it cached on the test stack.
 - The test-stack admin API key file (typically `/tmp/daytona-api-key-pjy` or similar). Reusable
   across runs.
 - `packages/qa/fixtures/`. Templates, not per-run artifacts.

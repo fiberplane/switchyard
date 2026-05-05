@@ -26,7 +26,7 @@ sandbox:
   apiUrl: <DAYTONA_API_URL> # e.g. http://localhost:33000/api
   apiKey: <DAYTONA_API_KEY> # admin key from helpers/setup-daytona-test-stack.md
   target: <DAYTONA_TARGET> # e.g. us  (per spec line 89; not "local")
-  snapshot: <DAYTONA_SNAPSHOT> # symphony-codex-bun (codex-cli 0.128.0 + bun 1.3.13)
+  snapshot: <DAYTONA_SNAPSHOT> # symphony-test-codex (codex-cli 0.128.0)
   language: typescript
   autoStopInterval: 15
   autoDeleteInterval: -1 # never auto-delete; v1 leaves cleanup manual (SWYRD-xlgiuegf)

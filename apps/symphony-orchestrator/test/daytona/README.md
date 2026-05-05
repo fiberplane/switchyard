@@ -99,7 +99,7 @@ test/daytona/compose.sh config | grep -E "PROXY_(DOMAIN|TEMPLATE_URL)"
 `Dockerfile.snapshot`. The image is Ubuntu 22.04 with bash, coreutils, curl, git, sudo, and tar,
 running as the `daytona` user with a long-running entrypoint.
 
-The inactive-state assertion uses a separate `symphony-test-inactive` snapshot so the shared base
+The inactive-state assertion uses a separate `symphony-test-codex-inactive` snapshot so the shared base
 snapshot stays active for sandbox lifecycle tests.
 
 ## Runner Repair

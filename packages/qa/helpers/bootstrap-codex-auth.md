@@ -60,7 +60,7 @@ sandbox env included an `OPENAI_API_KEY` value that masked it.
 ## Codex CLI version
 
 The protocol shapes verified by the 2026-05-04 smoke (spec lines 200-222) are pinned to
-`codex-cli 0.128.0`. The `symphony-codex-bun` snapshot bakes this version in. If the snapshot
+`codex-cli 0.128.0`. The `symphony-test-codex` snapshot bakes this version in. If the snapshot
 ships with a newer version (e.g., the maintainer rebuilt it), the protocol contract may differ
 and scenarios can fail in surprising ways. Capture the actual `codex --version` from inside the
 sandbox in your result file.

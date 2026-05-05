@@ -50,7 +50,7 @@ A passing run produces all six of these facts. The Steps below derive each one.
 ## Prerequisites
 
 - All scenario `requires:` helpers run successfully:
-  - Daytona test stack up; `symphony-codex-bun` snapshot active.
+  - Daytona test stack up; `symphony-test-codex` snapshot active.
   - Isolated host repo at `/tmp/swyrd-qa-host-<timestamp>/` with an initial commit and a
     `README.md` to append to.
   - Host has a working `~/.codex/auth.json` (ChatGPT auth; no `OPENAI_API_KEY` env vars).
@@ -192,7 +192,7 @@ curl -H "Authorization: Bearer $DAYTONA_API_KEY" "$DAYTONA_API_URL/api/sandbox" 
 **Expected:**
 
 - One sandbox exists, labelled `fp_issue_id=<issue-id>`.
-- Snapshot is `symphony-codex-bun`.
+- Snapshot is `symphony-test-codex`.
 - Status is running / executing.
 - The sandbox-id matches what was logged in step 4 and posted in the Dispatched comment.
 
@@ -421,7 +421,7 @@ Per `helpers/cleanup.md`:
 
 ## Edge cases worth noting (non-blocking; capture as observations in result file)
 
-- **First-run snapshot pull.** If `symphony-codex-bun` was just rebuilt, the first sandbox
+- **First-run snapshot pull.** If `symphony-test-codex` was just rebuilt, the first sandbox
   creation may take noticeably longer than subsequent ones — Daytona pulls the image. Don't
   treat this as a hang.
 - **Host clock skew.** `outcome-record.json#startedAt` and `#endedAt` come from the

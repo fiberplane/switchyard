@@ -34,11 +34,11 @@ automatically; for QA scenarios you bring it up yourself.
 
 ## Snapshot to use
 
-The QA scenarios use the `symphony-codex-bun` snapshot (per spec `### Smoke Evidence`,
+The QA scenarios use the `symphony-test-codex` snapshot (per spec `### Smoke Evidence`,
 2026-05-04, lines 96-101) — Ubuntu 22.04 with `git`, `curl`, `ca-certificates`, `bash`, `jq`,
 `ripgrep`, `procps`, `@openai/codex@0.128.0`, and `bun@1.3.13`.
 
-If `symphony-codex-bun` does not exist on your local Daytona target, build it the same way the
+If `symphony-test-codex` does not exist on your local Daytona target, build it the same way the
 2026-05-04 smoke did. The image is **separate** from the integration test's `symphony-test-codex`
 snapshot; the test stack defines its own minimal snapshot for adapter / session unit tests, and
 QA scenarios use the codex-equipped one.
@@ -70,7 +70,7 @@ After the stack is up, capture and export:
 DAYTONA_API_URL    # e.g. http://localhost:33000/api
 DAYTONA_API_KEY    # the admin key generated inside the api container (mode-600 file outside repo)
 DAYTONA_TARGET     # e.g. us  (per spec line 89; not "local")
-DAYTONA_SNAPSHOT   # symphony-codex-bun
+DAYTONA_SNAPSHOT   # symphony-test-codex
 ```
 
 These flow into `helpers/setup-workflow-config.md` to materialize a `WORKFLOW.md` with concrete

@@ -34,7 +34,7 @@ Daytona config); index.ts uses the WORKFLOW.md path via `toDaytonaConfig(config.
    - `<DAYTONA_API_URL>` → e.g. `http://localhost:33000/api`
    - `<DAYTONA_API_KEY>` → the admin key
    - `<DAYTONA_TARGET>` → e.g. `us`
-   - `<DAYTONA_SNAPSHOT>` → `symphony-codex-bun`
+   - `<DAYTONA_SNAPSHOT>` → `symphony-test-codex`
 3. (Optional) Adjust `polling.intervalMs` if you want a tighter loop for QA observation. Default
    in the fixture is 5000ms.
 4. Verify the file decodes cleanly.
@@ -47,7 +47,7 @@ Either hand-edit, or use `envsubst`:
 DAYTONA_API_URL=http://localhost:33000/api \
 DAYTONA_API_KEY=$(cat /tmp/daytona-api-key-pjy) \
 DAYTONA_TARGET=us \
-DAYTONA_SNAPSHOT=symphony-codex-bun \
+DAYTONA_SNAPSHOT=symphony-test-codex \
 envsubst < packages/qa/fixtures/workflow-sample.yaml > WORKFLOW.md
 ```
 
