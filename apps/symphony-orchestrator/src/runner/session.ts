@@ -10,7 +10,7 @@ import {
   RunnerRequestTimeoutError,
   RunnerSessionClosedError,
 } from "./errors.js";
-import type { InitializeResponse, v2 } from "./protocol/index.js";
+import type { InitializeParams, InitializeResponse, v2 } from "./protocol/index.js";
 import { encodeMessage, frameMessages, parseFrames, type ProtocolStream } from "./transport.js";
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
@@ -171,9 +171,14 @@ const requireThreadStartResponse = (
   return Effect.succeed(result);
 };
 
-const makeInitializeParams = (): unknown => ({
+// Explicit `experimentalApi: false` — the generated `InitializeCapabilities`
+// type requires the field, but real codex 0.128.0 also accepts `{}` (the
+// shape used by codex-driver.cjs and the captured fixtures). Sending the
+// documented default keeps the wire shape compatible while satisfying the
+// generated bindings. Configurable capabilities are tracked under SWYRD-uouprnfv.
+const makeInitializeParams = (): InitializeParams => ({
   clientInfo: SWITCHYARD_CLIENT_INFO,
-  capabilities: {},
+  capabilities: { experimentalApi: false },
 });
 
 const makeThreadStartParams = (cwd: string): v2.ThreadStartParams => ({

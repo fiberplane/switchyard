@@ -166,7 +166,7 @@ describe("makeSession", () => {
           title: "Switchyard",
           version: "0.1",
         },
-        capabilities: {},
+        capabilities: { experimentalApi: false },
       },
     });
     expect(sent[1]).toMatchObject({
