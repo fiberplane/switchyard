@@ -130,7 +130,9 @@ const terminalResult = (
   }
 };
 
-const approvalResponseFor = (notification: RunnerNotification): unknown | null => {
+// Reused by the local-codex canary in test/runner/service.local-codex.test.ts so
+// production and the canary share one approval-shape table.
+export const approvalResponseFor = (notification: RunnerNotification): unknown | null => {
   const params = notification.params;
   switch (methodOf(notification)) {
     case "applyPatchApproval":

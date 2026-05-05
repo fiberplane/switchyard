@@ -5,6 +5,7 @@ import { Effect, Exit, Queue, Stream } from "effect";
 import { LocalCodexUnavailableError } from "../../src/runner/errors.js";
 import { runTurn } from "../../src/runner/service.js";
 import { encodeMessage, frameMessages, parseFrames } from "../../src/runner/transport.js";
+import { approvalResponseFor } from "../../src/runner/turn.js";
 import { makeLocalCodexStream } from "./test-helpers/local-codex.js";
 
 const runOrSkip = async <A, E>(effect: Effect.Effect<A, E | LocalCodexUnavailableError>) => {
@@ -28,26 +29,6 @@ const idOf = (message: unknown): number | null =>
 const methodOf = (message: unknown): string | null =>
   isRecord(message) && typeof message.method === "string" ? message.method : null;
 
-const isApprovalMethod = (method: string): boolean =>
-  method === "applyPatchApproval" ||
-  method === "execCommandApproval" ||
-  method === "item/fileChange/requestApproval" ||
-  method === "item/commandExecution/requestApproval" ||
-  method === "item/permissions/requestApproval";
-
-const approvalResult = (method: string): unknown => {
-  if (method === "applyPatchApproval" || method === "execCommandApproval") {
-    return { decision: "approved" };
-  }
-  if (
-    method === "item/fileChange/requestApproval" ||
-    method === "item/commandExecution/requestApproval"
-  ) {
-    return { decision: "accept" };
-  }
-  return { permissions: {}, scope: "turn" };
-};
-
 const driveApprovalTurn = () =>
   Effect.gen(function* () {
     const local = yield* makeLocalCodexStream();
@@ -62,11 +43,14 @@ const driveApprovalTurn = () =>
 
     const handleApproval = (message: unknown) =>
       Effect.gen(function* () {
+        if (!isRecord(message)) {
+          return;
+        }
         const id = idOf(message);
-        const method = methodOf(message);
-        if (id !== null && method !== null && isApprovalMethod(method)) {
+        const reply = approvalResponseFor(message);
+        if (id !== null && reply !== null) {
           approvalCount += 1;
-          yield* local.stream.send(encodeMessage({ id, result: approvalResult(method) }));
+          yield* local.stream.send(encodeMessage({ id, result: reply }));
         }
       });
 
