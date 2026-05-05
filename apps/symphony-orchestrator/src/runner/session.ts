@@ -10,7 +10,7 @@ import {
   RunnerRequestTimeoutError,
   RunnerSessionClosedError,
 } from "./errors.js";
-import type { InitializeParams, InitializeResponse, v2 } from "./protocol/index.js";
+import type { InitializeParams, v2 } from "./protocol/index.js";
 import { encodeMessage, frameMessages, parseFrames, type ProtocolStream } from "./transport.js";
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
@@ -38,8 +38,6 @@ export type RunnerNotification = Record<string, unknown>;
 
 export type RunnerSession = {
   readonly threadId: string;
-  readonly initialize: InitializeResponse;
-  readonly thread: v2.ThreadStartResponse;
   readonly notifications: Stream.Stream<RunnerNotification>;
   readonly allocateRequestId: Effect.Effect<number>;
   readonly request: <A = unknown>(
@@ -101,74 +99,6 @@ const getThreadId = (result: unknown): Effect.Effect<string, RunnerProtocolError
   }
 
   return Effect.succeed(thread.id);
-};
-
-const requireInitializeResponse = (
-  result: unknown,
-): Effect.Effect<InitializeResponse, RunnerProtocolError> => {
-  if (
-    !isRecord(result) ||
-    typeof result.userAgent !== "string" ||
-    typeof result.codexHome !== "string" ||
-    typeof result.platformFamily !== "string" ||
-    typeof result.platformOs !== "string"
-  ) {
-    return Effect.fail(
-      new RunnerProtocolError({ reason: "initialize result did not match required fields" }),
-    );
-  }
-
-  return Effect.succeed(result as InitializeResponse);
-};
-
-const isThreadStatus = (value: unknown): boolean =>
-  isRecord(value) && typeof value.type === "string";
-
-const isThreadStartResponse = (result: unknown): result is v2.ThreadStartResponse => {
-  if (!isRecord(result) || !isRecord(result.thread)) {
-    return false;
-  }
-
-  const thread = result.thread;
-  return (
-    typeof thread.id === "string" &&
-    (typeof thread.forkedFromId === "string" || thread.forkedFromId === null) &&
-    typeof thread.preview === "string" &&
-    typeof thread.ephemeral === "boolean" &&
-    typeof thread.modelProvider === "string" &&
-    typeof thread.createdAt === "number" &&
-    typeof thread.updatedAt === "number" &&
-    isThreadStatus(thread.status) &&
-    (typeof thread.path === "string" || thread.path === null) &&
-    typeof thread.cwd === "string" &&
-    typeof thread.cliVersion === "string" &&
-    typeof thread.source === "string" &&
-    (typeof thread.agentNickname === "string" || thread.agentNickname === null) &&
-    (typeof thread.agentRole === "string" || thread.agentRole === null) &&
-    "gitInfo" in thread &&
-    (typeof thread.name === "string" || thread.name === null) &&
-    Array.isArray(thread.turns) &&
-    typeof result.model === "string" &&
-    typeof result.modelProvider === "string" &&
-    (typeof result.serviceTier === "string" || result.serviceTier === null) &&
-    typeof result.cwd === "string" &&
-    Array.isArray(result.instructionSources) &&
-    "approvalPolicy" in result &&
-    "approvalsReviewer" in result &&
-    isRecord(result.sandbox) &&
-    ("reasoningEffort" in result || "activePermissionProfile" in result)
-  );
-};
-
-const requireThreadStartResponse = (
-  result: unknown,
-): Effect.Effect<v2.ThreadStartResponse, RunnerProtocolError> => {
-  if (!isThreadStartResponse(result)) {
-    return Effect.fail(
-      new RunnerProtocolError({ reason: "thread/start result did not match required fields" }),
-    );
-  }
-  return Effect.succeed(result);
 };
 
 // Explicit `experimentalApi: false` — the generated `InitializeCapabilities`
@@ -382,18 +312,12 @@ export const makeSession = ({
     );
 
     const request = makeRequest(stream, nextIdRef, pendingRef, closedRef, requestTimeoutMs);
-    const initialize = yield* request("initialize", makeInitializeParams()).pipe(
-      Effect.flatMap(requireInitializeResponse),
-    );
-    const thread = yield* request("thread/start", makeThreadStartParams(cwd)).pipe(
-      Effect.flatMap(requireThreadStartResponse),
-    );
-    const threadId = yield* getThreadId(thread);
+    yield* request("initialize", makeInitializeParams());
+    const threadResult = yield* request("thread/start", makeThreadStartParams(cwd));
+    const threadId = yield* getThreadId(threadResult);
 
     return {
       threadId,
-      initialize,
-      thread,
       notifications: Stream.fromQueue(notificationsQueue),
       allocateRequestId: Ref.getAndUpdate(nextIdRef, (id) => id + 1),
       request,

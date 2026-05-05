@@ -153,7 +153,6 @@ describe("makeSession", () => {
     );
 
     expect(session.threadId).toBe("thread-123");
-    expect(session.initialize.userAgent).toBe("switchyard-test/0.1");
 
     const sent = collectSentMessages(helper.sent);
     expect(sent).toHaveLength(2);
