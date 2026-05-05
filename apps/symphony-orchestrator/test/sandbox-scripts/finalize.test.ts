@@ -94,4 +94,52 @@ describe("SandboxScriptService.finalizeBundle", () => {
       await archive.cleanup();
     }
   }, 300_000);
+
+  // Empty-commit case is load-bearing per ADR D6: the sandbox always has a
+  // single-commit history rooted at symphony-base, so `git bundle create … HEAD`
+  // produces a valid 1-commit bundle even when the worker contributed nothing.
+  // No impl change vs. cycle 4 — the test pins the invariant for bisect-ability.
+  test("with no worker commits, returns commitsBeyondBase=0 and the bundle still verifies", async () => {
+    const archive = await seedArchive();
+    try {
+      const spec = buildTestSandboxSpec({
+        testRunId,
+        labels: { purpose: "sandbox-scripts-finalize-0" },
+      });
+
+      const probes = await runWithSandboxScripts(
+        Effect.gen(function* () {
+          const adapter = yield* DaytonaAdapter;
+          const service = yield* SandboxScriptService;
+
+          const handle = yield* adapter.createSandbox(spec);
+          yield* adapter.uploadFiles(handle, [
+            { src: archive.archivePath, dst: SANDBOX_ARCHIVE_PATH },
+          ]);
+          yield* service.setupRepo(handle, {
+            archivePath: SANDBOX_ARCHIVE_PATH,
+            repoPath: SANDBOX_REPO_PATH,
+            symphonyDir: SANDBOX_SYMPHONY_DIR,
+          });
+
+          // No worker commits — go straight to finalize.
+          const result = yield* service.finalizeBundle(handle, {
+            repoPath: SANDBOX_REPO_PATH,
+            bundlePath: SANDBOX_BUNDLE_PATH,
+          });
+          const verify = yield* adapter.executeCommand(
+            handle,
+            `cd ${SANDBOX_REPO_PATH} && git bundle verify ${SANDBOX_BUNDLE_PATH}`,
+          );
+          return { result, verify };
+        }),
+      );
+
+      expect(probes.result.bundlePath).toBe(SANDBOX_BUNDLE_PATH);
+      expect(probes.result.commitsBeyondBase).toBe(0);
+      expect(probes.verify.exitCode).toBe(0);
+    } finally {
+      await archive.cleanup();
+    }
+  }, 300_000);
 });
