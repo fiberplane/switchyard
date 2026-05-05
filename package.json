@@ -9,7 +9,7 @@
   "scripts": {
     "codegen": "bun run scripts/codex-ts-codegen.ts",
     "lint": "oxlint",
-    "lint:ast": "bunx @ast-grep/cli scan",
+    "lint:ast": "ast-grep scan",
     "lint:drift": "node scripts/drift-check.mjs",
     "test": "bun run --filter '*' test",
     "format": "oxfmt --write .",
