@@ -48,6 +48,10 @@ export type ProtocolStream = {
   readonly send: (
     data: string,
   ) => Effect.Effect<void, DaytonaSessionInputError | DaytonaSessionNotFoundError>;
+  readonly waitExit: Effect.Effect<
+    DaytonaSessionExitInfo,
+    DaytonaSessionNotFoundError | DaytonaSessionOpError
+  >;
 };
 
 export type DaytonaSessionStartError =
@@ -257,6 +261,92 @@ const buildLogStreams = (
     return { receive, stderr };
   });
 
+// waitExit polls a sandbox-side exit-code file written by a shell EXIT trap
+// wrapped around the user's command. The OSS Daytona stack does not populate
+// Command.exitCode on getSessionCommand for runAsync sessions, and its
+// streaming-logs WebSocket does not reliably resolve when commands exit, so
+// neither getSessionCommand nor getSessionCommandLogs is a usable exit-code
+// signal in OSS. The wrapper is the workaround: every start()'s command is
+// run inside `trap "echo $? > <exitFile>" EXIT\n<user_command>`, and waitExit
+// polls the file via sandbox.process.executeCommand. Backoff: 50ms → 500ms,
+// 30s overall deadline. Schema-decode and deadline failures surface as
+// DaytonaSessionOpError; SDK 404 surfaces as DaytonaSessionNotFoundError.
+//
+// Backport-worthy: the SDK behavior should be confirmed against production
+// Daytona Cloud; if its getSessionCommand populates exitCode, the wrapper
+// can be retired. Until then, OSS dictates the file-poll path.
+const WAIT_EXIT_INITIAL_DELAY_MS = 50;
+const WAIT_EXIT_MAX_DELAY_MS = 500;
+const WAIT_EXIT_DEADLINE_MS = 30_000;
+
+const exitFilePath = (sessionId: string): string => `/tmp/${sessionId}-exit`;
+
+const wrapCommandWithExitTrap = (sessionId: string, command: string): string =>
+  `trap 'echo $? > ${exitFilePath(sessionId)}' EXIT\n${command}`;
+
+const pollExit = (
+  sandbox: Sandbox,
+  sessionId: string,
+): Effect.Effect<DaytonaSessionExitInfo, DaytonaSessionNotFoundError | DaytonaSessionOpError> => {
+  const exitFile = exitFilePath(sessionId);
+  const readExitFile = Effect.tryPromise({
+    try: () => sandbox.process.executeCommand(`cat ${exitFile} 2>/dev/null`),
+    catch: (error) => {
+      if (isDaytonaNotFound(error)) {
+        return new DaytonaSessionNotFoundError({
+          sessionId,
+          operation: "waitExit",
+          reason: describeUnknown(error),
+        });
+      }
+
+      return new DaytonaSessionOpError({
+        sessionId,
+        operation: "waitExit",
+        reason: describeUnknown(error),
+      });
+    },
+  });
+
+  const loop = Effect.gen(function* () {
+    let delay = WAIT_EXIT_INITIAL_DELAY_MS;
+    while (true) {
+      const result = yield* readExitFile;
+      if (result.exitCode === 0) {
+        const trimmed = (result.result ?? "").trim();
+        if (trimmed.length > 0) {
+          const parsed = Number.parseInt(trimmed, 10);
+          if (Number.isFinite(parsed)) {
+            return { exitCode: parsed } satisfies DaytonaSessionExitInfo;
+          }
+          return yield* Effect.fail(
+            new DaytonaSessionOpError({
+              sessionId,
+              operation: "waitExit",
+              reason: `exit-file ${exitFile} contained non-numeric value: ${trimmed}`,
+            }),
+          );
+        }
+      }
+      yield* Effect.sleep(`${delay} millis`);
+      delay = Math.min(delay * 2, WAIT_EXIT_MAX_DELAY_MS);
+    }
+  });
+
+  return loop.pipe(
+    Effect.timeoutFail({
+      duration: `${WAIT_EXIT_DEADLINE_MS} millis`,
+      onTimeout: () =>
+        new DaytonaSessionOpError({
+          sessionId,
+          operation: "waitExit",
+          reason: `exit-code poll deadline exceeded after ${WAIT_EXIT_DEADLINE_MS}ms`,
+        }),
+    }),
+    Effect.withSpan("DaytonaSession.waitExit"),
+  );
+};
+
 const start = (
   client: Daytona,
   handle: SandboxHandle,
@@ -270,7 +360,8 @@ const start = (
       releaseSession(sandbox, sessionId),
     );
 
-    const commandId = yield* executeSessionCommand(sandbox, sessionId, command);
+    const wrappedCommand = wrapCommandWithExitTrap(sessionId, command);
+    const commandId = yield* executeSessionCommand(sandbox, sessionId, wrappedCommand);
     const { receive, stderr } = yield* buildLogStreams(sandbox, sessionId, commandId);
 
     const send = (data: string) =>
@@ -293,12 +384,15 @@ const start = (
         },
       }).pipe(Effect.asVoid, Effect.withSpan("DaytonaSession.send"));
 
+    const waitExit = pollExit(sandbox, sessionId);
+
     const stream: ProtocolStream = {
       sessionId,
       commandId,
       receive,
       stderr,
       send,
+      waitExit,
     };
 
     return stream;
