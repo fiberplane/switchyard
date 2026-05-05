@@ -1,7 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
+import { NodeContext } from "@effect/platform-node";
 import { Effect, Either, ParseResult, Schema } from "effect";
 
+import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaSession, DaytonaSessionLive } from "../../src/daytona/daytona.session.js";
 import {
   DaytonaSessionCreateError,
@@ -11,8 +13,12 @@ import {
   DaytonaSessionNotFoundError,
   DaytonaSessionOpError,
 } from "../../src/daytona/errors.js";
+import type { SandboxHandle } from "../../src/daytona/models.js";
 import { DaytonaSessionExecuteResponseSchema } from "../../src/daytona/session-models.js";
-import { daytonaTestConfig } from "./test-helpers/stack.js";
+import { buildTestSandboxSpec } from "./test-helpers/sandbox-spec.js";
+import { ensureTestSnapshot } from "./test-helpers/snapshot.js";
+import { daytonaTestConfig, deleteByTestRunId, ensureStackUp } from "./test-helpers/stack.js";
+import { sweepOrphanedTestSandboxes } from "./test-helpers/sweep.js";
 
 describe("DaytonaSession errors", () => {
   test("DaytonaSessionCreateError tags and exposes its fields", () => {
@@ -93,6 +99,59 @@ describe("DaytonaSession service", () => {
     const result = await Effect.runPromise(program);
     expect(result).toBe("function");
   });
+});
+
+describe("DaytonaSession round-trip", () => {
+  const testRunId = crypto.randomUUID();
+  let sharedHandle: SandboxHandle;
+
+  const runWithSession = <A, E>(effect: Effect.Effect<A, E, DaytonaSession>): Promise<A> =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provide(DaytonaSessionLive(daytonaTestConfig)),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+
+  const runWithAdapter = <A, E>(effect: Effect.Effect<A, E, DaytonaAdapter>): Promise<A> =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provide(DaytonaAdapterLive(daytonaTestConfig)),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+
+  beforeAll(async () => {
+    await ensureStackUp();
+    await sweepOrphanedTestSandboxes();
+    await ensureTestSnapshot();
+
+    sharedHandle = await runWithAdapter(
+      Effect.gen(function* () {
+        const adapter = yield* DaytonaAdapter;
+        return yield* adapter.createSandbox(buildTestSandboxSpec({ testRunId }));
+      }),
+    );
+  }, 300_000);
+
+  afterAll(async () => {
+    await deleteByTestRunId(testRunId);
+  }, 180_000);
+
+  test("start returns a ProtocolStream with non-empty sessionId and commandId", async () => {
+    const result = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "echo ready; sleep 1; echo done");
+          return { sessionId: stream.sessionId, commandId: stream.commandId };
+        }),
+      ),
+    );
+
+    expect(result.sessionId.length).toBeGreaterThan(0);
+    expect(result.commandId.length).toBeGreaterThan(0);
+  }, 60_000);
 });
 
 describe("DaytonaSessionExecuteResponseSchema", () => {
