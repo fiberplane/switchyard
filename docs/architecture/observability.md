@@ -20,6 +20,20 @@ Effect log annotations are promoted to top-level JSON keys. Runtime modules shou
 with `issue_id`, `issue_display_id`, `attempt`, and `sandbox_id` whenever those values are known.
 Missing values are omitted rather than filled with placeholders.
 
+## Lifecycle Emissions
+
+Every state-flow row in the umbrella spec emits exactly one log line, named `<phase>.<event>`.
+The orchestrator's `runOne` and `runOneTick` pipelines own these emissions. Annotation context
+(`issue_id`, `issue_display_id`, `attempt`, `sandbox_id`) is set at the `runOne` boundary via
+`Effect.annotateLogsScoped` so call sites only emit the message name plus message-specific
+extras (for example `worker_status`, `branch`, `symphony_artifact`).
+
+Happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
+`sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`, `bundle.decoded`,
+`integration.succeeded`, `fp.done`. Failure paths emit a static `failure` message at warning
+level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and `reason`
+annotations — log searches should filter on `failure_code` rather than the message text.
+
 ## Log Level
 
 `LOG_LEVEL` is the only runtime knob for log verbosity. Supported values are `trace`, `debug`,

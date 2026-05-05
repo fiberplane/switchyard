@@ -11,7 +11,7 @@ docs/architecture/observability.md -> apps/symphony-orchestrator/src/index.ts si
 docs/architecture/observability.md -> apps/symphony-orchestrator/src/observability/logger.ts sig:7f1d8b171d799051
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/errors.ts sig:2e599bb0981cc19e
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/selector.ts sig:880dcf0fb9410d79
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/service.ts sig:3109f5b636f24f5d
+docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/service.ts sig:deadf7b8af3b9339
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/state.ts sig:b3d88b342c0bb21f
 docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/transcript.ts sig:fc09e718f2cc3d86
 docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/protocol/InitializeCapabilities.ts sig:0b1b1bec7250bd1e

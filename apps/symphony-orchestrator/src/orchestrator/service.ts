@@ -326,6 +326,15 @@ const runOneImpl =
       // fp issue is NEVER left at status=in-progress without a last_error.
       return yield* Effect.scoped(
         Effect.gen(function* () {
+          // All emissions inside the post-claim scope inherit issue_id /
+          // issue_display_id / attempt; sandbox_id is layered on after the
+          // sandbox handle is created. Annotation context is set at the
+          // boundary so call sites only emit message names + extras.
+          yield* Effect.annotateLogsScoped({
+            issue_id: issueId,
+            issue_display_id: displayId,
+            attempt,
+          });
           // Register the running-set release finalizer FIRST so it runs LAST
           // on scope exit (LIFO) — guarantees the slot frees regardless of
           // outcome (success, failure, interrupt). Spec line 327 invariant.
@@ -355,6 +364,7 @@ const runOneImpl =
           // Two-call cadence is acceptable per §7 open-prompts decision.
           yield* writeFp(fp.claimIssue(issueId), issueId, "claimIssue");
           yield* writeFp(fp.setAttempt(issueId, attempt), issueId, "setAttempt");
+          yield* Effect.logInfo("claim.acquired");
 
           // Step 7: create sandbox. The first post-claim failure mode (F3).
           const sandboxName = (config.sandboxNameFor ?? defaultSandboxName)(issue, attempt);
@@ -383,6 +393,11 @@ const runOneImpl =
             ),
           );
 
+          // Layer sandbox_id annotation onto every subsequent log emission
+          // for this scope.
+          yield* Effect.annotateLogsScoped({ sandbox_id: handle.id });
+          yield* Effect.logInfo("sandbox.created");
+
           // First operator-facing comment (cadence #1).
           yield* writeFp(
             fp.addComment(issueId, `Dispatched to sandbox \`${handle.id}\``),
@@ -408,6 +423,7 @@ const runOneImpl =
                   }),
               ),
             );
+          yield* Effect.logInfo("source.uploaded");
 
           // Step 9: in-sandbox setup script (mkdir, untar, git init/add/commit/tag).
           yield* scripts
@@ -446,6 +462,7 @@ const runOneImpl =
                 ),
               );
               const protocolStream = bridgeProtocolStream(daytonaStream);
+              yield* Effect.logInfo("turn.started");
               const outcome = yield* runner
                 .runTurn({
                   stream: protocolStream,
@@ -456,6 +473,9 @@ const runOneImpl =
                 .pipe(Effect.mapError((err) => runnerErrorToProtocol(issueId, attempt, err)));
               return outcome;
             }),
+          );
+          yield* Effect.logInfo("turn.completed").pipe(
+            Effect.annotateLogs({ worker_status: turnResult.kind }),
           );
 
           // Step 12: write transcript. Buffered post-completion.
@@ -500,6 +520,13 @@ const runOneImpl =
               fp.markNeedsAttention(issueId, lastError),
               issueId,
               "markNeedsAttention(protocol)",
+            );
+            yield* Effect.logWarning("failure").pipe(
+              Effect.annotateLogs({
+                failure_code: "F7",
+                error_tag: "ProtocolStreamNonCompleted",
+                reason: lastError,
+              }),
             );
             return resultFromError(issueId, attempt, lastError, undefined, undefined);
           }
@@ -553,6 +580,13 @@ const runOneImpl =
             }),
           );
 
+          yield* Effect.logInfo("bundle.decoded").pipe(
+            Effect.annotateLogs({
+              outcome_kind: decoded.kind,
+              commits_beyond_base: bundle.commitsBeyondBase,
+            }),
+          );
+
           // F11: empty bundle (commitsBeyondBase=0). Skip integration; route
           // to needs-attention with the locked error string.
           if (bundle.commitsBeyondBase === 0) {
@@ -576,6 +610,13 @@ const runOneImpl =
               fp.markNeedsAttention(issueId, lastError),
               issueId,
               "markNeedsAttention(empty)",
+            );
+            yield* Effect.logWarning("failure").pipe(
+              Effect.annotateLogs({
+                failure_code: "F11",
+                error_tag: "EmptyBundle",
+                reason: lastError,
+              }),
             );
             return resultFromError(issueId, attempt, lastError, undefined, undefined);
           }
@@ -612,6 +653,13 @@ const runOneImpl =
               issueId,
               "markNeedsAttention(malformed)",
             );
+            yield* Effect.logWarning("failure").pipe(
+              Effect.annotateLogs({
+                failure_code: "F10",
+                error_tag: "MalformedOutcome",
+                reason: "malformed worker outcome",
+              }),
+            );
             return resultFromError(
               issueId,
               attempt,
@@ -642,6 +690,10 @@ const runOneImpl =
               ),
             );
 
+          yield* Effect.logInfo("integration.succeeded").pipe(
+            Effect.annotateLogs({ branch: integrated.branch }),
+          );
+
           // F12: worker non-completed status with commits — plain branch name
           // already created via integrate; route to needs-attention with
           // `<status>: <summary head>`.
@@ -663,6 +715,13 @@ const runOneImpl =
               fp.markNeedsAttention(issueId, decoded.outcome.summary),
               issueId,
               "markNeedsAttention(non-completed)",
+            );
+            yield* Effect.logWarning("failure").pipe(
+              Effect.annotateLogs({
+                failure_code: "F12",
+                error_tag: "WorkerNonCompleted",
+                reason: lastError,
+              }),
             );
             return resultFromError(
               issueId,
@@ -693,6 +752,9 @@ const runOneImpl =
             issueId,
             "markCompleted",
           );
+          yield* Effect.logInfo("fp.done").pipe(
+            Effect.annotateLogs({ symphony_artifact: integrated.branch }),
+          );
           return {
             issueId,
             attempt,
@@ -721,6 +783,8 @@ const runOneImpl =
                 lastError: sandboxSetupLastError(err),
                 comment: sandboxSetupLastError(err),
                 startedAt,
+                failureCode: sandboxStageFailureCode(err.stage),
+                errorTag: err._tag,
               }),
             ProtocolStreamError: (err) =>
               routePostClaimFailure({
@@ -733,6 +797,8 @@ const runOneImpl =
                 lastError: `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`,
                 comment: `protocol stream ${err.kind}: ${err.reason}`,
                 startedAt,
+                failureCode: "F7",
+                errorTag: err._tag,
               }),
             IntegrationFailedError: (err) =>
               routePostClaimFailure({
@@ -745,6 +811,8 @@ const runOneImpl =
                 lastError: `bundle integration failed: ${truncateLastError(err.reason)}`,
                 comment: `bundle integration failed: ${err.reason}`,
                 startedAt,
+                failureCode: "F13",
+                errorTag: err._tag,
               }),
             TranscriptWriteError: (err) =>
               routePostClaimFailure({
@@ -757,15 +825,18 @@ const runOneImpl =
                 lastError: `${err.operation} failed: ${truncateLastError(err.reason)}`,
                 comment: `${err.operation} failed at ${err.path}: ${err.reason}`,
                 startedAt,
+                failureCode: "F9",
+                errorTag: err._tag,
               }),
             // FpWriteFailedError on intermediate writes (claim, addComment,
             // setAttempt, setArtifact) — best-effort log + park. The slot
             // still releases via finalizer.
             FpWriteFailedError: (err) =>
               Effect.gen(function* () {
-                yield* Effect.logWarning("fp write failed; leaving issue at in-progress").pipe(
+                yield* Effect.logWarning("failure").pipe(
                   Effect.annotateLogs({
-                    issue_id: err.issueId,
+                    failure_code: "F15",
+                    error_tag: err._tag,
                     operation: err.operation,
                     reason: err.reason,
                   }),
@@ -879,6 +950,21 @@ const sandboxSetupLastError = (err: SandboxSetupError): string => {
 // marks the issue. Used by every Effect.catchTags branch in the runOneImpl
 // scoped block. Suppresses any FpWriteFailedError on the terminal write so
 // the running-set finalizer still fires (F15 deferral).
+const sandboxStageFailureCode = (stage: SandboxSetupError["stage"]): string => {
+  switch (stage) {
+    case "create":
+    case "upload":
+    case "setup":
+      return "F3";
+    case "session-start":
+      return "F5";
+    case "finalize":
+      return "F8";
+    case "download":
+      return "F8";
+  }
+};
+
 const routePostClaimFailure = (input: {
   readonly ref: Ref.Ref<RunningSet>;
   readonly fp: Context.Tag.Service<FpService>;
@@ -889,8 +975,17 @@ const routePostClaimFailure = (input: {
   readonly lastError: string;
   readonly comment: string;
   readonly startedAt: string;
+  readonly failureCode: string;
+  readonly errorTag: string;
 }): Effect.Effect<RunOneResult, never, FileSystem.FileSystem> =>
   Effect.gen(function* () {
+    yield* Effect.logWarning("failure").pipe(
+      Effect.annotateLogs({
+        failure_code: input.failureCode,
+        error_tag: input.errorTag,
+        reason: input.lastError,
+      }),
+    );
     const record = makeRecord({
       status: "needs-attention",
       branch: "",
@@ -931,7 +1026,9 @@ const runOneTickImpl = (
 ): Effect.Effect<TickResult, OrchestratorError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const runningSet = yield* Ref.get(ref);
-    if (availableSlots(runningSet, config.maxConcurrentAgents) <= 0) {
+    const slots = availableSlots(runningSet, config.maxConcurrentAgents);
+    yield* Effect.logInfo("tick.start").pipe(Effect.annotateLogs({ available_slots: slots }));
+    if (slots <= 0) {
       // Concurrency cap reached. Don't even fetch candidates.
       return { dispatched: [], skipped: [] } satisfies TickResult;
     }
@@ -962,6 +1059,12 @@ const runOneTickImpl = (
     // selector already truncated to the slot budget, but we additionally cap
     // at 1 here per the explicit "one issue per tick" decision.
     const issue = verdict.toDispatch[0]!;
+    yield* Effect.logInfo("candidate.selected").pipe(
+      Effect.annotateLogs({
+        issue_id: issue.detail.id,
+        issue_display_id: issue.detail.displayId,
+      }),
+    );
     const dispatchOutcome = yield* runOne(issue).pipe(
       // Pre-claim failures (DispatchError, MissingCodexAuthError,
       // UnparseableAttemptError, AlreadyClaimedError) are "log + skip" per
