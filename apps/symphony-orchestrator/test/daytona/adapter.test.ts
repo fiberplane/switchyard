@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,6 +78,8 @@ describe("DaytonaAdapter", () => {
         Effect.provide(NodeContext.layer),
       ),
     );
+
+  const sha256 = (content: Buffer): string => createHash("sha256").update(content).digest("hex");
 
   test("constructs a client against the test stack", async () => {
     await ensureStackUp();
@@ -232,6 +235,35 @@ describe("DaytonaAdapter", () => {
       expect(result.stdout).toContain("/tmp/repo.tgz");
     } finally {
       await rm(uploadRoot, { recursive: true, force: true });
+    }
+  }, 300_000);
+
+  test("downloadFiles round-trips uploaded bytes", async () => {
+    const transferRoot = await mkdtemp(join(tmpdir(), "switchyard-daytona-download-"));
+    const sourcePath = join(transferRoot, "repo.tgz");
+    const copyPath = join(transferRoot, "repo-copy.tgz");
+    await writeFile(sourcePath, "switchyard download fixture\n");
+
+    try {
+      const spec = buildTestSandboxSpec({
+        testRunId,
+        labels: {
+          purpose: "download",
+        },
+      });
+
+      await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* DaytonaAdapter;
+          const handle = yield* adapter.createSandbox(spec);
+          yield* adapter.uploadFiles(handle, [{ src: sourcePath, dst: "/tmp/repo.tgz" }]);
+          yield* adapter.downloadFiles(handle, [{ src: "/tmp/repo.tgz", dst: copyPath }]);
+        }),
+      );
+
+      expect(sha256(await readFile(copyPath))).toBe(sha256(await readFile(sourcePath)));
+    } finally {
+      await rm(transferRoot, { recursive: true, force: true });
     }
   }, 300_000);
 });

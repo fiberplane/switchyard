@@ -33,6 +33,10 @@ export type DaytonaAdapterShape = {
     handle: SandboxHandle,
     files: readonly DaytonaFileTransfer[],
   ) => Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
+  readonly downloadFiles: (
+    handle: SandboxHandle,
+    files: readonly DaytonaFileTransfer[],
+  ) => Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
 };
 
 export class DaytonaAdapter extends Context.Tag("DaytonaAdapter")<
@@ -354,6 +358,55 @@ const uploadFiles = (
     Effect.withSpan("DaytonaAdapter.uploadFiles"),
   );
 
+const downloadFiles = (
+  client: Daytona,
+  handle: SandboxHandle,
+  files: readonly DaytonaFileTransfer[],
+): Effect.Effect<void, DaytonaSandboxNotFoundError | DaytonaSandboxOpError> =>
+  getSandbox(client, handle.id, "downloadFiles").pipe(
+    Effect.flatMap((sandbox) =>
+      Effect.tryPromise({
+        try: () =>
+          sandbox.fs.downloadFiles(
+            files.map((file) => ({
+              source: file.src,
+              destination: file.dst,
+            })),
+          ),
+        catch: (error) => {
+          if (isDaytonaNotFound(error)) {
+            return new DaytonaSandboxNotFoundError({
+              sandboxId: handle.id,
+              operation: "downloadFiles",
+              reason: describeUnknown(error),
+            });
+          }
+
+          return new DaytonaSandboxOpError({
+            operation: "downloadFiles",
+            sandboxId: handle.id,
+            reason: describeUnknown(error),
+          });
+        },
+      }),
+    ),
+    Effect.flatMap((responses) => {
+      const failed = responses.find((response) => response.error !== undefined);
+      if (failed === undefined) {
+        return Effect.void;
+      }
+
+      return Effect.fail(
+        new DaytonaSandboxOpError({
+          operation: "downloadFiles",
+          sandboxId: handle.id,
+          reason: `${failed.source}: ${failed.error}`,
+        }),
+      );
+    }),
+    Effect.withSpan("DaytonaAdapter.downloadFiles"),
+  );
+
 export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapterOptions = {}) =>
   Layer.effect(
     DaytonaAdapter,
@@ -370,6 +423,7 @@ export const DaytonaAdapterLive = (config: DaytonaConfig, options: DaytonaAdapte
         deleteSandbox: (handle) => deleteSandbox(client, handle),
         executeCommand: (handle, command, options) =>
           executeCommand(client, handle, command, options),
+        downloadFiles: (handle, files) => downloadFiles(client, handle, files),
         uploadFiles: (handle, files) => uploadFiles(client, handle, files),
       };
     }),
