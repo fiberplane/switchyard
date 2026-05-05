@@ -134,4 +134,17 @@ describe("FpAdapter", () => {
 
     expect(updated.properties.symphony_state).toBe("active");
   });
+
+  test("addComment succeeds without reading comments back", async () => {
+    const scratch = await createScratchIssue(`scratch comment ${crypto.randomUUID()}`);
+
+    await expect(
+      runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          return yield* adapter.addComment(scratch.displayId, "adapter comment smoke");
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
 });

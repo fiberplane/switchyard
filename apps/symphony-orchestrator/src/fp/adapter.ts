@@ -32,6 +32,10 @@ export type FpAdapterShape = {
     key: string,
     value: string,
   ) => Effect.Effect<void, FpBinaryNotFoundError | FpCommandError>;
+  readonly addComment: (
+    id: string,
+    body: string,
+  ) => Effect.Effect<void, FpBinaryNotFoundError | FpCommandError>;
 };
 
 export class FpAdapter extends Context.Tag("FpAdapter")<FpAdapter, FpAdapterShape>() {}
@@ -141,6 +145,10 @@ export const FpAdapterLive = (options: FpAdapterOptions = {}) =>
             fpBinary,
             executor,
           ).pipe(Effect.asVoid),
+        addComment: (id, body) =>
+          runFpCommand(["comment", "add", id, body], options, fpBinary, executor).pipe(
+            Effect.asVoid,
+          ),
       };
     }),
   );
