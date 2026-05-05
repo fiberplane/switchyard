@@ -8,6 +8,8 @@
     "smoke": "bun build src/smoke.ts --target=node --outfile=dist/smoke.mjs && node dist/smoke.mjs",
     "smoke:bun": "bun run src/smoke.ts",
     "smoke:app-server": "bun build src/smoke-app-server.ts --target=node --outfile=dist/smoke-app-server.mjs && node dist/smoke-app-server.mjs",
+    "spike:stdio": "bun build src/spike-stdio.ts --target=node --outfile=dist/spike-stdio.mjs && node dist/spike-stdio.mjs",
+    "spike:stdio:bun": "bun run src/spike-stdio.ts",
     "auth:probe": "bun build src/auth-probe.ts --target=node --outfile=dist/auth-probe.mjs && node dist/auth-probe.mjs",
     "auth:probe:bun": "bun run src/auth-probe.ts"
   },
