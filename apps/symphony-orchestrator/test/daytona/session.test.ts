@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { NodeContext } from "@effect/platform-node";
-import { Effect, Either, ParseResult, Schema } from "effect";
+import { Chunk, Effect, Either, ParseResult, Schema, Stream } from "effect";
 
 import { DaytonaAdapter, DaytonaAdapterLive } from "../../src/daytona/daytona.adapter.js";
 import { DaytonaSession, DaytonaSessionLive } from "../../src/daytona/daytona.session.js";
@@ -151,6 +151,35 @@ describe("DaytonaSession round-trip", () => {
 
     expect(result.sessionId.length).toBeGreaterThan(0);
     expect(result.commandId.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  test("receive stream emits stdout chunks in order", async () => {
+    const chunks = await runWithSession(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* DaytonaSession;
+          const stream = yield* session.start(sharedHandle, "printf 'line-1\\nline-2\\n'");
+          const collected = yield* Stream.runCollect(stream.receive).pipe(
+            Effect.timeoutFail({
+              duration: "5 seconds",
+              onTimeout: () =>
+                new DaytonaSessionLogError({
+                  sessionId: stream.sessionId,
+                  commandId: stream.commandId,
+                  reason: "receive deadline exceeded",
+                }),
+            }),
+          );
+          return Chunk.toReadonlyArray(collected);
+        }),
+      ),
+    );
+
+    const concatenated = chunks.join("");
+    const idxLine1 = concatenated.indexOf("line-1");
+    const idxLine2 = concatenated.indexOf("line-2");
+    expect(idxLine1).toBeGreaterThanOrEqual(0);
+    expect(idxLine2).toBeGreaterThan(idxLine1);
   }, 60_000);
 });
 
