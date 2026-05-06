@@ -8,7 +8,7 @@
 
 > Based on the [fiberplane/otter](https://github.com/fiberplane/otter) template — a light software factory for Effect.ts monorepos with agent-friendly tooling for code quality, documentation, and work tracking.
 
-## Quickstart for demo participants
+## Somewhat-quick Start
 
 End-to-end: clone, bring up a local Daytona, arm an `fp` ticket, dispatch it
 through the orchestrator, and watch a real Codex worker land a
