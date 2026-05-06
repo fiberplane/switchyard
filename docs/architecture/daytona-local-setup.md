@@ -13,8 +13,7 @@ flow lives in two existing READMEs:
 - [`apps/symphony-orchestrator/snapshot/README.md`](../../apps/symphony-orchestrator/snapshot/README.md)
   — build the `symphony-codex-bun` snapshot the orchestrator dispatches into.
 
-The top-level [`README.md`](../../README.md) §"Quickstart for demo
-participants" stitches these into a single walk-through and is the canonical
+The top-level [`README.md`](../../README.md) §"Somewhat-quick Start" stitches these into a single walk-through and is the canonical
 entry for a new developer.
 
 ## Prerequisites
