@@ -1,7 +1,7 @@
 <h3 align="center">Switchyard</h3>
 
 <p align="center">
-  TODO: description
+  **Experimental** Software Factory combining [Symphony](https://github.com/openai/symphony), the [fp](https://fp.dev) issue tracker, and [Daytona](https://www.daytona.io/) sandboxes
 </p>
 
 ---
