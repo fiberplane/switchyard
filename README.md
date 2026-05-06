@@ -1,12 +1,157 @@
 <h3 align="center">Switchyard</h3>
 
 <p align="center">
-  **Experimental** Software Factory combining [Symphony](https://github.com/openai/symphony), the [fp](https://fp.dev) issue tracker, and [Daytona](https://www.daytona.io/) sandboxes
+  <strong>Experimental</strong> Software Factory combining <a href="https://github.com/openai/symphony">Symphony</a>, the <a href="https://fp.dev">fp</a> issue tracker, and <a href="https://www.daytona.io/">Daytona</a> sandboxes
 </p>
 
 ---
 
 > Based on the [fiberplane/otter](https://github.com/fiberplane/otter) template — a light software factory for Effect.ts monorepos with agent-friendly tooling for code quality, documentation, and work tracking.
+
+## Somewhat-quick Start
+
+End-to-end: clone, bring up a local Daytona, arm an `fp` ticket, dispatch it
+through the orchestrator, and watch a real Codex worker land a
+`symphony/<id>` branch on your local repo.
+
+### Prereqs
+
+- `docker` (or OrbStack on macOS).
+- `bun` >= 1.3.13, `fp` CLI authenticated against this project.
+- `~/.codex/auth.json` on the host (ChatGPT login, not `OPENAI_API_KEY`).
+- Optional: `jq` for prettier log tailing.
+
+The Daytona stack is vendored in-repo at
+`apps/symphony-orchestrator/daytona/` — no upstream clone required. See
+[`docs/architecture/daytona-local-setup.md`](docs/architecture/daytona-local-setup.md)
+for the long-form setup notes; the short version is the steps below.
+
+```bash
+bun install
+```
+
+### 1. Bring up the local Daytona stack
+
+```bash
+bun run --filter @switchyard/symphony-orchestrator daytona:up
+curl -sf http://localhost:3000/api/health   # → {"status":"ok"}
+```
+
+First run pulls multi-GB images and takes a few minutes. Subsequent
+up/down cycles are sub-30s with a warm cache.
+
+### 2. Provision an API key + build the snapshot
+
+The dashboard onboarding key is read-scoped — it cannot create snapshots.
+Create a write-scoped key, then build the `symphony-codex-bun` snapshot
+the orchestrator dispatches into:
+
+```bash
+open http://localhost:3000/dashboard
+# Log in: dev@daytona.io / password (upstream dev defaults).
+# Dashboard → API Keys → New → grant write:snapshots + delete:snapshots.
+
+DAYTONA_API_KEY=<your-key> \
+  bun run --filter @switchyard/symphony-orchestrator snapshot:build
+```
+
+`snapshot:build` is idempotent: it early-exits if `symphony-codex-bun` is
+already `active`. First build is 3–6 minutes (apt + npm + bun installer).
+
+### 3. Inject your key into `WORKFLOW.md`
+
+`WORKFLOW.md` at the repo root is the operator config. The committed
+`sandbox.apiKey` is bound to a different machine's Daytona — replace it
+with your own:
+
+```bash
+$EDITOR WORKFLOW.md   # paste your write-scoped key into sandbox.apiKey
+```
+
+The key authorizes `localhost:3000` only (per-machine). Do not commit the
+edit. `WORKFLOW.example.md` is the annotated reference for each field.
+
+### 4. Arm a demo ticket
+
+Flip an `fp` issue's `symphony_ready` flag. The orchestrator polls every
+`polling.intervalMs` (default 5s) and dispatches eligible issues on the
+next tick.
+
+```bash
+# Use a known-good seed, or create one:
+fp issue create --title "demo: tiny doc edit" \
+  --description "Add a one-line note to docs/README.md crediting demo participants." \
+  --property symphony_ready=true
+```
+
+For an existing ticket: `fp issue update <id> --property symphony_ready=true`.
+
+### 5. Dispatch
+
+The package ships a `dispatch` script that wires `EFFECT_TRACE=1`,
+`LOG_LEVEL=debug`, an absolute workflow path (resolved against `INIT_CWD`
+to survive `bun --filter` cwd switching), and a tee'd log:
+
+```bash
+bun run --filter @switchyard/symphony-orchestrator dispatch
+# Logs land in /tmp/orchestrator.log (override: ORCHESTRATOR_LOG=...)
+tail -f /tmp/orchestrator.log | jq -c .
+```
+
+### 6. Watch the lifecycle
+
+The orchestrator emits structured log events as the issue flows through the
+pipeline:
+
+```
+candidate.selected → claim.acquired → sandbox.created → source.uploaded →
+turn.started → turn.completed → bundle.decoded → integration.succeeded →
+fp.done
+```
+
+Three `fp` comments land alongside: `Dispatched to sandbox <uuid>`,
+`Worker turn completed; integrating`, then on success the worker's
+`outcome.summary` (verbatim). The result is a `symphony/<id>` branch on
+your local repo:
+
+```bash
+git log --oneline symphony/<id>
+git diff symphony/<id>~1..symphony/<id>   # clean diff (synthetic-base aware)
+```
+
+Per-run artifacts live under `.symphony/runs/runs/<id>/<attempt>/`
+(`outcome.json`, `outcome-record.json`, `transcript.jsonl`, `work.bundle`).
+
+### 7. Cleanup
+
+`autoDeleteInterval: -1` in `WORKFLOW.md` keeps sandboxes alive for forensic
+SSH after a run. Prune them via the Daytona dashboard or by Daytona label
+`app=symphony` / `fp_issue_id=<internal-id>`. To re-arm an issue that ended
+in `needs-attention` (v1 has `maxAttempts: 1`, so retry is manual):
+
+```bash
+fp issue update <id> --status todo \
+  --property symphony_state=idle \
+  --property symphony_last_error= \
+  --property symphony_attempt=0
+```
+
+To shut everything down:
+
+```bash
+bun run --filter @switchyard/symphony-orchestrator daytona:down
+```
+
+(`down -v` — drops volumes, including your dashboard key. Drop `-v` in the
+script if you want to preserve state across restarts.)
+
+### Going deeper
+
+- [`docs/architecture/daytona-local-setup.md`](docs/architecture/daytona-local-setup.md) — long-form Daytona setup, gotchas.
+- [`apps/symphony-orchestrator/daytona/README.md`](apps/symphony-orchestrator/daytona/README.md) — vendored stack details.
+- [`apps/symphony-orchestrator/snapshot/README.md`](apps/symphony-orchestrator/snapshot/README.md) — snapshot build internals + env overrides.
+- [`docs/architecture/orchestrator-runone.md`](docs/architecture/orchestrator-runone.md) — pipeline, three-comment cadence, codex auth.
+- [`docs/architecture/`](docs/architecture/) and [`docs/patterns/`](docs/patterns/) — design notes and Effect conventions.
 
 ## Philosophy
 
