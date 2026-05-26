@@ -70,6 +70,15 @@ Canonical fp metadata for PR-owned completion is `symphony_branch`, `symphony_pr
 `symphony_sandbox_id`. Remove `symphony_artifact`; this POC does not need compatibility with the
 old local artifact path.
 
+### A8. End With Fallow, Dead-Code Removal, And Full Review Gates
+
+After remote Daytona is implemented and local Daytona compose is retired, add a terminal cleanup
+pass modeled on Nocturne's Fallow setup. Fallow findings are triage evidence, not automatic
+deletion authority: remove only clearly identifiable dead code after the architecture switch. A
+separate final closeout pass then reruns Fallow, runs an adversarial code-quality review loop until
+no actionable findings remain, runs root health checks and remote E2E, performs secret scans, and
+opens the GitHub PR.
+
 ## Problem
 
 Switchyard currently dispatches workers into a local Daytona OSS compose stack. That was the
@@ -686,6 +695,26 @@ Delete from active code after the graveyard note exists:
 - Probe whether Daytona Cloud now populates session exit code or closes the log stream cleanly.
 - If yes, simplify `DaytonaSession` and update `daytona-streaming-session.md`.
 - If no, keep the exit-trap wrapper and document that the workaround applies to Cloud too.
+
+### Phase 8: Fallow And Dead-Code Cleanup
+
+- Add conservative Fallow configuration and package scripts modeled on Nocturne.
+- Run Fallow after the remote path is active and local compose has been removed.
+- Remove only clearly identifiable dead code; document or ignore false positives caused by dynamic
+  entry points, fixtures, generated files, or public surfaces.
+- Commit a concise Fallow baseline summary with counts, command shapes, version, and known modeling
+  gaps. Raw Fallow JSON is local evidence, not committed documentation.
+
+### Phase 9: Final Review, Gates, E2E, And PR
+
+- Rerun Fallow and confirm no clearly removable local-Daytona/archive/bundle dead code remains.
+- Run a thermonuclear code-quality review subagent loop until it reports no actionable findings.
+- Run `bun run test`, `bun run format:check`, `bun run check`, and the remote Daytona E2E
+  scenario using `apps/symphony-orchestrator/.env`.
+- Scan logs, transcripts, diagnostics, PR text, fp comments/properties, and git remotes for exact
+  registered secret values before opening the GitHub PR.
+- Push the branch and open a GitHub PR with links to the parent epic, child issues, proposal, E2E
+  evidence, health checks, Fallow summary, secret-scan result, and review-loop result.
 
 ## Review Questions
 
