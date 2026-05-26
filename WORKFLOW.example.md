@@ -2,8 +2,9 @@
 #
 # Copy this file to ./WORKFLOW.md (the orchestrator's default load path; see
 # `apps/symphony-orchestrator/src/index.ts` parseCliOptions) and fill in the
-# stack-specific fields marked `<…>` below. The orchestrator does not
-# interpolate `$VAR` placeholders inside YAML — substitute at file-edit time.
+# non-secret policy fields below. Daytona, GitHub, fp, and Codex credentials
+# live in apps/symphony-orchestrator/.env or the host process environment, not
+# this tracked workflow file.
 #
 # Field shape: apps/symphony-orchestrator/src/workflow/models.ts
 # Loader:     apps/symphony-orchestrator/src/workflow/loader.ts
@@ -34,17 +35,12 @@ agent:
 
 # sandbox — the Daytona target.
 #
-#   apiUrl   — Base URL of your Daytona API. Local OSS install defaults to
-#              http://localhost:3000/api.
-#   apiKey   — Dashboard-issued admin key. Bring up Daytona, log into the
-#              dashboard, create an API key, paste here. Local-only auth — the
-#              key only authorizes access to your localhost Daytona.
-#   target   — Daytona target name; `us` is the standard local default
-#              (per spec line 89; not "local").
-#   snapshot — Sandbox snapshot. `symphony-codex-bun` is the canonical local
-#              snapshot (Ubuntu 22.04 + node + bun + git + codex@0.128.0); see
-#              the smoke playground README for build instructions. Must be
-#              `active` (not `pending`) before dispatch.
+# `DAYTONA_API_KEY` is required in host env. `DAYTONA_API_URL` and
+# `DAYTONA_TARGET` are optional host-env overrides for non-default Daytona SDK
+# endpoints/targets. `DAYTONA_SNAPSHOT` may override `snapshot` below.
+#
+# `snapshot` is the default sandbox snapshot name. It must be active before
+# dispatch.
 #
 # `autoStopInterval`/`autoDeleteInterval` control sandbox lifecycle:
 #   - `autoStopInterval: 15` — Daytona stops the sandbox 15min after the run
@@ -57,9 +53,6 @@ agent:
 # not change unless you know why.
 sandbox:
   kind: daytona
-  apiUrl: <DAYTONA_API_URL>
-  apiKey: <DAYTONA_API_KEY>
-  target: <DAYTONA_TARGET>
   snapshot: <DAYTONA_SNAPSHOT>
   language: typescript
   autoStopInterval: 15

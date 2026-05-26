@@ -1,9 +1,7 @@
 # QA happy-path WORKFLOW.md template.
 #
-# Substitute the four <DAYTONA_*> placeholders before running the orchestrator. The orchestrator
-# does NOT interpolate $VAR references in YAML (locked in SWYRD-ozdpzajz §4 out-of-scope and
-# spec lines 415-420). Either hand-edit, or pipe through `envsubst` after exporting matching
-# DAYTONA_* env vars.
+# Daytona credentials stay in apps/symphony-orchestrator/.env or the host shell. The workflow file
+# is tracked and secret-free; it only names the sandbox snapshot/defaults.
 #
 # Field shape source: apps/symphony-orchestrator/src/workflow/models.ts
 # Decoded by: apps/symphony-orchestrator/src/workflow/loader.ts (parseYaml + Schema.decodeUnknown)
@@ -23,9 +21,6 @@ agent:
 
 sandbox:
   kind: daytona
-  apiUrl: <DAYTONA_API_URL> # e.g. http://localhost:33000/api
-  apiKey: <DAYTONA_API_KEY> # admin key from helpers/setup-daytona-test-stack.md
-  target: <DAYTONA_TARGET> # e.g. us  (per spec line 89; not "local")
   snapshot: <DAYTONA_SNAPSHOT> # symphony-test-codex (codex-cli 0.128.0)
   language: typescript
   autoStopInterval: 15

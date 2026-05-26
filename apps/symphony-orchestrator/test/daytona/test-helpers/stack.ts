@@ -4,12 +4,12 @@ import type { DaytonaConfig } from "../../../src/daytona/models.js";
 import { DaytonaTestStackError } from "./errors.js";
 import { repairRunnerSchedulingIfEnabled } from "./repair-runner-scheduling.js";
 
-export const daytonaTestConfig: DaytonaConfig = {
+export const daytonaTestConfig = {
   apiUrl: "http://localhost:33000/api",
   apiKey: "switchyard-test-api-key",
   target: "us",
   snapshotName: "symphony-test-codex",
-};
+} satisfies DaytonaConfig;
 
 const appRoot = new URL("../../../", import.meta.url);
 const stackProject = "switchyard-test";

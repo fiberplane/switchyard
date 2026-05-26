@@ -41,9 +41,6 @@ const fixtureConfig: WorkflowConfig = {
   agent: { maxConcurrentAgents: 1, maxAttempts: 1 },
   sandbox: {
     kind: "daytona",
-    apiUrl: "http://localhost:3987",
-    apiKey: "key",
-    target: "local",
     snapshot: "snapshot",
     language: "typescript",
     autoStopInterval: 15,
@@ -71,7 +68,15 @@ describe("orchestrator entrypoint wiring", () => {
   });
 
   test("bridges workflow config into Daytona and orchestrator config", () => {
-    expect(toDaytonaConfig(fixtureConfig.sandbox)).toEqual({
+    const hostConfig = {
+      daytona: {
+        apiKey: "key",
+        apiUrl: "http://localhost:3987",
+        target: "local",
+      },
+    };
+
+    expect(toDaytonaConfig(fixtureConfig.sandbox, hostConfig)).toEqual({
       apiUrl: "http://localhost:3987",
       apiKey: "key",
       target: "local",
@@ -96,7 +101,16 @@ describe("orchestrator entrypoint wiring", () => {
         yield* DaytonaSession;
       }).pipe(
         Effect.provide(
-          buildDaytonaLayers(toDaytonaConfig(fixtureConfig.sandbox), { probeOnInit: false }),
+          buildDaytonaLayers(
+            toDaytonaConfig(fixtureConfig.sandbox, {
+              daytona: {
+                apiKey: "key",
+                apiUrl: "http://localhost:3987",
+                target: "local",
+              },
+            }),
+            { probeOnInit: false },
+          ),
         ),
       ),
     );
@@ -132,7 +146,12 @@ describe("orchestrator entrypoint wiring", () => {
             orchestratorLayer: layer,
           }),
         );
-        yield* Effect.sleep("20 millis");
+        yield* Effect.gen(function* () {
+          const deadline = Date.now() + 1_000;
+          while ((yield* Ref.get(tickCount)) === 0 && Date.now() < deadline) {
+            yield* Effect.sleep("10 millis");
+          }
+        });
         yield* Fiber.interrupt(fiber);
         return yield* Ref.get(tickCount);
       }),

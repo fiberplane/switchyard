@@ -38,6 +38,26 @@ describe("DaytonaConfig", () => {
     });
   });
 
+  test("decodes Cloud config with optional URL/target omitted and workflow snapshot fallback", async () => {
+    const config = await Effect.runPromise(
+      decodeDaytonaConfigEnv(
+        {
+          DAYTONA_API_KEY: "switchyard-test-api-key",
+          DAYTONA_API_URL: "",
+          DAYTONA_TARGET: "",
+        },
+        "symphony-test-codex",
+      ),
+    );
+
+    expect(config).toEqual({
+      apiKey: "switchyard-test-api-key",
+      apiUrl: undefined,
+      target: undefined,
+      snapshotName: "symphony-test-codex",
+    });
+  });
+
   test("maps a missing API key env var to DaytonaConfigError", async () => {
     const result = await Effect.runPromise(
       Effect.either(

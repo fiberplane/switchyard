@@ -13,45 +13,38 @@ contains six top-level groups: `tracker`, `polling`, `agent`, `sandbox`, `codex`
 Decoding is YAML-only via `parseYaml` then `Schema.decodeUnknown(WorkflowConfig)` (see
 `apps/symphony-orchestrator/src/workflow/loader.ts`).
 
-**Critical:** the orchestrator does NOT interpolate `$VAR` placeholders in the YAML. The lock is
-at `ozdpzajz` §4 out-of-scope ("Env-var interpolation in WORKFLOW.md") and the spec at
-`docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md:418` (`"\"$DAYTONA_API_URL\"`
-are loaded as literal strings; environment interpolation is left to the [operator]"). Operators
-must substitute concrete values before booting. The existing
-`apps/symphony-orchestrator/test/fixtures/workflow.valid.yml` uses `"$DAYTONA_API_URL"` as a
-literal string for unit-test-decode purposes only — at runtime, the SDK would reject the
-unresolved placeholder.
+**Critical:** the workflow is tracked and secret-free. Daytona credentials and optional SDK
+overrides come from `apps/symphony-orchestrator/.env` or the host shell, not YAML. The orchestrator
+does not interpolate `$VAR` placeholders in workflow YAML.
 
 The `decodeDaytonaConfigEnv` function at
 `apps/symphony-orchestrator/src/daytona/models.ts:118` is for a separate code path (env-only
-Daytona config); index.ts uses the WORKFLOW.md path via `toDaytonaConfig(config.sandbox)`.
+Daytona config); index.ts uses host runtime config plus the WORKFLOW.md sandbox snapshot via
+`toDaytonaConfig(config.sandbox, hostRuntimeConfig)`.
 
 ## What needs to happen
 
 1. Copy `packages/qa/fixtures/workflow-sample.yaml` to the host repo root as `WORKFLOW.md`.
-2. Substitute the four Daytona placeholder values with actual values captured from
-   `helpers/setup-daytona-test-stack.md`:
-   - `<DAYTONA_API_URL>` → e.g. `http://localhost:33000/api`
-   - `<DAYTONA_API_KEY>` → the admin key
-   - `<DAYTONA_TARGET>` → e.g. `us`
-   - `<DAYTONA_SNAPSHOT>` → `symphony-test-codex`
+2. Substitute `<DAYTONA_SNAPSHOT>` if the default snapshot name differs from the sandbox image you
+   prepared.
 3. (Optional) Adjust `polling.intervalMs` if you want a tighter loop for QA observation. Default
    in the fixture is 5000ms.
 4. Verify the file decodes cleanly.
 
-## Substitution patterns
+## Host Environment
 
-Either hand-edit, or use `envsubst`:
+Put secrets in `apps/symphony-orchestrator/.env` or export them in the shell that starts the
+orchestrator:
 
 ```
-DAYTONA_API_URL=http://localhost:33000/api \
-DAYTONA_API_KEY=$(cat /tmp/daytona-api-key-pjy) \
-DAYTONA_TARGET=us \
-DAYTONA_SNAPSHOT=symphony-test-codex \
-envsubst < packages/qa/fixtures/workflow-sample.yaml > WORKFLOW.md
+DAYTONA_API_KEY=<daytona-api-key>
+# Optional SDK overrides for non-default Daytona endpoints/targets:
+DAYTONA_API_URL=http://localhost:33000/api
+DAYTONA_TARGET=us
+DAYTONA_SNAPSHOT=symphony-test-codex
 ```
 
-`envsubst` is operator-side; the orchestrator does no interpolation itself.
+Values from the real process environment win over `apps/symphony-orchestrator/.env`.
 
 ## Where to look in the codebase
 
@@ -62,8 +55,7 @@ envsubst < packages/qa/fixtures/workflow-sample.yaml > WORKFLOW.md
 - `apps/symphony-orchestrator/src/workflow/errors.ts` — `WorkflowFileMissing` and
   `WorkflowDecodeError` (both `Data.TaggedError`); the orchestrator surfaces these via the
   structured logger on boot failure.
-- `apps/symphony-orchestrator/test/fixtures/workflow.valid.yml` — reference shape (but with
-  literal `$VAR` placeholders, which fail at runtime — see warning above).
+- `apps/symphony-orchestrator/test/fixtures/workflow.valid.yml` — reference shape.
 
 ## How to verify
 
@@ -72,10 +64,9 @@ The cheapest verification is a dry run of the loader:
 1. From the host repo CWD, attempt to boot the orchestrator with `--workflow ./WORKFLOW.md`.
 2. If the YAML is malformed: log emits a `WorkflowDecodeError` with the failing field path.
 3. If the file is missing: log emits a `WorkflowFileMissing` with the resolved path.
-4. If the YAML decodes but the Daytona values are wrong: the boot succeeds, but the first
+4. If the YAML decodes but the Daytona environment values are wrong: the boot succeeds, but the first
    `runOne` (or even sandbox probe in `DaytonaAdapterLive` if `probeOnInit: true`) fails with a
-   transport error referencing `<DAYTONA_API_URL>` literally — that's the giveaway that
-   substitution didn't happen.
+   Daytona transport/auth error.
 
 ## Required field shape (informational)
 
@@ -92,9 +83,6 @@ agent:
   maxAttempts: 1 # locked at 1 for v1 (no auto-retry; see ADR D5)
 sandbox:
   kind: daytona
-  apiUrl: <concrete URL, no $VAR>
-  apiKey: <concrete KEY, no $VAR>
-  target: <concrete TARGET, no $VAR>
   snapshot: <concrete SNAPSHOT, no $VAR>
   language: typescript
   autoStopInterval: 15

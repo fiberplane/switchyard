@@ -42,6 +42,28 @@ const decodeWorkflowConfig = (
     ),
   );
 
+const containsForbiddenSandboxApiKey = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  "sandbox" in value &&
+  typeof value.sandbox === "object" &&
+  value.sandbox !== null &&
+  "apiKey" in value.sandbox;
+
+const rejectForbiddenSecrets = (
+  value: unknown,
+  path: string,
+): Effect.Effect<void, WorkflowDecodeError> =>
+  containsForbiddenSandboxApiKey(value)
+    ? Effect.fail(
+        new WorkflowDecodeError({
+          path,
+          reason: "forbidden secret-bearing workflow field",
+          details: "Remove sandbox.apiKey from the workflow file. Use host env instead.",
+        }),
+      )
+    : Effect.void;
+
 export const loadWorkflowConfig = (
   path: string,
 ): Effect.Effect<
@@ -61,5 +83,6 @@ export const loadWorkflowConfig = (
       ),
     );
     const parsed = yield* parseWorkflowYaml(content, path);
+    yield* rejectForbiddenSecrets(parsed, path);
     return yield* decodeWorkflowConfig(parsed, path);
   });

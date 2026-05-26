@@ -29,9 +29,6 @@ export type AgentConfig = Schema.Schema.Type<typeof AgentConfig>;
 
 export const SandboxConfig = Schema.Struct({
   kind: Schema.Literal("daytona"),
-  apiUrl: NonEmptyString,
-  apiKey: NonEmptyString,
-  target: NonEmptyString,
   snapshot: NonEmptyString,
   language: Schema.Literal("typescript"),
   autoStopInterval: PositiveInteger,

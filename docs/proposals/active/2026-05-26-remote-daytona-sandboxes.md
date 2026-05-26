@@ -373,8 +373,8 @@ Changes:
   - require `apiKey`
   - default `apiUrl` and `target` through the SDK where possible
   - keep `snapshotName`
-- Update or remove `decodeDaytonaConfigEnv`; it currently requires `DAYTONA_API_URL`,
-  `DAYTONA_TARGET`, and `DAYTONA_SNAPSHOT`, which conflicts with Cloud defaults.
+- Keep `decodeDaytonaConfigEnv` aligned with Cloud defaults: `DAYTONA_API_URL` and
+  `DAYTONA_TARGET` are optional, and the snapshot can come from env or a workflow fallback.
 - Add resource/profile fields only if the Daytona SDK supports them for our snapshot path. If
   resources are baked into snapshots, document that explicitly in the snapshot README.
 - Keep `probeOnInit`, but make the error message Cloud-oriented.

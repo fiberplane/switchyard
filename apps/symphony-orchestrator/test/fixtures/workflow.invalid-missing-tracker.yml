@@ -7,9 +7,6 @@ agent:
 
 sandbox:
   kind: daytona
-  apiUrl: "$DAYTONA_API_URL"
-  apiKey: "$DAYTONA_API_KEY"
-  target: "$DAYTONA_TARGET"
   snapshot: symphony-codex-bun
   language: typescript
   autoStopInterval: 15

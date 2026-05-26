@@ -31,7 +31,7 @@ describe("WorkflowService.load", () => {
     expect(config.tracker.kind).toBe("fp");
     expect(config.codex.command).toBe("codex app-server");
     expect(config.agent.maxAttempts).toBe(1);
-    expect(config.sandbox.apiUrl).toBe("$DAYTONA_API_URL");
+    expect(config.sandbox.snapshot).toBe("symphony-codex-bun");
     expect(config.codex.approvalPolicy).toBe("never");
     expect(config.codex.sandbox).toBe("danger-full-access");
     expect(config.codex.sandboxPolicy).toEqual({ type: "dangerFullAccess" });
@@ -49,6 +49,23 @@ describe("WorkflowService.load", () => {
       if (error instanceof WorkflowDecodeError) {
         expect(error.path).toBe("test/fixtures/workflow.invalid-missing-tracker.yml");
         expect(error.details).toContain('["tracker"]');
+      }
+    }
+  });
+
+  test("rejects stale sandbox.apiKey before schema decode without printing the value", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-secret.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.apiKey");
+        expect(error.message).not.toContain("secret-value-that-must-not-print");
       }
     }
   });
