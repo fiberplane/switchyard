@@ -31,6 +31,7 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   codexAuthHostPath,
   repoPath: "/workspace/repo",
   source: { kind: "archive" },
+  fpRest: { remote: "rest-api" },
 });
 
 const codexResponses = (): ReadonlyArray<ReadonlyArray<string>> => [
@@ -147,6 +148,6 @@ describe("OrchestratorService.runOne — observability emissions", () => {
     expect(turnCompleted.issue_id).toBe(issue.detail.id);
 
     const fpDone = lines.find((l) => l.message === "fp.done")!;
-    expect(fpDone.symphony_artifact).toBe("symphony/happy");
+    expect(fpDone.branch).toBe("symphony/happy");
   });
 });

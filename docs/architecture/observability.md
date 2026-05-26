@@ -26,21 +26,21 @@ Every state-flow row in the umbrella spec emits exactly one log line, named `<ph
 The orchestrator's `runOne` and `runOneTick` pipelines own these emissions. Annotation context
 (`issue_id`, `issue_display_id`, `attempt`, `sandbox_id`) is set at the `runOne` boundary via
 `Effect.annotateLogsScoped` so call sites only emit the message name plus message-specific
-extras (for example `worker_status`, `branch`, `symphony_artifact`).
+extras (for example `worker_status`, `branch`, `run_id`).
 
-Happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
+Archive happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
 `sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`, `bundle.decoded`,
-`integration.succeeded`, `fp.done`. Failure paths emit a static `failure` message at warning
-level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and `reason`
-annotations — log searches should filter on `failure_code` rather than the message text.
-`githubClone` runs that complete a worker turn before worker-owned PR support exists emit
-`failure_code=F17` and `error_tag=PrArtifactNotImplemented`; this is a deliberate sequencing
-signal, not a sandbox setup failure.
+`integration.succeeded`, `fp.done`. `githubClone`/PR runs skip bundle decode and host
+integration after a completed worker turn and emit `worker.handoff.completed` with the branch,
+run id, and sandbox id; until worker-side fp no-clone property writes are proven, the local
+run result remains gated instead of integrated. Failure paths emit a static `failure` message at
+warning level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and
+`reason` annotations — log searches should filter on `failure_code` rather than the message text.
 
 `source.uploaded` is the stable boundary after sandbox input material is present. In archive mode
-that includes the source archive, prompt, and Codex auth. In `githubClone` mode it includes only
-prompt and Codex auth because the source is fetched inside the sandbox from the pinned remote
-metadata prepared on the host.
+that includes the source archive, prompt, and Codex auth before setup. In `githubClone` mode it
+fires after clone setup succeeds and includes prompt, Codex auth, and a secret-bearing worker env
+bridge uploaded outside the repo immediately before session start.
 
 ## Log Level
 

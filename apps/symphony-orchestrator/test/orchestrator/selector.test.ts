@@ -34,7 +34,13 @@ const properties: SymphonyProperties = {
   symphony_state: "idle",
   symphony_ready: "true",
   symphony_attempt: undefined,
-  symphony_artifact: undefined,
+  symphony_branch: undefined,
+  symphony_pr_url: undefined,
+  symphony_pr_number: undefined,
+  symphony_base_sha: undefined,
+  symphony_head_sha: undefined,
+  symphony_run_id: undefined,
+  symphony_sandbox_id: undefined,
   symphony_last_error: undefined,
 };
 

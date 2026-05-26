@@ -28,6 +28,7 @@ import type {
   SandboxHandle,
 } from "../../../src/daytona/models.js";
 import type { CandidateScan, FpServiceShape } from "../../../src/fp/service.js";
+import { SYMPHONY_PROPERTIES_DEFAULTS } from "../../../src/fp/symphony-properties.js";
 import type {
   GithubCloneSourceHandoff,
   IntegrationResult,
@@ -44,12 +45,35 @@ import type { SandboxScriptServiceShape } from "../../../src/sandbox-scripts/ser
 
 export type FpCall =
   | { readonly kind: "fetchCandidates"; readonly running: ReadonlyArray<string> }
+  | { readonly kind: "fetchIssueState"; readonly id: string }
   | { readonly kind: "claimIssue"; readonly id: string }
   | { readonly kind: "setAttempt"; readonly id: string; readonly attempt: number }
+  | {
+      readonly kind: "setRunMetadata";
+      readonly id: string;
+      readonly metadata: {
+        readonly branch: string;
+        readonly baseSha: string;
+        readonly runId: string;
+        readonly sandboxId: string;
+      };
+    }
+  | {
+      readonly kind: "setPrMetadata";
+      readonly id: string;
+      readonly metadata: {
+        readonly branch: string;
+        readonly prUrl: string;
+        readonly prNumber: string;
+        readonly baseSha: string;
+        readonly headSha: string;
+        readonly runId: string;
+        readonly sandboxId: string;
+      };
+    }
   | { readonly kind: "addComment"; readonly id: string; readonly body: string }
   | { readonly kind: "markCompleted"; readonly id: string; readonly summary: string }
-  | { readonly kind: "markNeedsAttention"; readonly id: string; readonly error: string }
-  | { readonly kind: "setArtifact"; readonly id: string; readonly path: string };
+  | { readonly kind: "markNeedsAttention"; readonly id: string; readonly error: string };
 
 export type FpMock = {
   readonly shape: FpServiceShape;
@@ -58,6 +82,7 @@ export type FpMock = {
 
 export const makeFpMock = (overrides: {
   readonly fetchCandidates?: () => Effect.Effect<CandidateScan, never>;
+  readonly fetchIssueState?: () => ReturnType<FpServiceShape["fetchIssueState"]>;
 }): FpMock => {
   const calls: FpCall[] = [];
   const shape: FpServiceShape = {
@@ -68,6 +93,16 @@ export const makeFpMock = (overrides: {
           ? Effect.succeed({ eligible: [], rejected: [] })
           : overrides.fetchCandidates();
       }),
+    fetchIssueState: (id) =>
+      Effect.suspend(() => {
+        calls.push({ kind: "fetchIssueState", id });
+        return overrides.fetchIssueState === undefined
+          ? Effect.succeed({
+              status: "in-progress",
+              properties: { ...SYMPHONY_PROPERTIES_DEFAULTS, symphony_state: "active" },
+            })
+          : overrides.fetchIssueState();
+      }),
     claimIssue: (id) =>
       Effect.sync(() => {
         calls.push({ kind: "claimIssue", id });
@@ -76,6 +111,14 @@ export const makeFpMock = (overrides: {
       Effect.sync(() => {
         calls.push({ kind: "setAttempt", id, attempt });
       }),
+    setRunMetadata: (id, metadata) =>
+      Effect.sync(() => {
+        calls.push({ kind: "setRunMetadata", id, metadata });
+      }),
+    setPrMetadata: (id, metadata) =>
+      Effect.sync(() => {
+        calls.push({ kind: "setPrMetadata", id, metadata });
+      }),
     markCompleted: (id, summary) =>
       Effect.sync(() => {
         calls.push({ kind: "markCompleted", id, summary });
@@ -83,10 +126,6 @@ export const makeFpMock = (overrides: {
     markNeedsAttention: (id, error) =>
       Effect.sync(() => {
         calls.push({ kind: "markNeedsAttention", id, error });
-      }),
-    setArtifact: (id, path) =>
-      Effect.sync(() => {
-        calls.push({ kind: "setArtifact", id, path });
       }),
     addComment: (id, body) =>
       Effect.sync(() => {
@@ -369,7 +408,17 @@ export const makeArtifactStoreMock = (
 export const makePromptMock = (): WorkerPromptServiceShape => ({
   renderPrompt: (input) =>
     Effect.succeed({
-      content: `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
+      content:
+        input.source.kind === "githubClone"
+          ? [
+              `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
+              `branch=${input.source.branchName}`,
+              `base=${input.source.baseSha}`,
+              `run=${input.source.runId}`,
+              `sandbox=${input.source.sandboxId}`,
+              "properties=symphony_branch,symphony_pr_url,symphony_pr_number,symphony_base_sha,symphony_head_sha,symphony_run_id,symphony_sandbox_id",
+            ].join("\n")
+          : `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
       hostPath: "/tmp/swy-prompt-fixture/prompt.md",
       sandboxPath: "/tmp/prompt.md",
     } satisfies RenderedPrompt),

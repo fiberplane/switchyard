@@ -81,11 +81,12 @@ That invention is one Effect-decoded JSON file with a 2-field schema (`status`, 
 Tracked as `SWYRD-jjlifoqq` to revisit once we have richer use cases that argue for relaxing the
 boundary.
 
-### D4b. Minimal `fp` property surface
+### D4b. Minimal `fp` property surface (superseded)
 
-The fp surface area for runtime metadata is exactly five properties: `symphony_ready`,
-`symphony_state`, `symphony_attempt`, `symphony_artifact`, `symphony_last_error`. Three other
-candidates were considered and not registered:
+The original local-Daytona artifact flow used a five-property runtime surface including
+`symphony_artifact`. Remote Daytona PR mode retires that artifact property and uses the active
+surface documented in `docs/architecture/fp-boundary.md`. The historical candidates below explain
+why the first POC avoided extra metadata before worker-owned PRs existed:
 
 - **`symphony_orchestrator_id`** — single-orchestrator assumption (D3) makes this redundant.
 - **`symphony_sandbox_id`** — recoverable from Daytona labels (sandboxes are labelled with

@@ -39,34 +39,35 @@ HOST                                                       SANDBOX
 ─────────────────────────────────────────────────────────  ──────────────────────────────
  1. fp.fetchCandidates → CandidateScan                       (n/a)
  2. selector.select   → toDispatch[0]                        (n/a)
- 3. state.claimEffect (running set)                          (n/a)
-    + Effect.addFinalizer(state.releaseEffect)
- 4. attempt = parseAttempt(properties.symphony_attempt) + 1
-    fp.claimIssue + fp.setAttempt + fp.addComment            (n/a)
- 5. integration.prepareSourceHandoff() OR                    (n/a)
+ 3. attempt = parseAttempt(properties.symphony_attempt) + 1  (n/a)
+ 4. integration.prepareSourceHandoff() OR                    (n/a)
     integration.prepareGithubCloneSourceHandoff()
     + Effect.addFinalizer(fs.remove(archivePath)) for archive only
- 6. prompt.renderPrompt({ issue, attempt })                  (n/a)
-    + Effect.addFinalizer(fs.remove(hostPath))
+ 5. host codex auth read                                     (n/a)
+ 6. state.claimEffect (running set)                          (n/a)
+    + Effect.addFinalizer(state.releaseEffect)
+    fp.claimIssue + fp.setAttempt                            (n/a)
  7. daytona.createSandbox({ snapshot, labels, envVars,         (sandbox boots)
       autoStopInterval, autoDeleteInterval })
- 8. daytona.uploadFiles([archive?, prompt, codex auth])        (files materialize)
+    + fp.setRunMetadata for githubClone
+ 8. prompt.renderPrompt(...) + worker env render for githubClone
+    + archive mode upload([archive, prompt, codex auth])         (files materialize)
  9. sandboxScripts.setupRepo(...) OR setupClone(...)           (archive init OR pinned remote clone)
+    + githubClone upload([prompt, codex auth, worker env])
 10. Effect.scoped(daytonaSession.start(handle,                 (codex app-server alive on stdio)
       "cd /workspace/repo && codex app-server"))
 11. runner.runTurn({ stream, prompt, cwd, turnTimeoutMs })     (turn runs, codex emits events)
    ── child scope closes here; ProtocolStream.close fires ──
 12. transcript.write(runDir, outcome.events)                 (n/a)
-13. sandboxScripts.finalizeBundle(handle, ...)                 (archive only; githubClone PR handoff pending)
+13. sandboxScripts.finalizeBundle(handle, ...)                 (archive only)
 14. daytona.downloadFiles([work.bundle, outcome.json])         (archive files leave the sandbox)
 15. workerOutcome = artifactStore.readOutcome(...)           (n/a)
 16. integration.integrateBundle(work.bundle, issueId)        (host git fetch + branch create)
 17. artifactStore.writeRecord(outcome-record.json)           (n/a)
-18. fp.markCompleted | fp.markNeedsAttention                 (n/a)
-    + fp.setArtifact on integrated paths
+18. fp.markCompleted | fp.markNeedsAttention                 (archive terminal writes)
 19. (finalizer) state.releaseEffect — running set entry freed
                                                              (sandbox left running; autoStop reaps)
-20. (finalizer) fs.remove(hostPath) + fs.remove(archivePath for archive only)
+20. (finalizer) fs.remove(prompt/env tempdirs) + fs.remove(archivePath for archive only)
 ```
 
 Source handoff now has two modes. `archive` preserves the original local handoff: host `HEAD`
@@ -83,39 +84,53 @@ Sandbox clone setup applies the same Git config-source sanitization before clone
 writes safe-directory into `/tmp/.symphony/gitconfig`; the Codex app-server command exports
 that path as `GIT_CONFIG_GLOBAL` and disables system/env Git config sources so later
 worker-side Git operations inherit the safe-directory setting without inheriting image-global
-credential config. Clone setup fetches the branch ref and the exact pinned SHA before checkout,
-so a branch move between host resolution and sandbox setup does not silently change the worker
-base. Clone setup writes `/tmp/.symphony/source.json` with the sanitized clone
+credential config. Clone setup also writes a persistent `/tmp/.symphony/git-askpass` script
+that reads `GITHUB_TOKEN` from the worker process environment; the token is supplied through a
+temporary `/tmp/.symphony/worker-env` bridge uploaded outside the repo and removed as the
+app-server session starts. Clone setup fetches the branch ref and the exact pinned SHA before
+checkout, so a branch move between host resolution and sandbox setup does not silently change
+the worker base. Clone setup writes `/tmp/.symphony/source.json` with the sanitized clone
 metadata (`repoUrl`, `baseBranch`, `baseSha`, `repoPath`, `branchName`) so the worker-owned PR
 workflow can create and push the deterministic branch without asking the orchestrator for more
-state. Until that worker-owned PR ticket replaces artifact return, a completed `githubClone`
-turn stops before bundle finalization with `PrArtifactNotImplemented`/F17. Non-completed
-`githubClone` turns also skip bundle salvage because there is no archive/bundle return channel
-for the remote PR strategy. This is an explicit red sequencing point: clone setup is available,
-but PR ownership is not falsely reported as done.
+state.
+
+For `githubClone`/PR runs, the orchestrator writes `symphony_branch`,
+`symphony_base_sha`, `symphony_run_id`, and `symphony_sandbox_id` at handoff, injects fp REST
+and GitHub credentials into the app-server process without rendering secrets into commands or
+prompts, and then stops after the worker turn completes. Until the fp no-clone property-write
+spike proves worker-side PR metadata writes, a completed worker turn records a local
+`needs-attention` gate reason rather than a false integrated result. It does not
+finalize/download bundles, decode `outcome.json`, integrate a host branch, or write
+`symphony_artifact`. Non-completed `githubClone` turns still skip bundle salvage because there is
+no archive/bundle return channel for the remote PR strategy; before parking the issue
+needs-attention, the orchestrator checks whether the worker already wrote terminal state and
+skips the fp write if it did.
 
 ### Adjacencies that must not change
 
-- **3 before 4.** State-claim's finalizer must register before the fp claim transition so
+- **6 before fp claim writes.** State-claim's finalizer must register before the fp claim transition so
   the running-set slot frees on every exit path (success / failure / interrupt) regardless
   of whether the fp write succeeded.
-- **5+6 before 7.** Both pre-claim ops can fail (F1, F2) and route to "log + skip" without
+- **4+5 before 6.** Pre-claim source preparation and host codex auth checks can fail and route to "log + skip" without
   ever entering the running set or writing fp. Sequential by default; parallelizing via
   `Effect.all` saves ~tens of ms but adds error-merging complexity not worth the v1 cost.
+- **7 before prompt render.** `githubClone` prompts include the actual Daytona sandbox id, so prompt
+  rendering happens after sandbox creation and failures route through post-claim setup handling.
 - **11 inside `Effect.scoped`, 12 outside it.** The codex session's Scope must close
   (releasing the SDK's WebSocket and the EXIT-trap watcher) before step 13's
   `executeCommand` for `finalizeBundle` runs. Sharing a scope would let `git bundle create`
   race against the still-open codex session inside the same shell.
 - **12 before 13.** `transcript.write` is buffered post-completion (G1 lock): writing the
   transcript before bundling means a finalize failure still leaves the conversation log
-  on disk for forensics. `githubClone` skips step 13 until the worker-owned PR handoff lands;
-  it must not fall back to archive/bundle salvage.
+  on disk for forensics. `githubClone` skips step 13 entirely and must not fall back to
+  archive/bundle salvage.
 - **15 before 16.** Worker-outcome decode failure is part of the integration-routing
   decision (F10: forensic branch with plain name). Decoding after integration would force
   a second integration pass.
-- **18 last fp write.** All other fp writes (claim, setAttempt, addComment) are
+- **18 last fp write for archive.** All other fp writes (claim, setAttempt, setRunMetadata,
+  addComment) are
   intermediate; `markCompleted`/`markNeedsAttention` is the terminal write that consumers
-  poll for state.
+  poll for state. In `githubClone`/PR mode, the worker owns later PR and terminal fp writes.
 
 ## Failure matrix
 
@@ -124,7 +139,7 @@ fp transition fires, what `symphony_last_error` string is set, and what is left 
 
 Three rules underlie the table:
 
-1. **Pre-claim failures** (F1, F2, F2b) never write fp. They log + skip + try the next
+1. **Pre-claim failures** (F1, F2b) never write fp. They log + skip + try the next
    candidate. State.ts isn't entered yet.
 2. **Post-claim failures** always release the running-set entry via the
    `addFinalizer(state.releaseEffect)` registered at step 3. Slot frees regardless of
@@ -136,15 +151,14 @@ Three rules underlie the table:
 
 | #   | Step                                                           | Error type (typed)                         | Issue claimed yet?             | fp transition                                                                                 | `symphony_last_error`                                                    |
 | --- | -------------------------------------------------------------- | ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| F1  | source handoff preparation (5)                                  | `GitCommandError`                          | **No** (fails before claim)    | None — log + skip                                                                             | n/a                                                                      |
-| F2  | `renderPrompt` (6)                                             | `WorkerPromptError`                        | **No**                         | None                                                                                          | n/a                                                                      |
-| F2b | host `auth.json` missing (pre-step-7 read)                     | `MissingCodexAuthError`                    | **No**                         | None — log + skip; orchestrator-level operator alert                                          | n/a                                                                      |
+| F1  | source handoff preparation (4)                                  | `GitCommandError`                          | **No** (fails before claim)    | None — log + skip                                                                             | n/a                                                                      |
+| F2b | host `auth.json` missing (5)                                    | `MissingCodexAuthError`                    | **No**                         | None — log + skip; orchestrator-level operator alert                                          | n/a                                                                      |
 | F3  | `daytona.createSandbox` (7)                                    | `DaytonaSandboxCreateError`                | **Yes** (claim before sandbox) | `markNeedsAttention`                                                                          | `"sandbox create failed: <reason head>"`                                 |
-| F4  | `daytona.uploadFiles` (8)                                      | `DaytonaSandbox{NotFound,Op}Error`         | Yes                            | `markNeedsAttention`                                                                          | `"sandbox upload failed: <reason head>"`                                 |
+| F4  | `renderPrompt`, worker env render, or `daytona.uploadFiles` (8) | `WorkerPromptError` / FS / `DaytonaSandbox*` | Yes                          | `markNeedsAttention`                                                                          | `"worker prompt render failed..."`, `"worker env render failed..."`, or `"sandbox upload failed..."` |
 | F5  | `sandboxScripts.setupRepo` / `setupClone` (9)                  | `SandboxScriptError \| DaytonaSandbox*`    | Yes                            | `markNeedsAttention`                                                                          | `"sandbox setup failed: <reason head>"`                                  |
 | F6  | `daytonaSession.start` (10)                                    | `DaytonaSessionStartError`                 | Yes                            | `markNeedsAttention`                                                                          | `"codex app-server start failed: <reason head>"`                         |
-| F7  | `runner.runTurn` returns non-`completed` `TurnOutcome` (11)    | none — outcome union                       | Yes                            | `markNeedsAttention`; archive mode does **best-effort** finalize+download for forensics; `githubClone` skips bundle salvage | `"protocol stream <kind>: <reason head>"`                                |
-| F7b | `runner.runTurn` errors (timeout, framing, send)               | `RunnerError`                              | Yes                            | same as F7                                                                                    | `"protocol stream error: <reason head>"`                                 |
+| F7  | `runner.runTurn` returns non-`completed` `TurnOutcome` (11)    | none — outcome union                       | Yes                            | `markNeedsAttention`; archive mode does **best-effort** finalize+download for forensics; `githubClone` skips bundle salvage and skips fp write if worker already wrote terminal state | `"protocol stream <kind>: <reason head>"`                                |
+| F7b | `runner.runTurn` errors (timeout, framing, send)               | `RunnerError`                              | Yes                            | same as F7, including the conditional `githubClone` terminal-state skip                       | `"protocol stream error: <reason head>"`                                 |
 | F8  | `sandboxScripts.finalizeBundle` (13)                           | `SandboxScriptError`                       | Yes                            | `markNeedsAttention`                                                                          | `"bundle finalize failed: <reason head>"`                                |
 | F9  | `daytona.downloadFiles` (14)                                   | `DaytonaSandbox*`                          | Yes                            | `markNeedsAttention`                                                                          | `"artifact download failed: <reason head>"`                              |
 | F10 | `artifactStore.readOutcome` (15) — file missing or decode fail | `ArtifactPathError \| ArtifactDecodeError` | Yes                            | `markNeedsAttention`; integrate bundle anyway (forensic branch with plain name)               | `"malformed worker outcome"`                                             |
@@ -154,8 +168,6 @@ Three rules underlie the table:
 | F14 | `artifactStore.writeRecord` (17)                               | `ArtifactPathError \| ArtifactDecodeError` | Yes                            | `markNeedsAttention`                                                                          | `"orchestrator record write failed: <reason head>"`                      |
 | F15 | terminal fp write (18)                                         | `WriteError` → `FpWriteFailedError`        | Yes                            | retry once, then log + leave issue in `in-progress` (no recovery in v1)                       | n/a (best-effort)                                                        |
 | F16 | SIGINT/SIGTERM (any time after claim)                          | `Interrupt`                                | Yes                            | `markNeedsAttention` (locked)                                                                 | `"orchestrator interrupted by signal"`                                   |
-| F17 | `githubClone` turn completed before worker-owned PR support    | none — explicit sequencing gate            | Yes                            | `markNeedsAttention`; skip bundle finalization, host integration, and `symphony_artifact`      | `"githubClone PR artifact workflow is not implemented until the worker PR ticket"` |
-
 ## Scope tree (Option 1)
 
 `runOne` opens **one outer scope** that owns the running-set release finalizer plus the two

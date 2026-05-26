@@ -21,27 +21,36 @@ Cross-links:
 ## Custom property surface
 
 Lifted from the umbrella spec; the source-of-truth is the extension at
-`.fp/extensions/symphony-state.ts`. Five properties, no more:
+`.fp/extensions/symphony-state.ts`. The active Switchyard surface is:
 
 | Property              | Type                                                         | Writer           | Meaning                                                                            |
 | --------------------- | ------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------- |
 | `symphony_ready`      | select `"true"` / `"false"`                                  | human or planner | Explicit dispatch gate.                                                            |
 | `symphony_state`      | select `"idle"` / `"active"` / `"end"` / `"needs-attention"` | orchestrator     | Coarse human-glance runtime hint. **Not authoritative; not read for correctness.** |
 | `symphony_attempt`    | text (numeric)                                               | orchestrator     | Current attempt number.                                                            |
-| `symphony_artifact`   | text                                                         | orchestrator     | Integration branch name (e.g. `symphony/SWYRD-abc123`) and/or local artifact path. |
 | `symphony_last_error` | text                                                         | orchestrator     | Last normalized failure reason.                                                    |
+| `symphony_branch`     | text                                                         | worker/orchestrator | Deterministic branch for remote PR handoff.                                      |
+| `symphony_pr_url`     | text                                                         | worker           | GitHub PR URL opened by the sandbox worker.                                        |
+| `symphony_pr_number`  | text                                                         | worker           | GitHub PR number as text.                                                          |
+| `symphony_base_sha`   | text                                                         | orchestrator/worker | Pinned base SHA used to create the branch.                                      |
+| `symphony_head_sha`   | text                                                         | worker           | Pushed branch HEAD SHA.                                                            |
+| `symphony_run_id`     | text                                                         | orchestrator/worker | Switchyard run identifier for logs/fp correlation.                              |
+| `symphony_sandbox_id` | text                                                         | orchestrator/worker | Daytona sandbox id for forensic lookup.                                         |
 
 Decoded from `FpIssueDetail.properties` (open record) by `decodeSymphonyProperties` in
 `symphony-properties.ts`. Decoding is **lenient on unknown keys** (extras dropped) and
 **strict on invalid known-key literals** (returns `Left<DecodeFailureReason>`). Locked
 defaults match decision-table row 3 — absent `symphony_state` reads as `"idle"`, absent
-`symphony_ready` reads as `"false"`.
+`symphony_ready` reads as `"false"`. The retired `symphony_artifact` property is rejected
+when present; this POC does not preserve the old bundle artifact channel.
 
 ## Writer boundary (per ADR D4)
 
-The orchestrator is the **sole** `fp` writer. The worker holds no `fp` credentials; the
-sandbox boundary is the trust boundary. Worker intent reaches `fp` only through the
-orchestrator's translation of `outcome.json`.
+For archive-mode legacy runs, the orchestrator remains the fp writer and translates
+`outcome.json` into terminal state. For `githubClone`/PR runs, the orchestrator writes
+pre-handoff metadata (`symphony_branch`, `symphony_base_sha`, `symphony_run_id`,
+`symphony_sandbox_id`) and then the sandbox worker owns PR metadata and terminal workflow
+updates through fp REST no-clone mode.
 
 ## Eligibility decision table
 

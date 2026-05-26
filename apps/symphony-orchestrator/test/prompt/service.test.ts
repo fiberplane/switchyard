@@ -98,6 +98,9 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
             repoPath: "/workspace/repo",
             branchName: "symphony/SWYRD-abc123",
             metadataPath: "/tmp/.symphony/source.json",
+            runId: "swy-swyrd-abc123-1",
+            sandboxId: "sb-123",
+            fpRestWorkdir: "/tmp/.symphony/fp-rest",
           },
         });
       }),
@@ -107,8 +110,14 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     expect(result.content).toContain("0123456789abcdef0123456789abcdef01234567");
     expect(result.content).toContain("symphony/SWYRD-abc123");
     expect(result.content).toContain("/tmp/.symphony/source.json");
-    expect(result.content).toContain("temporary `githubClone` tracer");
-    expect(result.content).toContain("PrArtifactNotImplemented");
+    expect(result.content).toContain("swy-swyrd-abc123-1");
+    expect(result.content).toContain("sb-123");
+    expect(result.content).toContain("FP_REMOTE=rest-api");
+    expect(result.content).toContain("gh pr create");
+    expect(result.content).toContain("symphony_pr_url");
+    expect(result.content).toContain("babysit");
+    expect(result.content).not.toContain("PrArtifactNotImplemented");
+    expect(result.content).not.toContain("outcome.json");
     expect(result.content).not.toContain("symphony-base");
     expect(result.content).not.toContain("git bundle");
     expect(result.content).not.toContain("no `fp` credentials");

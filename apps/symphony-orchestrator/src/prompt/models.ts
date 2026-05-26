@@ -32,6 +32,9 @@ export type WorkerPromptInput = {
         readonly repoPath: string;
         readonly branchName: string;
         readonly metadataPath: string;
+        readonly runId: string;
+        readonly sandboxId: string;
+        readonly fpRestWorkdir: string;
       };
 };
 
@@ -56,5 +59,6 @@ export type WorkerPromptVars = {
   readonly boundaryInstructions: string;
   readonly workInstructions: string;
   readonly outcomeInstructions: string;
+  readonly outcomeBody: string;
   readonly summaryInstructions: string;
 };

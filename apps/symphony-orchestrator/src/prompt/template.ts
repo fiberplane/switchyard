@@ -20,6 +20,7 @@ const VAR_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 //   - boundaryInstructions — source-strategy-specific worker ownership limits
 //   - workInstructions — source-strategy-specific work and artifact guidance
 //   - outcomeInstructions — source-strategy-specific outcome envelope preface
+//   - outcomeBody — source-strategy-specific durable outcome requirements
 //   - summaryInstructions — source-strategy-specific summary persistence note
 export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a Daytona sandbox for issue {{issueDisplayId}}: "{{issueTitle}}".
 
@@ -30,7 +31,7 @@ export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a D
 ## Workspace
 
 {{sourceInstructions}}
-- The directory \`/tmp/.symphony/\` is pre-created for you by the orchestrator before your turn starts. Write your outcome envelope there (see below).
+- The directory \`/tmp/.symphony/\` is pre-created for you by the orchestrator before your turn starts.
 
 ## Boundaries
 
@@ -44,19 +45,7 @@ export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a D
 
 {{outcomeInstructions}}
 
-\`\`\`json
-{
-  "status": "completed" | "blocked" | "needs-human" | "failed",
-  "summary": "<markdown narrative — what you did, why, and any caveats>"
-}
-\`\`\`
-
-Pick \`status\` deliberately:
-
-- \`"completed"\` only if you believe the work is fully done and ready for a human to review the resulting branch.
-- \`"blocked"\` if a precondition you cannot satisfy stops you.
-- \`"needs-human"\` if the work is partially done but you are uncertain.
-- \`"failed"\` if you tried and could not produce useful output.
+{{outcomeBody}}
 
 {{summaryInstructions}}
 `;

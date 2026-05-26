@@ -65,7 +65,7 @@ export const toDaytonaConfig = (
 
 export const toOrchestratorConfig = (
   cfg: WorkflowConfig,
-  hostConfig: Pick<HostRuntimeConfig, "github" | "codex">,
+  hostConfig: Pick<HostRuntimeConfig, "github" | "codex" | "fpRest">,
 ): OrchestratorServiceConfig => {
   const source =
     cfg.sandbox.sourceStrategy === "archive"
@@ -87,6 +87,22 @@ export const toOrchestratorConfig = (
     codexAuthHostPath: hostConfig.codex.authPath ?? path.join(homedir(), ".codex/auth.json"),
     repoPath: cfg.sandbox.repoPath,
     source,
+    fpRest: {
+      remote: "rest-api",
+      ...(hostConfig.fpRest.token === undefined ? {} : { token: hostConfig.fpRest.token }),
+      ...(hostConfig.fpRest.serverUrl === undefined
+        ? {}
+        : { serverUrl: hostConfig.fpRest.serverUrl }),
+      ...(hostConfig.fpRest.workspace === undefined
+        ? {}
+        : { workspace: hostConfig.fpRest.workspace }),
+      ...(hostConfig.fpRest.projectId === undefined
+        ? {}
+        : { projectId: hostConfig.fpRest.projectId }),
+      ...(hostConfig.fpRest.projectPrefix === undefined
+        ? {}
+        : { projectPrefix: hostConfig.fpRest.projectPrefix }),
+    },
   };
 };
 

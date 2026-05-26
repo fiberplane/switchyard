@@ -10,7 +10,7 @@
 // Outcome assertions (cycle 13c happy path):
 // - host repo gains `symphony/<issueId>` branch
 // - `.symphony/runs/<id>/<attempt>/outcome-record.json` exists with status=integrated
-// - fp issue transitions to `done` with `symphony_artifact=symphony/<id>`
+// - fp issue transitions to `done`
 //
 // Cycle 13d (re-arm flow):
 // - Seed `symphony_attempt=1`, `symphony_state=needs-attention` on the same
@@ -104,6 +104,7 @@ const baseConfig = (
   codexAuthHostPath: CODEX_AUTH_PATH,
   repoPath: "/workspace/repo",
   source: { kind: "archive" },
+  fpRest: { remote: "rest-api" },
   ...overrides,
 });
 

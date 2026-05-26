@@ -110,7 +110,15 @@ export class IntegrationFailedError extends Data.TaggedError("IntegrationFailedE
 export class SandboxSetupError extends Data.TaggedError("SandboxSetupError")<{
   readonly issueId: string;
   readonly attempt: number;
-  readonly stage: "setup" | "finalize" | "create" | "upload" | "download" | "session-start";
+  readonly stage:
+    | "setup"
+    | "finalize"
+    | "create"
+    | "upload"
+    | "download"
+    | "session-start"
+    | "render-prompt"
+    | "render-worker-env";
   readonly reason: string;
 }> {
   get message(): string {
@@ -131,7 +139,7 @@ export class UnparseableAttemptError extends Data.TaggedError("UnparseableAttemp
 }
 
 // fp write (claim / setAttempt / addComment / markCompleted /
-// markNeedsAttention / setArtifact) failed underlyingly (binary missing,
+// markNeedsAttention / setRunMetadata) failed underlyingly (binary missing,
 // command failed). §7b F15: retry once, then log + leave issue in
 // `in-progress`. v1 surfaces the wrapped error so the integration test can
 // assert on a single tag.

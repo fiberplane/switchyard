@@ -219,12 +219,17 @@ describe("FpService — atomic writes via updateIssue", () => {
     assertNoLegacyWrites(fake.calls);
   });
 
-  test("setArtifact invokes updateIssue with only symphony_artifact", async () => {
+  test("setRunMetadata invokes updateIssue with run and sandbox properties", async () => {
     await provideService(
       fake,
       Effect.gen(function* () {
         const service = yield* FpService;
-        yield* service.setArtifact("issue-id", "symphony/SWY-id");
+        yield* service.setRunMetadata("issue-id", {
+          branch: "symphony/SWY-id",
+          baseSha: "0123456789abcdef0123456789abcdef01234567",
+          runId: "swy-swy-id-1",
+          sandboxId: "sb-123",
+        });
       }),
     );
 
@@ -232,7 +237,51 @@ describe("FpService — atomic writes via updateIssue", () => {
       {
         method: "updateIssue",
         id: "issue-id",
-        input: { properties: { symphony_artifact: "symphony/SWY-id" } },
+        input: {
+          properties: {
+            symphony_branch: "symphony/SWY-id",
+            symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+            symphony_run_id: "swy-swy-id-1",
+            symphony_sandbox_id: "sb-123",
+          },
+        },
+      },
+    ]);
+    assertNoLegacyWrites(fake.calls);
+  });
+
+  test("setPrMetadata invokes updateIssue with canonical PR properties", async () => {
+    await provideService(
+      fake,
+      Effect.gen(function* () {
+        const service = yield* FpService;
+        yield* service.setPrMetadata("issue-id", {
+          branch: "symphony/SWY-id",
+          prUrl: "https://github.com/fiberplane/switchyard/pull/123",
+          prNumber: "123",
+          baseSha: "0123456789abcdef0123456789abcdef01234567",
+          headSha: "89abcdef0123456789abcdef0123456789abcdef",
+          runId: "swy-swy-id-1",
+          sandboxId: "sb-123",
+        });
+      }),
+    );
+
+    expect(fake.calls).toEqual([
+      {
+        method: "updateIssue",
+        id: "issue-id",
+        input: {
+          properties: {
+            symphony_branch: "symphony/SWY-id",
+            symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+            symphony_pr_number: "123",
+            symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+            symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+            symphony_run_id: "swy-swy-id-1",
+            symphony_sandbox_id: "sb-123",
+          },
+        },
       },
     ]);
     assertNoLegacyWrites(fake.calls);

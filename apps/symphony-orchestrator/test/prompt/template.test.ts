@@ -32,6 +32,21 @@ const baseVars = {
   ].join("\n"),
   outcomeInstructions:
     "**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` with this exact shape and no extra fields:",
+  outcomeBody: [
+    "```json",
+    "{",
+    '  "status": "completed" | "blocked" | "needs-human" | "failed",',
+    '  "summary": "<markdown narrative — what you did, why, and any caveats>"',
+    "}",
+    "```",
+    "",
+    "Pick `status` deliberately:",
+    "",
+    '- `"completed"` only if you believe the work is fully done and ready for a human to review the resulting branch.',
+    '- `"blocked"` if a precondition you cannot satisfy stops you.',
+    '- `"needs-human"` if the work is partially done but you are uncertain.',
+    '- `"failed"` if you tried and could not produce useful output.',
+  ].join("\n"),
   summaryInstructions:
     "The `summary` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose.",
 };
@@ -103,6 +118,7 @@ describe("renderTemplate / snapshot", () => {
       boundaryInstructions: baseVars.boundaryInstructions,
       workInstructions: baseVars.workInstructions,
       outcomeInstructions: baseVars.outcomeInstructions,
+      outcomeBody: baseVars.outcomeBody,
       summaryInstructions: baseVars.summaryInstructions,
     });
 

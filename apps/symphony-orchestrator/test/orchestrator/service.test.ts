@@ -5,12 +5,16 @@
 // the runner can swap in a stub AgentRunner via wire().
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
 import { Layer } from "effect";
 
 import { ArtifactDecodeError } from "../../src/artifact/errors.js";
+import { SYMPHONY_PROPERTIES_DEFAULTS } from "../../src/fp/symphony-properties.js";
 import {
   OrchestratorService,
   type OrchestratorServiceConfig,
@@ -36,6 +40,14 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   codexAuthHostPath,
   repoPath: "/workspace/repo",
   source: { kind: "archive" },
+  fpRest: {
+    remote: "rest-api",
+    token: "fp-token-that-must-not-render",
+    serverUrl: "https://fp.example.test",
+    workspace: "workspace-id",
+    projectId: "project-id",
+    projectPrefix: "SWYRD",
+  },
 });
 
 // Codex protocol responses the runner expects: initialize ack (sendIndex=0),
@@ -134,7 +146,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       "setAttempt",
       "addComment", // dispatched
       "addComment", // integrating
-      "setArtifact",
       "markCompleted",
     ]);
 
@@ -151,11 +162,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     const setAttempt = fp.calls.find((call) => call.kind === "setAttempt");
     if (setAttempt?.kind === "setAttempt") {
       expect(setAttempt.attempt).toBe(1);
-    }
-
-    const setArtifact = fp.calls.find((call) => call.kind === "setArtifact");
-    if (setArtifact?.kind === "setArtifact") {
-      expect(setArtifact.path).toBe("symphony/happy");
     }
 
     // Step 8 batched upload: archive + prompt + codex auth in a single call.
@@ -231,7 +237,10 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     );
 
     expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toContain("githubClone PR artifact workflow is not implemented");
+    expect(result.lastError).toBe(
+      "worker-owned PR completion is gated until fp no-clone property writes are verified",
+    );
+    expect(result.branch).toBe("symphony/clone");
     expect(integration.prepareCalls()).toBe(0);
     expect(integration.prepareGithubCloneCalls()).toEqual([
       {
@@ -246,11 +255,24 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     if (upload?.kind !== "uploadFiles") {
       throw new Error("expected uploadFiles call");
     }
-    expect(upload.files.map((file) => file.dst)).toEqual(["/tmp/prompt.md", "/tmp/auth.json"]);
+    expect(upload.files.map((file) => file.dst)).toEqual([
+      "/tmp/prompt.md",
+      "/tmp/auth.json",
+      "/tmp/.symphony/worker-env",
+    ]);
     expect(JSON.stringify(upload.files)).not.toContain("repo.tgz");
-    expect(session.starts()[0]?.command).toBe(
-      "export GIT_CONFIG_GLOBAL='/tmp/.symphony/gitconfig'; export GIT_CONFIG_SYSTEM=/dev/null; export GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_COUNT=0; unset GIT_CONFIG_PARAMETERS || true; cd '/workspace/repo' && codex app-server",
-    );
+    const command = session.starts()[0]?.command ?? "";
+    expect(command).toContain(". '/tmp/.symphony/worker-env'");
+    expect(command).toContain("rm -f '/tmp/.symphony/worker-env'");
+    expect(command).toContain("cd '/workspace/repo' && codex app-server");
+    expect(command).not.toContain("github-token-that-must-not-render");
+    expect(command).not.toContain("fp-token-that-must-not-render");
+    const promptFrames = JSON.stringify(session.sent());
+    expect(promptFrames).toContain("symphony_pr_url");
+    expect(promptFrames).toContain("swy-swy-clone-1");
+    expect(promptFrames).toContain("sb-test-1");
+    expect(promptFrames).not.toContain("github-token-that-must-not-render");
+    expect(promptFrames).not.toContain("fp-token-that-must-not-render");
     expect(setupCloneCalls).toEqual([
       {
         repoUrl: "https://github.com/fiberplane/switchyard.git",
@@ -263,7 +285,163 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       },
     ]);
     expect(integration.integrateCalls()).toEqual([]);
-    expect(fp.calls.some((call) => call.kind === "setArtifact")).toBe(false);
+    expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
+    expect(fp.calls.find((call) => call.kind === "setRunMetadata")).toEqual({
+      kind: "setRunMetadata",
+      id: "clone",
+      metadata: {
+        branch: "symphony/clone",
+        baseSha: "0123456789abcdef0123456789abcdef01234567",
+        runId: "swy-swy-clone-1",
+        sandboxId: "sb-test-1",
+      },
+    });
+    expect(
+      daytona.calls.some(
+        (call) =>
+          call.kind === "executeCommand" && call.command === "rm -f '/tmp/.symphony/worker-env'",
+      ),
+    ).toBe(true);
+    expect(
+      daytona.calls.some(
+        (call) =>
+          call.kind === "executeCommand" &&
+          call.command.includes("chmod 600") &&
+          call.command.includes("worker-env"),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(fp.calls)).not.toContain("symphony_artifact");
+  });
+
+  test("githubClone transcript redacts fp and github tokens", async () => {
+    const issue = fixtureEligible("clone-redact");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: [] });
+    const integration = makeIntegrationMock({});
+    const artifactRoot = mkdtempSync(join(tmpdir(), "swy-artifact-"));
+    const artifact = makeArtifactStoreMock(artifactRoot);
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+        githubToken: "github-token-that-must-not-render",
+      },
+    };
+    const stubRunner = Layer.succeed(
+      AgentRunner,
+      makeStubAgentRunner({
+        kind: "completed",
+        result: {},
+        events: [
+          {
+            method: "worker/log",
+            params: {
+              message:
+                "github-token-that-must-not-render fp-token-that-must-not-render should redact",
+            },
+          } as never,
+        ],
+      }),
+    );
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const orch = yield* OrchestratorService;
+          return yield* orch.runOne(issue);
+        }).pipe(
+          Effect.provide(
+            wire({
+              fp,
+              daytona,
+              session,
+              integration,
+              artifact,
+              config,
+              agentRunner: stubRunner,
+              sandboxScripts: {
+                setupRepo: () => {
+                  throw new Error("archive setup must not run for githubClone");
+                },
+                setupClone: () => Effect.void,
+                finalizeBundle: () => Effect.dieMessage("githubClone must not finalize a bundle"),
+              },
+            }),
+          ),
+        ),
+      );
+
+      const transcript = readFileSync(
+        join(artifactRoot, "runs", "clone-redact", "1", "transcript.jsonl"),
+        "utf8",
+      );
+      expect(transcript).not.toContain("github-token-that-must-not-render");
+      expect(transcript).not.toContain("fp-token-that-must-not-render");
+      expect(transcript).toContain("[redacted]");
+    } finally {
+      rmSync(artifactRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("githubClone setup failure does not upload the secret worker env bridge", async () => {
+    const { SandboxScriptError } = await import("../../src/sandbox-scripts/errors.js");
+    const issue = fixtureEligible("clone-setup-fail");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: [] });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+        githubToken: "github-token-that-must-not-render",
+      },
+    };
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () =>
+                Effect.fail(
+                  new SandboxScriptError({
+                    operation: "setupClone",
+                    command: "git clone",
+                    exitCode: 1,
+                    stderr: "clone failed",
+                  }),
+                ),
+              finalizeBundle: () => Effect.dieMessage("githubClone must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("sandbox setup failed: clone failed");
+    expect(daytona.calls.some((call) => call.kind === "uploadFiles")).toBe(false);
   });
 });
 
@@ -798,6 +976,76 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
     expect(result.lastError).toBe("protocol stream failed: model error: capacity exceeded");
     expect(integration.integrateCalls()).toEqual([]);
     expect(daytona.calls.some((call) => call.kind === "downloadFiles")).toBe(false);
-    expect(fp.calls.some((call) => call.kind === "setArtifact")).toBe(false);
+    expect(JSON.stringify(fp.calls)).not.toContain("symphony_artifact");
+  });
+
+  test("githubClone non-completed turn does not overwrite worker terminal needs-attention", async () => {
+    const issue = fixtureEligible("clone-terminal");
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed({
+          status: "in-progress",
+          properties: {
+            ...SYMPHONY_PROPERTIES_DEFAULTS,
+            symphony_state: "needs-attention",
+            symphony_branch: "symphony/clone-terminal",
+            symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+            symphony_pr_number: "123",
+            symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+          },
+        }),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+        githubToken: "github-token-that-must-not-render",
+      },
+    };
+    const stubRunner = Layer.succeed(
+      AgentRunner,
+      makeStubAgentRunner({
+        kind: "failed",
+        reason: "model error after worker already finished",
+        events: [],
+      }),
+    );
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            agentRunner: stubRunner,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () => Effect.void,
+              finalizeBundle: () => Effect.dieMessage("githubClone F7 must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(fp.calls.some((call) => call.kind === "fetchIssueState")).toBe(true);
+    expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
   });
 });

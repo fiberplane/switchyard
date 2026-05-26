@@ -10,8 +10,14 @@ export type SymphonyProperties = {
   readonly symphony_state: SymphonyState;
   readonly symphony_ready: SymphonyReady;
   readonly symphony_attempt: string | undefined;
-  readonly symphony_artifact: string | undefined;
   readonly symphony_last_error: string | undefined;
+  readonly symphony_branch: string | undefined;
+  readonly symphony_pr_url: string | undefined;
+  readonly symphony_pr_number: string | undefined;
+  readonly symphony_base_sha: string | undefined;
+  readonly symphony_head_sha: string | undefined;
+  readonly symphony_run_id: string | undefined;
+  readonly symphony_sandbox_id: string | undefined;
 };
 
 // Locked defaults match the eligibility decision-table row 3 ("idle" + "false" = not gated).
@@ -20,16 +26,29 @@ export const SYMPHONY_PROPERTIES_DEFAULTS: SymphonyProperties = {
   symphony_state: "idle",
   symphony_ready: "false",
   symphony_attempt: undefined,
-  symphony_artifact: undefined,
   symphony_last_error: undefined,
+  symphony_branch: undefined,
+  symphony_pr_url: undefined,
+  symphony_pr_number: undefined,
+  symphony_base_sha: undefined,
+  symphony_head_sha: undefined,
+  symphony_run_id: undefined,
+  symphony_sandbox_id: undefined,
 };
 
 export type DecodeFailureReason =
   | "invalid-symphony-state"
   | "invalid-symphony-ready"
   | "invalid-symphony-attempt"
-  | "invalid-symphony-artifact"
-  | "invalid-symphony-last-error";
+  | "forbidden-symphony-artifact"
+  | "invalid-symphony-last-error"
+  | "invalid-symphony-branch"
+  | "invalid-symphony-pr-url"
+  | "invalid-symphony-pr-number"
+  | "invalid-symphony-base-sha"
+  | "invalid-symphony-head-sha"
+  | "invalid-symphony-run-id"
+  | "invalid-symphony-sandbox-id";
 
 const decodeLiteral = <A>(
   schema: Schema.Schema<A, A>,
@@ -74,9 +93,8 @@ export const decodeSymphonyProperties = (
     return Either.left(attempt.left);
   }
 
-  const artifact = decodeOptionalString(open["symphony_artifact"], "invalid-symphony-artifact");
-  if (Either.isLeft(artifact)) {
-    return Either.left(artifact.left);
+  if (open["symphony_artifact"] !== undefined) {
+    return Either.left("forbidden-symphony-artifact");
   }
 
   const lastError = decodeOptionalString(
@@ -87,11 +105,55 @@ export const decodeSymphonyProperties = (
     return Either.left(lastError.left);
   }
 
+  const branch = decodeOptionalString(open["symphony_branch"], "invalid-symphony-branch");
+  if (Either.isLeft(branch)) {
+    return Either.left(branch.left);
+  }
+
+  const prUrl = decodeOptionalString(open["symphony_pr_url"], "invalid-symphony-pr-url");
+  if (Either.isLeft(prUrl)) {
+    return Either.left(prUrl.left);
+  }
+
+  const prNumber = decodeOptionalString(open["symphony_pr_number"], "invalid-symphony-pr-number");
+  if (Either.isLeft(prNumber)) {
+    return Either.left(prNumber.left);
+  }
+
+  const baseSha = decodeOptionalString(open["symphony_base_sha"], "invalid-symphony-base-sha");
+  if (Either.isLeft(baseSha)) {
+    return Either.left(baseSha.left);
+  }
+
+  const headSha = decodeOptionalString(open["symphony_head_sha"], "invalid-symphony-head-sha");
+  if (Either.isLeft(headSha)) {
+    return Either.left(headSha.left);
+  }
+
+  const runId = decodeOptionalString(open["symphony_run_id"], "invalid-symphony-run-id");
+  if (Either.isLeft(runId)) {
+    return Either.left(runId.left);
+  }
+
+  const sandboxId = decodeOptionalString(
+    open["symphony_sandbox_id"],
+    "invalid-symphony-sandbox-id",
+  );
+  if (Either.isLeft(sandboxId)) {
+    return Either.left(sandboxId.left);
+  }
+
   return Either.right({
     symphony_state: state.right,
     symphony_ready: ready.right,
     symphony_attempt: attempt.right,
-    symphony_artifact: artifact.right,
     symphony_last_error: lastError.right,
+    symphony_branch: branch.right,
+    symphony_pr_url: prUrl.right,
+    symphony_pr_number: prNumber.right,
+    symphony_base_sha: baseSha.right,
+    symphony_head_sha: headSha.right,
+    symphony_run_id: runId.right,
+    symphony_sandbox_id: sandboxId.right,
   });
 };

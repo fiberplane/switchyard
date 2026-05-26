@@ -30,8 +30,8 @@ describe("decodeSymphonyProperties", () => {
       expect(result.right.symphony_state).toBe("active");
       expect(result.right.symphony_ready).toBe("true");
       expect(result.right.symphony_attempt).toBe("3");
-      expect(result.right.symphony_artifact).toBeUndefined();
       expect(result.right.symphony_last_error).toBeUndefined();
+      expect(result.right.symphony_branch).toBeUndefined();
       // Unknown keys are dropped — only the known typed surface is exposed.
       expect("unknown_key" in result.right).toBe(false);
     }
@@ -64,13 +64,30 @@ describe("decodeSymphonyProperties", () => {
     }
   });
 
+  test("rejects the retired symphony_artifact property", () => {
+    const result = decodeSymphonyProperties({
+      symphony_artifact: "symphony/SWY-abc123",
+    });
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toBe("forbidden-symphony-artifact");
+    }
+  });
+
   test("decodes the full symphony surface from a real-shaped property bag", () => {
     const result = decodeSymphonyProperties({
       symphony_state: "needs-attention",
       symphony_ready: "true",
       symphony_attempt: "2",
-      symphony_artifact: "symphony/SWY-abc123",
       symphony_last_error: "bundle integration failed: refs missing",
+      symphony_branch: "symphony/SWY-abc123",
+      symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+      symphony_pr_number: "123",
+      symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+      symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+      symphony_run_id: "swy-swyrd-abc123-1",
+      symphony_sandbox_id: "sb-123",
     });
 
     expect(Either.isRight(result)).toBe(true);
@@ -79,8 +96,14 @@ describe("decodeSymphonyProperties", () => {
         symphony_state: "needs-attention",
         symphony_ready: "true",
         symphony_attempt: "2",
-        symphony_artifact: "symphony/SWY-abc123",
         symphony_last_error: "bundle integration failed: refs missing",
+        symphony_branch: "symphony/SWY-abc123",
+        symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+        symphony_pr_number: "123",
+        symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+        symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+        symphony_run_id: "swy-swyrd-abc123-1",
+        symphony_sandbox_id: "sb-123",
       });
     }
   });

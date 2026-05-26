@@ -48,7 +48,8 @@ const sourceInstructions = (input: WorkerPromptInput): string => {
     `- The local repo is \`${input.source.repoPath}\`. Start there.`,
     `- The repo was cloned from \`${input.source.repoUrl}\` and checked out at pinned base SHA \`${input.source.baseSha}\` from \`${input.source.baseBranch}\`.`,
     `- Clone metadata is available at \`${input.source.metadataPath}\` as JSON, including the deterministic worker branch \`${input.source.branchName}\`.`,
-    "- Leave `origin` credential-free; clone credentials were process-scoped by the orchestrator.",
+    `- This run id is \`${input.source.runId}\`; the Daytona sandbox id is \`${input.source.sandboxId}\`.`,
+    "- Leave `origin` credential-free; GitHub access is provided through `GH_TOKEN`/`GITHUB_TOKEN` plus `GIT_ASKPASS` in the worker process environment.",
   ].join("\n");
 };
 
@@ -62,9 +63,10 @@ const boundaryInstructions = (input: WorkerPromptInput): string => {
   }
 
   return [
-    "- This is the temporary `githubClone` tracer before worker-owned PR support lands.",
-    "- Do not push branches, open PRs, or write `fp` state from this run; ticket 4 owns that workflow.",
-    "- The orchestrator will mark the run needs-attention with `PrArtifactNotImplemented` after your completed turn. That is expected at this migration stage.",
+    "- You own durable task state after the orchestrator handoff. Use `fp` from a non-repo workdir with the REST remote, then use `gh` to open and babysit the PR.",
+    `- Run fp commands from \`${input.source.fpRestWorkdir}\`, not from the cloned repository. The worker environment provides \`FP_REMOTE=rest-api\`, \`FP_TOKEN\`, \`FP_SERVER_URL\`, \`FP_WORKSPACE\`, and \`FP_PROJECT_ID\` when configured.`,
+    "- Do not run `gh auth login`. Use the provided `GH_TOKEN`/`GITHUB_TOKEN` environment variables. If you must isolate gh config, create a temporary `GH_CONFIG_DIR` and remove it before diagnostics.",
+    "- Do not write credentials to repo files, shell profiles, fp comments, PR bodies, logs, transcripts, or diagnostics.",
   ].join("\n");
 };
 
@@ -78,21 +80,53 @@ const workInstructions = (input: WorkerPromptInput): string => {
   }
 
   return [
-    "- Verify the cloned checkout and source metadata, then write the outcome envelope.",
-    "- Do not make durable task changes in this migration stage; there is no PR artifact egress yet.",
-    "- You may run read-only diagnostics such as `git status`, `git rev-parse HEAD`, and `cat /tmp/.symphony/source.json`.",
+    `- Create or reset local branch \`${input.source.branchName}\` from pinned base SHA \`${input.source.baseSha}\`, then make the requested changes there.`,
+    "- Follow the repo's fp workflow: inspect context, comment useful milestones, implement, verify, request an adversarial review, address findings, and keep commits associated with the fp issue.",
+    "- Push the branch to GitHub with git using `GIT_ASKPASS`; do not put tokens in the remote URL.",
+    "- Open a non-draft PR with `gh pr create`, then babysit checks and review comments until the PR is in a reviewable state.",
+    "- Set fp custom properties as soon as values are known: `symphony_branch`, `symphony_pr_url`, `symphony_pr_number`, `symphony_base_sha`, `symphony_head_sha`, `symphony_run_id`, and `symphony_sandbox_id`.",
+    "- Record clear verification evidence in fp comments and the PR body. Keep all credentials out of those texts.",
   ].join("\n");
 };
 
 const outcomeInstructions = (input: WorkerPromptInput): string =>
   input.source.kind === "archive"
     ? "**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` with this exact shape and no extra fields:"
-    : "**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` as clone-handoff evidence with this exact shape and no extra fields:";
+    : "**Before producing your final assistant message / exiting the turn**, you MUST leave the durable state in fp and GitHub: pushed branch, PR URL/number, head SHA, and the canonical `symphony_*` properties. Do not write an orchestrator return artifact.";
+
+const outcomeBody = (input: WorkerPromptInput): string =>
+  input.source.kind === "archive"
+    ? [
+        "```json",
+        "{",
+        '  "status": "completed" | "blocked" | "needs-human" | "failed",',
+        '  "summary": "<markdown narrative — what you did, why, and any caveats>"',
+        "}",
+        "```",
+        "",
+        "Pick `status` deliberately:",
+        "",
+        '- `"completed"` only if you believe the work is fully done and ready for a human to review the resulting branch.',
+        '- `"blocked"` if a precondition you cannot satisfy stops you.',
+        '- `"needs-human"` if the work is partially done but you are uncertain.',
+        '- `"failed"` if you tried and could not produce useful output.',
+      ].join("\n")
+    : [
+        "Required durable fields:",
+        "",
+        `- \`symphony_branch\`: \`${input.source.branchName}\``,
+        "- `symphony_pr_url`: the GitHub PR URL",
+        "- `symphony_pr_number`: the GitHub PR number as text",
+        `- \`symphony_base_sha\`: \`${input.source.baseSha}\``,
+        "- `symphony_head_sha`: the pushed branch HEAD SHA",
+        `- \`symphony_run_id\`: \`${input.source.runId}\``,
+        `- \`symphony_sandbox_id\`: \`${input.source.sandboxId}\``,
+      ].join("\n");
 
 const summaryInstructions = (input: WorkerPromptInput): string =>
   input.source.kind === "archive"
     ? "The `summary` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose."
-    : "The `summary` is tracer evidence for the orchestrator record. Mention the checked-out SHA and metadata file; do not include secrets.";
+    : "Your final assistant message should summarize the PR URL, fp property writes, verification, and any remaining babysitting state. Do not include secrets.";
 
 const mapWriteError = (path: string) => (error: PlatformError.PlatformError) =>
   new WorkerPromptWriteError({
@@ -116,6 +150,7 @@ const renderPromptImpl = (
       boundaryInstructions: boundaryInstructions(input),
       workInstructions: workInstructions(input),
       outcomeInstructions: outcomeInstructions(input),
+      outcomeBody: outcomeBody(input),
       summaryInstructions: summaryInstructions(input),
     } satisfies WorkerPromptVars;
 
