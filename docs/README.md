@@ -117,6 +117,12 @@ Docs rot when they describe code that changed. To mitigate:
 - `active/` -- In-progress design docs
 - `completed/` -- Shipped designs kept for historical context
 
+Active proposals:
+
+| Doc                                                                                                      | Topic                                          |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [2026-05-26-remote-daytona-sandboxes.md](proposals/active/2026-05-26-remote-daytona-sandboxes.md) | Switch orchestrator sandboxes to Daytona Cloud |
+
 Completed proposals:
 
 | Doc                                                                                                                | Topic                                      |
