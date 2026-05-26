@@ -47,6 +47,12 @@ type ProtocolStream = {
 acquired with `Effect.acquireRelease`, and the release calls `close` (which itself
 delegates to `deleteSession`, idempotent via a `Ref<boolean>`).
 
+After `executeSessionCommand(runAsync: true)` returns a command id, `start` waits for the
+SDK-managed session input pipe to appear before exposing `send`. The readiness poll uses a
+30 second deadline with a 50ms cadence. The longer deadline is intentional for Daytona Cloud:
+the local stack typically exposes the pipe quickly, but the Cloud lifecycle smoke showed 5
+seconds was too short even though the command and exit-trap protocol were otherwise healthy.
+
 **Frame type is `string`.** Codex app-server JSON-RPC is line-delimited UTF-8 text; the
 SDK accepts `string` only on `sendSessionCommandInput` and emits `string` on
 `getSessionCommandLogs`. A future `Uint8Array` overload of `start` is left as a separate
@@ -247,9 +253,12 @@ orchestrator-service consumers:
    if real-world drop rates demand tuning (`SWYRD-flvidfql`).
 3. **`waitExit` cadence = 200ms fixed**, no wall-clock deadline. Consumer scope governs
    lifetime.
-4. **Exit-trap wrapper is the OSS-Daytona workaround.** Production Daytona Cloud may
+4. **Session input-pipe readiness waits up to 30 seconds.** This is based on Cloud smoke
+   evidence; do not reduce it to the older 5 second local-stack assumption without Cloud
+   evidence.
+5. **Exit-trap wrapper is the OSS-Daytona workaround.** Production Daytona Cloud may
    behave differently; confirm before retiring.
-5. **PID-file-based SIGKILL probe** uses `/proc/<pid>/exe`, not `kill -0` (zombie-safe).
+6. **PID-file-based SIGKILL probe** uses `/proc/<pid>/exe`, not `kill -0` (zombie-safe).
    Linux-only; Daytona snapshots are Linux so this is fine.
-6. **`ProtocolStream.close` is idempotent** (`Ref.getAndSet` pattern). Multiple calls are
+7. **`ProtocolStream.close` is idempotent** (`Ref.getAndSet` pattern). Multiple calls are
    safe; the second call is `Effect.void`.

@@ -134,6 +134,7 @@ Completed proposals:
 | Doc                                                                                                        | Topic                                               |
 | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | [2026-05-04-symphony-daytona-vertical-slice.md](experiments/2026-05-04-symphony-daytona-vertical-slice.md) | Symphony vertical slice with fp, Codex, and Daytona |
+| [2026-05-26-daytona-cloud-lifecycle-smoke.md](experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md)     | Daytona Cloud lifecycle smoke evidence              |
 
 ### testing/
 

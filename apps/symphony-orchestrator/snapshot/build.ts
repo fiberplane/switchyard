@@ -10,9 +10,9 @@
 // active or build_failed (default 15min ceiling).
 //
 // Env (all optional except DAYTONA_API_KEY):
-//   DAYTONA_API_KEY         required — local Daytona dashboard API key
-//   DAYTONA_API_URL         default http://localhost:3000/api
-//   DAYTONA_TARGET          default us
+//   DAYTONA_API_KEY         required
+//   DAYTONA_API_URL         optional SDK override
+//   DAYTONA_TARGET          optional SDK override
 //   DAYTONA_SNAPSHOT        default symphony-codex-bun
 //   DOCKERFILE              default ./Dockerfile (relative to this file)
 //   SNAPSHOT_TIMEOUT_MS     default 900000 (15min)
@@ -22,8 +22,8 @@ import { fileURLToPath } from "node:url";
 import { Daytona, DaytonaNotFoundError, Image } from "@daytona/sdk";
 
 const apiKey = process.env.DAYTONA_API_KEY ?? "";
-const apiUrl = process.env.DAYTONA_API_URL ?? "http://localhost:3000/api";
-const target = process.env.DAYTONA_TARGET ?? "us";
+const apiUrl = process.env.DAYTONA_API_URL || undefined;
+const target = process.env.DAYTONA_TARGET || undefined;
 const snapshotName = process.env.DAYTONA_SNAPSHOT ?? "symphony-codex-bun";
 const dockerfilePath =
   process.env.DOCKERFILE ?? fileURLToPath(new URL("./Dockerfile", import.meta.url));
@@ -37,8 +37,8 @@ if (!apiKey) {
 
 const daytona = new Daytona({
   apiKey,
-  apiUrl,
-  target,
+  ...(apiUrl === undefined ? {} : { apiUrl }),
+  ...(target === undefined ? {} : { target }),
   _experimental: { otelEnabled: false },
 });
 

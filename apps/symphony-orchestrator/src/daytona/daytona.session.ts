@@ -45,6 +45,7 @@ import { DaytonaSessionExecuteResponseSchema } from "./session-models.js";
 // this configurable per-session if the orchestrator-service leaf observes
 // real-world drop rates above a threshold.
 const STDOUT_QUEUE_CAPACITY = 1024;
+const INPUT_PIPE_READY_TIMEOUT_MS = 30_000;
 
 export type DaytonaSessionExitInfo = {
   readonly exitCode: number;
@@ -187,7 +188,7 @@ const waitForSessionInputPipe = (
   commandId: string,
 ): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> => {
   const inputPipe = `/home/daytona/.daytona/sessions/${sessionId}/${commandId}/input.pipe`;
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + INPUT_PIPE_READY_TIMEOUT_MS;
 
   const poll = (): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> =>
     Effect.tryPromise({
@@ -215,7 +216,7 @@ const waitForSessionInputPipe = (
           return Effect.fail(
             new DaytonaSessionExecError({
               sessionId,
-              reason: `input pipe was not ready for command ${commandId} within 5000ms`,
+              reason: `input pipe was not ready for command ${commandId} within ${INPUT_PIPE_READY_TIMEOUT_MS}ms`,
             }),
           );
         }

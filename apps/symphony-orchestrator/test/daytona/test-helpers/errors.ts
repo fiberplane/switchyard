@@ -23,3 +23,11 @@ export class DaytonaTestStackError extends Data.TaggedError("DaytonaTestStackErr
     return this.reason;
   }
 }
+
+export class RemoteDaytonaCleanupError extends Data.TaggedError("RemoteDaytonaCleanupError")<{
+  readonly reason: string;
+}> {
+  get message(): string {
+    return this.reason;
+  }
+}

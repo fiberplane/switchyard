@@ -4,6 +4,7 @@ import { daytonaTestConfig } from "./stack.js";
 type SandboxSpecOverrides = {
   readonly testRunId: string;
   readonly name?: string;
+  readonly snapshotName?: string;
   readonly labels?: Record<string, string>;
   readonly envVars?: Record<string, string>;
   readonly autoStopInterval?: number;
@@ -19,7 +20,7 @@ export const buildTestSandboxSpec = (overrides: SandboxSpecOverrides): DaytonaSa
 
   return {
     name: overrides.name ?? `symphony-test-${suffix}`,
-    snapshotName: daytonaTestConfig.snapshotName,
+    snapshotName: overrides.snapshotName ?? daytonaTestConfig.snapshotName,
     language: "typescript",
     labels: {
       ...overrides.labels,
