@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { Deferred, Effect, Fiber, Ref } from "effect";
 
+import type { HostRuntimeConfig } from "../src/config/host-runtime.js";
 import { DaytonaAdapter } from "../src/daytona/daytona.adapter.js";
 import { DaytonaSession } from "../src/daytona/daytona.session.js";
 import {
@@ -23,6 +24,40 @@ import { TestOrchestratorServiceLive } from "./orchestrator/test-helpers/test-or
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const originalCwd = process.cwd();
+
+const hostRuntimeConfig = (
+  overrides: {
+    readonly daytona?: Partial<HostRuntimeConfig["daytona"]>;
+    readonly github?: Partial<HostRuntimeConfig["github"]>;
+    readonly fpRest?: Partial<HostRuntimeConfig["fpRest"]>;
+    readonly codex?: Partial<HostRuntimeConfig["codex"]>;
+  } = {},
+): HostRuntimeConfig => ({
+  daytona: {
+    apiKey: "key",
+    apiUrl: "http://localhost:3987",
+    target: "local",
+    snapshotName: undefined,
+    ...overrides.daytona,
+  },
+  github: {
+    token: undefined,
+    ...overrides.github,
+  },
+  fpRest: {
+    remote: "rest-api",
+    token: undefined,
+    serverUrl: undefined,
+    workspace: undefined,
+    projectId: undefined,
+    projectPrefix: undefined,
+    ...overrides.fpRest,
+  },
+  codex: {
+    authPath: undefined,
+    ...overrides.codex,
+  },
+});
 
 beforeAll(() => {
   process.chdir(appRoot);
@@ -68,13 +103,9 @@ describe("orchestrator entrypoint wiring", () => {
   });
 
   test("bridges workflow config into Daytona and orchestrator config", () => {
-    const hostConfig = {
-      daytona: {
-        apiKey: "key",
-        apiUrl: "http://localhost:3987",
-        target: "local",
-      },
-    };
+    const hostConfig = hostRuntimeConfig({
+      codex: { authPath: "/tmp/auth.json" },
+    });
 
     expect(toDaytonaConfig(fixtureConfig.sandbox, hostConfig)).toEqual({
       apiUrl: "http://localhost:3987",
@@ -82,15 +113,58 @@ describe("orchestrator entrypoint wiring", () => {
       target: "local",
       snapshotName: "snapshot",
     });
-    expect(
-      toOrchestratorConfig(fixtureConfig, { SWITCHYARD_CODEX_AUTH: "/tmp/auth.json" }),
-    ).toMatchObject({
+    expect(toOrchestratorConfig(fixtureConfig, hostConfig)).toMatchObject({
       maxConcurrentAgents: 1,
       turnTimeoutMs: 1000,
       snapshotName: "snapshot",
       autoStopInterval: 15,
       autoDeleteInterval: -1,
       codexAuthHostPath: "/tmp/auth.json",
+    });
+  });
+
+  test("normalizes empty GitHub token as absent for githubClone source", () => {
+    const config: WorkflowConfig = {
+      ...fixtureConfig,
+      sandbox: {
+        ...fixtureConfig.sandbox,
+        sourceStrategy: "githubClone",
+        artifactStrategy: "pr",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+      },
+    };
+
+    expect(toOrchestratorConfig(config, hostRuntimeConfig()).source).toEqual({
+      kind: "githubClone",
+      repoUrl: "https://github.com/fiberplane/switchyard.git",
+      baseBranch: "main",
+      artifactStrategy: "pr",
+      githubToken: undefined,
+    });
+  });
+
+  test("uses the decoded GitHub token for githubClone source", () => {
+    const config: WorkflowConfig = {
+      ...fixtureConfig,
+      sandbox: {
+        ...fixtureConfig.sandbox,
+        sourceStrategy: "githubClone",
+        artifactStrategy: "pr",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+      },
+    };
+
+    expect(
+      toOrchestratorConfig(config, hostRuntimeConfig({ github: { token: "decoded-github-token" } }))
+        .source,
+    ).toEqual({
+      kind: "githubClone",
+      repoUrl: "https://github.com/fiberplane/switchyard.git",
+      baseBranch: "main",
+      artifactStrategy: "pr",
+      githubToken: "decoded-github-token",
     });
   });
 

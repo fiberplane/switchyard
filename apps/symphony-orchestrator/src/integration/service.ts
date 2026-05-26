@@ -6,10 +6,22 @@ import { Context, Effect, Layer } from "effect";
 import { integrateBundle as integrateBundleImpl } from "./bundle.js";
 import { GitCommandError, type BundleFetchError } from "./errors.js";
 import { GitAdapter } from "./git.adapter.js";
-import type { IntegrationResult, SourceHandoff } from "./models.js";
+import type { GithubCloneSourceHandoff, IntegrationResult, SourceHandoff } from "./models.js";
+import { parseLsRemoteHead, validateGitBranchName, validateGitHubRepoUrl } from "./source.js";
+
+export type GithubCloneSourceOptions = {
+  readonly repoUrl: string;
+  readonly baseBranch: string;
+  readonly repoPath: string;
+  readonly branchName: string;
+  readonly githubToken?: string | undefined;
+};
 
 export type IntegrationServiceShape = {
   readonly prepareSourceHandoff: () => Effect.Effect<SourceHandoff, GitCommandError>;
+  readonly prepareGithubCloneSourceHandoff: (
+    options: GithubCloneSourceOptions,
+  ) => Effect.Effect<GithubCloneSourceHandoff, GitCommandError>;
   readonly integrateBundle: (
     bundlePath: string,
     issueId: string,
@@ -50,7 +62,46 @@ export const IntegrationServiceLive = Layer.effect(
           );
           const archivePath = join(dir, ARCHIVE_FILENAME);
           yield* git.archive(baseRev, archivePath);
-          return { baseRev, archivePath };
+          return { kind: "archive" as const, baseRev, archivePath };
+        }),
+      prepareGithubCloneSourceHandoff: (options) =>
+        Effect.gen(function* () {
+          const repoUrl = yield* Effect.try({
+            try: () => validateGitHubRepoUrl(options.repoUrl),
+            catch: (error) =>
+              new GitCommandError({
+                command: ["git", "validate-repo-url"],
+                stderr: error instanceof Error ? error.message : String(error),
+                exitCode: -1,
+              }),
+          });
+          const baseBranch = yield* Effect.try({
+            try: () => validateGitBranchName(options.baseBranch),
+            catch: (error) =>
+              new GitCommandError({
+                command: ["git", "validate-branch"],
+                stderr: error instanceof Error ? error.message : String(error),
+                exitCode: -1,
+              }),
+          });
+          const stdout = yield* git.lsRemoteHead(repoUrl, baseBranch, options.githubToken);
+          const baseSha = yield* Effect.try({
+            try: () => parseLsRemoteHead(stdout, baseBranch),
+            catch: (error) =>
+              new GitCommandError({
+                command: ["git", "ls-remote", "--heads", repoUrl, baseBranch],
+                stderr: error instanceof Error ? error.message : String(error),
+                exitCode: -1,
+              }),
+          });
+          return {
+            kind: "githubClone" as const,
+            repoUrl,
+            baseBranch,
+            baseSha,
+            repoPath: options.repoPath,
+            branchName: options.branchName,
+          };
         }),
       integrateBundle: (bundlePath, issueId, options) =>
         integrateBundleImpl(git, bundlePath, issueId, options),

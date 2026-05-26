@@ -1,0 +1,31 @@
+tracker:
+  kind: fp
+  dispatchFilter:
+    property: symphony_ready
+    value: "true"
+
+polling:
+  intervalMs: 10000
+
+agent:
+  maxConcurrentAgents: 1
+  maxAttempts: 1
+
+sandbox:
+  kind: daytona
+  snapshot: symphony-codex-bun
+  language: typescript
+  autoStopInterval: 15
+  autoDeleteInterval: -1
+  repoPath: /workspace/repo
+  sourceStrategy: githubClone
+  artifactStrategy: pr
+  repoUrl: https://github.com/fiberplane/switchyard.git
+  baseBranch: main
+
+codex:
+  command: codex app-server
+  turnTimeoutMs: 3600000
+
+integration:
+  branchPrefix: symphony/

@@ -28,7 +28,12 @@ import type {
   SandboxHandle,
 } from "../../../src/daytona/models.js";
 import type { CandidateScan, FpServiceShape } from "../../../src/fp/service.js";
-import type { IntegrationResult, SourceHandoff } from "../../../src/integration/models.js";
+import type {
+  GithubCloneSourceHandoff,
+  IntegrationResult,
+  SourceHandoff,
+} from "../../../src/integration/models.js";
+import type { GithubCloneSourceOptions } from "../../../src/integration/service.js";
 import type { IntegrationServiceShape } from "../../../src/integration/service.js";
 import type { RenderedPrompt } from "../../../src/prompt/models.js";
 import type { WorkerPromptServiceShape } from "../../../src/prompt/service.js";
@@ -188,13 +193,19 @@ export type DaytonaSessionMock = {
   readonly shape: DaytonaSessionShape;
   // All bytes the runner sent over `send`, decoded back to UTF-8 strings.
   readonly sent: () => ReadonlyArray<string>;
+  readonly starts: () => ReadonlyArray<{
+    readonly handle: SandboxHandle;
+    readonly command: string;
+  }>;
 };
 
 export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSessionMock => {
   const sent: string[] = [];
+  const starts: Array<{ readonly handle: SandboxHandle; readonly command: string }> = [];
   const shape: DaytonaSessionShape = {
-    start: () =>
+    start: (handle, command) =>
       Effect.gen(function* () {
+        starts.push({ handle, command });
         // Per-call (per-runOne) sendIndex so multi-tick tests get a fresh
         // reply sequence on every session.start. Tests that need cumulative
         // tracking can read shape.sent() across ticks.
@@ -236,12 +247,13 @@ export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSe
         return stream;
       }),
   };
-  return { shape, sent: () => [...sent] };
+  return { shape, sent: () => [...sent], starts: () => [...starts] };
 };
 
 export type IntegrationMock = {
   readonly shape: IntegrationServiceShape;
   readonly prepareCalls: () => number;
+  readonly prepareGithubCloneCalls: () => ReadonlyArray<GithubCloneSourceOptions>;
   readonly integrateCalls: () => ReadonlyArray<IntegrationCall>;
 };
 
@@ -253,12 +265,16 @@ type IntegrationCall = {
 
 export const makeIntegrationMock = (overrides: {
   readonly prepare?: () => Effect.Effect<SourceHandoff, never>;
+  readonly prepareGithubClone?: (
+    options: GithubCloneSourceOptions,
+  ) => Effect.Effect<GithubCloneSourceHandoff, never>;
   readonly integrate?: (
     bundlePath: string,
     issueId: string,
   ) => Effect.Effect<IntegrationResult, never>;
 }): IntegrationMock => {
   let prepareN = 0;
+  const prepareGithubCloneLog: GithubCloneSourceOptions[] = [];
   const integrateLog: IntegrationCall[] = [];
   const shape: IntegrationServiceShape = {
     prepareSourceHandoff: () =>
@@ -266,10 +282,25 @@ export const makeIntegrationMock = (overrides: {
         prepareN += 1;
         return overrides.prepare === undefined
           ? Effect.succeed({
+              kind: "archive" as const,
               baseRev: "deadbeef",
               archivePath: "/tmp/swy-source-fixture/source.tar.gz",
             })
           : overrides.prepare();
+      }),
+    prepareGithubCloneSourceHandoff: (options) =>
+      Effect.suspend(() => {
+        prepareGithubCloneLog.push(options);
+        return overrides.prepareGithubClone === undefined
+          ? Effect.succeed({
+              kind: "githubClone" as const,
+              repoUrl: options.repoUrl,
+              baseBranch: options.baseBranch,
+              baseSha: "0123456789abcdef0123456789abcdef01234567",
+              repoPath: options.repoPath,
+              branchName: options.branchName,
+            })
+          : overrides.prepareGithubClone(options);
       }),
     integrateBundle: (bundlePath, issueId, options) =>
       Effect.suspend(() => {
@@ -286,6 +317,7 @@ export const makeIntegrationMock = (overrides: {
   return {
     shape,
     prepareCalls: () => prepareN,
+    prepareGithubCloneCalls: () => [...prepareGithubCloneLog],
     integrateCalls: () => [...integrateLog],
   };
 };
@@ -345,6 +377,7 @@ export const makePromptMock = (): WorkerPromptServiceShape => ({
 
 export const makeSandboxScriptMock = (): SandboxScriptServiceShape => ({
   setupRepo: () => Effect.void,
+  setupClone: () => Effect.void,
   finalizeBundle: (_handle, options) =>
     Effect.succeed({
       bundlePath: options.bundlePath,

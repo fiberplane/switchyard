@@ -18,6 +18,16 @@ export type SetupRepoOptions = {
   readonly symphonyDir: string;
 };
 
+export type SetupCloneOptions = {
+  readonly repoUrl: string;
+  readonly baseBranch: string;
+  readonly baseSha: string;
+  readonly repoPath: string;
+  readonly branchName: string;
+  readonly symphonyDir: string;
+  readonly githubToken?: string | undefined;
+};
+
 export type FinalizeBundleOptions = {
   readonly repoPath: string;
   readonly bundlePath: string;
@@ -28,4 +38,4 @@ export type SandboxBundleResult = {
   readonly commitsBeyondBase: number;
 };
 
-export type SandboxScriptOperation = "setupRepo" | "finalizeBundle";
+export type SandboxScriptOperation = "setupRepo" | "setupClone" | "finalizeBundle";

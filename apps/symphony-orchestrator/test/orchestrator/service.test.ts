@@ -34,6 +34,8 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath,
+  repoPath: "/workspace/repo",
+  source: { kind: "archive" },
 });
 
 // Codex protocol responses the runner expects: initialize ack (sendIndex=0),
@@ -179,6 +181,90 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     expect(artifact.records()[0]!.record.status).toBe("integrated");
     expect(artifact.records()[0]!.record.branch).toBe("symphony/happy");
   });
+
+  test("githubClone source uploads no archive and sets up the pinned remote checkout", async () => {
+    const issue = fixtureEligible("clone");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const setupCloneCalls: unknown[] = [];
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+        githubToken: "github-token-that-must-not-render",
+      },
+    };
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: (_handle, options) =>
+                Effect.sync(() => {
+                  setupCloneCalls.push(options);
+                }),
+              finalizeBundle: () =>
+                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toContain("githubClone PR artifact workflow is not implemented");
+    expect(integration.prepareCalls()).toBe(0);
+    expect(integration.prepareGithubCloneCalls()).toEqual([
+      {
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        repoPath: "/workspace/repo",
+        branchName: "symphony/clone",
+        githubToken: "github-token-that-must-not-render",
+      },
+    ]);
+    const upload = daytona.calls.find((call) => call.kind === "uploadFiles");
+    if (upload?.kind !== "uploadFiles") {
+      throw new Error("expected uploadFiles call");
+    }
+    expect(upload.files.map((file) => file.dst)).toEqual(["/tmp/prompt.md", "/tmp/auth.json"]);
+    expect(JSON.stringify(upload.files)).not.toContain("repo.tgz");
+    expect(session.starts()[0]?.command).toBe(
+      "export GIT_CONFIG_GLOBAL='/tmp/.symphony/gitconfig'; export GIT_CONFIG_SYSTEM=/dev/null; export GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_COUNT=0; unset GIT_CONFIG_PARAMETERS || true; cd '/workspace/repo' && codex app-server",
+    );
+    expect(setupCloneCalls).toEqual([
+      {
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        baseSha: "0123456789abcdef0123456789abcdef01234567",
+        repoPath: "/workspace/repo",
+        branchName: "symphony/clone",
+        symphonyDir: "/tmp/.symphony",
+        githubToken: "github-token-that-must-not-render",
+      },
+    ]);
+    expect(integration.integrateCalls()).toEqual([]);
+    expect(fp.calls.some((call) => call.kind === "setArtifact")).toBe(false);
+  });
 });
 
 describe("OrchestratorService.runOne — cycle 4 empty bundle (F11)", () => {
@@ -206,6 +292,7 @@ describe("OrchestratorService.runOne — cycle 4 empty bundle (F11)", () => {
             config,
             sandboxScripts: {
               setupRepo: () => Effect.void,
+              setupClone: () => Effect.void,
               finalizeBundle: (_handle, scriptOptions) =>
                 Effect.succeed({
                   bundlePath: scriptOptions.bundlePath,
@@ -468,6 +555,7 @@ describe("OrchestratorService.runOne — failure-matrix routing (B2 fix)", () =>
             stderr: "tar: not found",
           }),
         ) as Effect.Effect<never, never>,
+      setupClone: () => Effect.void,
       finalizeBundle: () =>
         Effect.succeed({ bundlePath: "/tmp/.symphony/work.bundle", commitsBeyondBase: 1 }),
     };
@@ -652,5 +740,64 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
     expect(integration.integrateCalls()).toHaveLength(0);
     // markNeedsAttention fired.
     expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
+  });
+
+  test("githubClone non-completed turn does not attempt archive bundle salvage", async () => {
+    const issue = fixtureEligible("clone-proto");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+        githubToken: "github-token-that-must-not-render",
+      },
+    };
+    const stubRunner = Layer.succeed(
+      AgentRunner,
+      makeStubAgentRunner({
+        kind: "failed",
+        reason: "model error: capacity exceeded",
+        events: [],
+      }),
+    );
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            agentRunner: stubRunner,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () => Effect.void,
+              finalizeBundle: () => Effect.dieMessage("githubClone F7 must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("protocol stream failed: model error: capacity exceeded");
+    expect(integration.integrateCalls()).toEqual([]);
+    expect(daytona.calls.some((call) => call.kind === "downloadFiles")).toBe(false);
+    expect(fp.calls.some((call) => call.kind === "setArtifact")).toBe(false);
   });
 });

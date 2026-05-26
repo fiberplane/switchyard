@@ -13,6 +13,27 @@ const baseVars = {
   issueDisplayId: "SWYRD-abc123",
   issueTitle: "Add foo",
   issueDescription: "Implement the foo.",
+  sourceInstructions: [
+    "- The local repo is `/workspace/repo`. Start there.",
+    "- `/workspace/repo` mirrors the host repository root. Treat all file paths as host",
+    "  repo-relative paths (for example, edit `apps/symphony-orchestrator/test/...` for",
+    "  orchestrator tests, not top-level `test/...`).",
+    "- The starting commit is tagged `symphony-base`. Make your changes on top of it.",
+  ].join("\n"),
+  boundaryInstructions: [
+    "- You have **no `fp` credentials**. Do not attempt `fp` writes; the orchestrator owns all `fp` state.",
+    "- You do not need to contact the host machine. Outcome flows entirely through files in the sandbox; the orchestrator collects them after your turn ends. **No host base URL is provided.**",
+    "- Do **not** file follow-up issues yourself. Worker-driven follow-up filing is deferred. Put any out-of-scope observations or follow-up suggestions in your `summary` (see below) as prose.",
+  ].join("\n"),
+  workInstructions: [
+    "- Make code changes in the repo.",
+    "- Cadence: **commit early, commit often**, with descriptive commit messages — the orchestrator will preserve your full commit history via `git bundle`, and the human reviewer reads commit messages to understand your reasoning. Prefer multiple small commits over one squash.",
+    "- You may run any commands you need to validate your work (build, test, type-check). The output of those commands does **not** need to be persisted; the orchestrator does not validate or re-run them.",
+  ].join("\n"),
+  outcomeInstructions:
+    "**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` with this exact shape and no extra fields:",
+  summaryInstructions:
+    "The `summary` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose.",
 };
 
 describe("renderTemplate / WORKER_PROMPT_TEMPLATE", () => {
@@ -78,6 +99,11 @@ describe("renderTemplate / snapshot", () => {
       issueTitle: "Add foo helper to message module",
       issueDescription:
         "Implement the foo helper. The helper should take a string and return its uppercased form. Add a test that exercises the empty-string case.",
+      sourceInstructions: baseVars.sourceInstructions,
+      boundaryInstructions: baseVars.boundaryInstructions,
+      workInstructions: baseVars.workInstructions,
+      outcomeInstructions: baseVars.outcomeInstructions,
+      summaryInstructions: baseVars.summaryInstructions,
     });
 
     expect(Either.isRight(result)).toBe(true);
@@ -122,6 +148,11 @@ describe("renderTemplate / missing-variable guard", () => {
 
     expect(error.missingVariables).toContain("issueTitle");
     expect(error.missingVariables).toContain("issueDescription");
+    expect(error.missingVariables).toContain("sourceInstructions");
+    expect(error.missingVariables).toContain("boundaryInstructions");
+    expect(error.missingVariables).toContain("workInstructions");
+    expect(error.missingVariables).toContain("outcomeInstructions");
+    expect(error.missingVariables).toContain("summaryInstructions");
     // Should NOT list a key that was provided.
     expect(error.missingVariables).not.toContain("issueDisplayId");
   });

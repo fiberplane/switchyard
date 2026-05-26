@@ -33,6 +33,14 @@ Happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquir
 `integration.succeeded`, `fp.done`. Failure paths emit a static `failure` message at warning
 level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and `reason`
 annotations — log searches should filter on `failure_code` rather than the message text.
+`githubClone` runs that complete a worker turn before worker-owned PR support exists emit
+`failure_code=F17` and `error_tag=PrArtifactNotImplemented`; this is a deliberate sequencing
+signal, not a sandbox setup failure.
+
+`source.uploaded` is the stable boundary after sandbox input material is present. In archive mode
+that includes the source archive, prompt, and Codex auth. In `githubClone` mode it includes only
+prompt and Codex auth because the source is fetched inside the sandbox from the pinned remote
+metadata prepared on the host.
 
 ## Log Level
 

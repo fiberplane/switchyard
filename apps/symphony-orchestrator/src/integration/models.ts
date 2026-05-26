@@ -1,15 +1,30 @@
 export const SYMPHONY_BRANCH_PREFIX = "symphony";
 
-export type SourceHandoff = {
+export type ArchiveSourceHandoff = {
+  readonly kind: "archive";
   readonly baseRev: string;
   readonly archivePath: string;
 };
+
+export type GithubCloneSourceHandoff = {
+  readonly kind: "githubClone";
+  readonly repoUrl: string;
+  readonly baseBranch: string;
+  readonly baseSha: string;
+  readonly repoPath: string;
+  readonly branchName: string;
+};
+
+export type SourceHandoff = ArchiveSourceHandoff | GithubCloneSourceHandoff;
 
 export type IntegrationResult = {
   readonly branch: string;
   readonly commitsBeyondBase: number;
   readonly attempt: number;
 };
+
+export const sourceBaseRev = (handoff: SourceHandoff): string =>
+  handoff.kind === "archive" ? handoff.baseRev : handoff.baseSha;
 
 export const symphonyRefspec = (issueId: string, suffix?: string): string => {
   const refName = suffix === undefined ? issueId : `${issueId}-${suffix}`;

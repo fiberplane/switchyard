@@ -19,3 +19,12 @@ export class BundleFetchError extends Data.TaggedError("BundleFetchError")<{
     return `git failed to fetch from bundle ${this.bundlePath} (exit code ${this.exitCode})\n${this.stderr}`;
   }
 }
+
+export class SourceValidationError extends Data.TaggedError("SourceValidationError")<{
+  readonly field: string;
+  readonly reason: string;
+}> {
+  get message(): string {
+    return `invalid source ${this.field}: ${this.reason}`;
+  }
+}

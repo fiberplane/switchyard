@@ -102,6 +102,8 @@ const baseConfig = (
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath: CODEX_AUTH_PATH,
+  repoPath: "/workspace/repo",
+  source: { kind: "archive" },
   ...overrides,
 });
 

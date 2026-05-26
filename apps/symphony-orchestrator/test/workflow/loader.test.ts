@@ -70,6 +70,72 @@ describe("WorkflowService.load", () => {
     }
   });
 
+  test("rejects token-shaped workflow fields before schema decode without printing values", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-github-token.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.githubToken");
+        expect(error.message).not.toContain("github-token-that-must-not-print");
+      }
+    }
+  });
+
+  test("rejects common secret suffix fields before schema decode without printing values", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-client-secret.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.clientSecret");
+        expect(error.message).not.toContain("client-secret-that-must-not-print");
+      }
+    }
+  });
+
+  test("loads githubClone workflow config with PR artifact strategy", async () => {
+    const config = await runWithFileSystem(
+      WorkflowService.load("test/fixtures/workflow.github-clone.yml"),
+    );
+
+    expect(config.sandbox.sourceStrategy).toBe("githubClone");
+    if (config.sandbox.sourceStrategy !== "githubClone") {
+      throw new Error("expected githubClone sandbox config");
+    }
+    expect(config.sandbox.artifactStrategy).toBe("pr");
+    expect(config.sandbox.repoUrl).toBe("https://github.com/fiberplane/switchyard.git");
+    expect(config.sandbox.baseBranch).toBe("main");
+  });
+
+  test("rejects credentialed githubClone repoUrl without printing the credential", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(
+        WorkflowService.load("test/fixtures/workflow.github-clone-credentialed-url.yml"),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("invalid github clone source");
+        expect(error.message).not.toContain("token-value-that-must-not-print");
+      }
+    }
+  });
+
   test("rejects codex approval and sandbox policies that would stall app-server", async () => {
     const result = await runWithFileSystem(
       Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-bad-policy.yml")),

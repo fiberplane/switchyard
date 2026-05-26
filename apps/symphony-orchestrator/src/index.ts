@@ -65,15 +65,30 @@ export const toDaytonaConfig = (
 
 export const toOrchestratorConfig = (
   cfg: WorkflowConfig,
-  env: Record<string, string | undefined> = process.env,
-): OrchestratorServiceConfig => ({
-  maxConcurrentAgents: cfg.agent.maxConcurrentAgents,
-  turnTimeoutMs: cfg.codex.turnTimeoutMs,
-  snapshotName: cfg.sandbox.snapshot,
-  autoStopInterval: cfg.sandbox.autoStopInterval,
-  autoDeleteInterval: cfg.sandbox.autoDeleteInterval,
-  codexAuthHostPath: env.SWITCHYARD_CODEX_AUTH ?? path.join(homedir(), ".codex/auth.json"),
-});
+  hostConfig: Pick<HostRuntimeConfig, "github" | "codex">,
+): OrchestratorServiceConfig => {
+  const source =
+    cfg.sandbox.sourceStrategy === "archive"
+      ? { kind: "archive" as const }
+      : {
+          kind: "githubClone" as const,
+          repoUrl: cfg.sandbox.repoUrl,
+          baseBranch: cfg.sandbox.baseBranch,
+          artifactStrategy: cfg.sandbox.artifactStrategy,
+          githubToken: hostConfig.github.token,
+        };
+
+  return {
+    maxConcurrentAgents: cfg.agent.maxConcurrentAgents,
+    turnTimeoutMs: cfg.codex.turnTimeoutMs,
+    snapshotName: cfg.sandbox.snapshot,
+    autoStopInterval: cfg.sandbox.autoStopInterval,
+    autoDeleteInterval: cfg.sandbox.autoDeleteInterval,
+    codexAuthHostPath: hostConfig.codex.authPath ?? path.join(homedir(), ".codex/auth.json"),
+    repoPath: cfg.sandbox.repoPath,
+    source,
+  };
+};
 
 export const buildDaytonaLayers = (
   cfg: DaytonaConfig,
@@ -105,7 +120,7 @@ export const buildPlatformLayer = (cfg: WorkflowConfig, env: EnvMap = process.en
     Layer.provide(GitAdapterLive({ cwd: hostRepoRoot })),
   );
   const sandboxScripts = SandboxScriptServiceLive.pipe(Layer.provide(daytonaLayers));
-  const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg, env));
+  const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg, hostRuntimeConfig));
 
   return orchestrator.pipe(
     Layer.provide(

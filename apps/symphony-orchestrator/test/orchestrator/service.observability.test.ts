@@ -29,6 +29,8 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath,
+  repoPath: "/workspace/repo",
+  source: { kind: "archive" },
 });
 
 const codexResponses = (): ReadonlyArray<ReadonlyArray<string>> => [
