@@ -3,24 +3,19 @@ import { Effect, ParseResult, Schema } from "effect";
 import { DaytonaConfigError } from "./errors.js";
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
-const DaytonaConfigEnvFields = [
-  "DAYTONA_API_URL",
-  "DAYTONA_API_KEY",
-  "DAYTONA_TARGET",
-  "DAYTONA_SNAPSHOT",
-] as const;
+const DaytonaConfigEnvFields = ["DAYTONA_API_KEY", "DAYTONA_SNAPSHOT"] as const;
 
 const DaytonaConfigEnvSchema = Schema.Struct({
-  DAYTONA_API_URL: NonEmptyString,
   DAYTONA_API_KEY: NonEmptyString,
-  DAYTONA_TARGET: NonEmptyString,
-  DAYTONA_SNAPSHOT: NonEmptyString,
+  DAYTONA_API_URL: Schema.optional(NonEmptyString),
+  DAYTONA_TARGET: Schema.optional(NonEmptyString),
+  DAYTONA_SNAPSHOT: Schema.optional(NonEmptyString),
 });
 
 export const DaytonaConfigSchema = Schema.Struct({
-  apiUrl: NonEmptyString,
+  apiUrl: Schema.optional(NonEmptyString),
   apiKey: NonEmptyString,
-  target: NonEmptyString,
+  target: Schema.optional(NonEmptyString),
   snapshotName: NonEmptyString,
 });
 export type DaytonaConfig = Schema.Schema.Type<typeof DaytonaConfigSchema>;
@@ -104,33 +99,51 @@ export type DaytonaDownloadResponse = Schema.Schema.Type<typeof DaytonaDownloadR
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const missingConfigEnvFields = (env: unknown): readonly string[] => {
+const missingConfigEnvFields = (
+  env: unknown,
+  fallbackSnapshotName: string | undefined,
+): readonly string[] => {
   if (!isUnknownRecord(env)) {
     return DaytonaConfigEnvFields;
   }
 
-  return DaytonaConfigEnvFields.filter((field) => {
+  const missing = DaytonaConfigEnvFields.filter((field) => {
     const value = env[field];
     return typeof value !== "string" || value.length === 0;
   });
+
+  return fallbackSnapshotName === undefined
+    ? missing
+    : missing.filter((field) => field !== "DAYTONA_SNAPSHOT");
+};
+
+const normalizeEnv = (env: unknown): unknown => {
+  if (!isUnknownRecord(env)) {
+    return env;
+  }
+
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [key, value === "" ? undefined : value]),
+  );
 };
 
 export const decodeDaytonaConfigEnv = (
   env: unknown,
+  fallbackSnapshotName?: string,
 ): Effect.Effect<DaytonaConfig, DaytonaConfigError> =>
-  Schema.decodeUnknown(DaytonaConfigEnvSchema)(env).pipe(
+  Schema.decodeUnknown(DaytonaConfigEnvSchema)(normalizeEnv(env)).pipe(
     Effect.flatMap((decodedEnv) =>
       Schema.decodeUnknown(DaytonaConfigSchema)({
-        apiUrl: decodedEnv.DAYTONA_API_URL,
         apiKey: decodedEnv.DAYTONA_API_KEY,
+        apiUrl: decodedEnv.DAYTONA_API_URL,
         target: decodedEnv.DAYTONA_TARGET,
-        snapshotName: decodedEnv.DAYTONA_SNAPSHOT,
+        snapshotName: decodedEnv.DAYTONA_SNAPSHOT ?? fallbackSnapshotName,
       }),
     ),
     Effect.catchTag("ParseError", (error) =>
       Effect.fail(
         new DaytonaConfigError({
-          missingFields: missingConfigEnvFields(env),
+          missingFields: missingConfigEnvFields(env, fallbackSnapshotName),
           details: ParseResult.TreeFormatter.formatErrorSync(error),
         }),
       ),

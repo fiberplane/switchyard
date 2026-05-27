@@ -2,8 +2,9 @@
 #
 # Copy this file to ./WORKFLOW.md (the orchestrator's default load path; see
 # `apps/symphony-orchestrator/src/index.ts` parseCliOptions) and fill in the
-# stack-specific fields marked `<…>` below. The orchestrator does not
-# interpolate `$VAR` placeholders inside YAML — substitute at file-edit time.
+# non-secret policy fields below. Daytona, GitHub, fp, and Codex credentials
+# live in apps/symphony-orchestrator/.env or the host process environment, not
+# this tracked workflow file.
 #
 # Field shape: apps/symphony-orchestrator/src/workflow/models.ts
 # Loader:     apps/symphony-orchestrator/src/workflow/loader.ts
@@ -34,17 +35,12 @@ agent:
 
 # sandbox — the Daytona target.
 #
-#   apiUrl   — Base URL of your Daytona API. Local OSS install defaults to
-#              http://localhost:3000/api.
-#   apiKey   — Dashboard-issued admin key. Bring up Daytona, log into the
-#              dashboard, create an API key, paste here. Local-only auth — the
-#              key only authorizes access to your localhost Daytona.
-#   target   — Daytona target name; `us` is the standard local default
-#              (per spec line 89; not "local").
-#   snapshot — Sandbox snapshot. `symphony-codex-bun` is the canonical local
-#              snapshot (Ubuntu 22.04 + node + bun + git + codex@0.128.0); see
-#              the smoke playground README for build instructions. Must be
-#              `active` (not `pending`) before dispatch.
+# `DAYTONA_API_KEY` is required in host env. `DAYTONA_API_URL` and
+# `DAYTONA_TARGET` are optional host-env overrides for non-default Daytona SDK
+# endpoints/targets. `DAYTONA_SNAPSHOT` may override `snapshot` below.
+#
+# `snapshot` is the default sandbox snapshot name. It must be active before
+# dispatch.
 #
 # `autoStopInterval`/`autoDeleteInterval` control sandbox lifecycle:
 #   - `autoStopInterval: 15` — Daytona stops the sandbox 15min after the run
@@ -53,20 +49,27 @@ agent:
 #     around for forensic SSH. Manual cleanup via the dashboard or
 #     `daytona sandbox delete`. Tracked by SWYRD-xlgiuegf.
 #
-# `repoPath`, `sourceStrategy`, `artifactStrategy` are stable conventions; do
-# not change unless you know why.
+# `repoPath` is the checkout path inside the sandbox.
+#
+# `sourceStrategy: githubClone` tells the orchestrator to pass clone metadata
+# into the sandbox instead of uploading a host archive. `artifactStrategy: pr`
+# means the worker owns branch push, PR creation, and fp terminal metadata. The
+# host verifies the PR/fp/sandbox read-back rather than downloading a bundle.
+#
+# `repoUrl` must be a clean HTTPS GitHub URL with no embedded credentials.
+# `baseBranch` is fetched and resolved to a pinned SHA before dispatch. Override
+# it when validating a feature branch; use `main` for normal operator runs.
 sandbox:
   kind: daytona
-  apiUrl: <DAYTONA_API_URL>
-  apiKey: <DAYTONA_API_KEY>
-  target: <DAYTONA_TARGET>
   snapshot: <DAYTONA_SNAPSHOT>
   language: typescript
   autoStopInterval: 15
   autoDeleteInterval: -1
   repoPath: /workspace/repo
-  sourceStrategy: archive
-  artifactStrategy: bundle
+  sourceStrategy: githubClone
+  artifactStrategy: pr
+  repoUrl: https://github.com/fiberplane/switchyard.git
+  baseBranch: main
 
 # codex — the worker runtime spawned inside the sandbox.
 #
@@ -83,7 +86,8 @@ codex:
 
 # integration — how worker output is woven back into the host repo.
 #
-# `branchPrefix` is prepended to the issue's internal id when the orchestrator
-# creates the integrated branch (e.g., `symphony/<id>`).
+# `branchPrefix` is retained for the archive/bundle legacy path. The active
+# remote PR path derives the worker branch from sandbox-side workflow guidance
+# and validates it through fp/GitHub metadata.
 integration:
   branchPrefix: symphony/

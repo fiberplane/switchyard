@@ -63,28 +63,3 @@ export const headSha = async (repoDir: string): Promise<string> => {
   const out = await runGit(repoDir, env, ["rev-parse", "HEAD"]);
   return out.trim();
 };
-
-export const branchExistsRaw = async (repoDir: string, name: string): Promise<boolean> => {
-  const env = gitEnv();
-  const proc = Bun.spawn(["git", "show-ref", "--verify", "--quiet", `refs/heads/${name}`], {
-    cwd: repoDir,
-    env,
-  });
-  const exitCode = await proc.exited;
-  return exitCode === 0;
-};
-
-export const gitLogSubjects = async (repoDir: string, ref: string): Promise<string[]> => {
-  const env = gitEnv();
-  const out = await runGit(repoDir, env, ["log", ref, "--format=%s"]);
-  return out
-    .trim()
-    .split("\n")
-    .filter((line) => line !== "");
-};
-
-export const revListCount = async (repoDir: string, range: string): Promise<number> => {
-  const env = gitEnv();
-  const out = await runGit(repoDir, env, ["rev-list", "--count", range]);
-  return Number(out.trim());
-};

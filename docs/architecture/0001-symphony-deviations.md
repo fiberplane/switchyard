@@ -1,7 +1,7 @@
 # ADR 0001 — Symphony Deviations
 
 Date: 2026-05-04
-Status: Accepted
+Status: Accepted; D4, D6, and D7 superseded by remote Daytona PR mode on 2026-05-26
 
 ## Context
 
@@ -56,7 +56,7 @@ load-bearing: there is exactly one orchestrator and no `symphony_orchestrator_id
 Consequence: there is no defensive guard against accidental double-dispatch by a second
 orchestrator. The operator is responsible for not running two.
 
-### D4. The orchestrator is the **sole `fp` writer**; the worker has no `fp` credentials
+### D4. The worker owns terminal `fp` writes after handoff
 
 Upstream Symphony explicitly allows the worker to write to the tracker directly:
 
@@ -64,28 +64,30 @@ Upstream Symphony explicitly allows the worker to write to the tracker directly:
 > agent using tools available in the workflow/runtime environment.
 > — `references/openai-symphony/SPEC.md` lines 39–40
 
-We forbid this. The Daytona sandbox does not receive `fp` credentials. The worker communicates
-outcome to the orchestrator via a small side-channel artifact (`outcome.json`) that the
-orchestrator decodes with Effect Schema and translates into `fp` writes.
+The local proof-of-concept originally forbade this and kept the orchestrator as the sole fp
+writer. Remote Daytona PR mode supersedes that decision. The orchestrator writes pre-handoff
+metadata (`symphony_branch`, `symphony_base_sha`, `symphony_run_id`, `symphony_sandbox_id`) and
+then passes fp REST no-clone credentials to the sandbox worker through a one-shot env bridge. The
+worker opens the PR, writes PR metadata, comments verification evidence, and marks the issue done
+or needs-attention.
 
 Rationale:
 
-- Single source of truth for `fp` writes simplifies reasoning about state.
-- Avoids putting `fp` credentials inside a sandboxed environment we don't fully control.
-- Keeps the worker's contract narrow: "do code work, write a small outcome file."
-- Keeps retry policy out of the worker — the orchestrator decides whether a `failed` outcome
-  triggers retry vs. handoff.
+- The sandbox now has the only durable code state after handoff, so PR/fp terminal state belongs
+  with the worker.
+- The orchestrator still preserves dispatch metadata and verifies worker-written PR metadata after
+  the Codex turn closes.
+- Retry policy remains outside the worker; this proof-of-concept keeps `agent.maxAttempts=1`.
 
-Consequence: we have to invent an outcome convention because we forbade the upstream channel.
-That invention is one Effect-decoded JSON file with a 2-field schema (`status`, `summary`).
-Tracked as `SWYRD-jjlifoqq` to revisit once we have richer use cases that argue for relaxing the
-boundary.
+Consequence: post-handoff orchestrator failures must check whether the worker already wrote
+terminal fp state before writing `markNeedsAttention`.
 
-### D4b. Minimal `fp` property surface
+### D4b. Minimal `fp` property surface (superseded)
 
-The fp surface area for runtime metadata is exactly five properties: `symphony_ready`,
-`symphony_state`, `symphony_attempt`, `symphony_artifact`, `symphony_last_error`. Three other
-candidates were considered and not registered:
+The original artifact-return flow used a five-property runtime surface including
+`symphony_artifact`. Remote Daytona PR mode retires that artifact property and uses the active
+surface documented in `docs/architecture/fp-boundary.md`. The historical candidates below explain
+why the first POC avoided extra metadata before worker-owned PRs existed:
 
 - **`symphony_orchestrator_id`** — single-orchestrator assumption (D3) makes this redundant.
 - **`symphony_sandbox_id`** — recoverable from Daytona labels (sandboxes are labelled with
@@ -115,42 +117,31 @@ Continuation turns (re-poll tracker after clean turn exit, possibly start anothe
 same live thread) are deferred — they become essentially free under `codex app-server` and are
 tracked as `SWYRD-clnybkgo`.
 
-### D6. Source handoff is **archive upload**; sandbox has a single-commit history
+### D6. Source handoff is **GitHub clone**; archive upload is retired
 
-Upstream Symphony assumes per-issue workspaces with full git history (typically `git worktree`).
-That model breaks across the sandbox boundary because:
+Upstream Symphony assumes per-issue workspaces with full git history, typically `git worktree`.
+The local proof-of-concept originally used archive upload because worktrees did not cross the
+sandbox boundary and the sandbox did not yet have GitHub credentials.
 
-- Worktrees don't cross container/remote boundaries (Brettimus called this out explicitly).
-- The sandbox doesn't have GitHub credentials in v1.
+Remote Daytona mode supersedes that decision. The orchestrator now resolves the configured
+GitHub base branch to a pinned SHA, creates a remote Daytona sandbox, and runs clone setup inside
+the sandbox. The sandbox keeps real repository history, checks out the pinned base, and creates
+the deterministic worker branch there.
 
-We use **archive upload**: the orchestrator runs `git archive HEAD` on the host, uploads the
-tarball into the sandbox, and the sandbox creates a fresh git repo with one initial commit
-tagged `symphony-base`. The worker commits on top of that tag.
+The retired archive-upload implementation and its local-compose context are documented in
+`docs/graveyard/daytona-local-compose.md`.
 
-Consequence: the worker cannot `git log` past `symphony-base`. Exploratory tasks that benefit
-from real history are limited. Tracked as `SWYRD-yailwgkj` for a future iteration that may
-switch to volume mounts, GitHub clones, or richer host syncs.
+### D7. Artifact return is **GitHub PR**; host-side bundle integration is retired
 
-### D7. Artifact return is **`git bundle`**; integration is **branch-on-host**
+The local proof-of-concept originally returned worker changes with `git bundle` and created a
+host-side `symphony/<issue-id>` branch. Remote Daytona mode supersedes that return channel.
 
-`git bundle create work.bundle HEAD` round-trips full commit history (the worker's
-commits and commit messages preserved end-to-end). The bundle must be **self-contained** — `HEAD`,
-not `symphony-base..HEAD`. The host repo never had `symphony-base` (the tag is created inside the
-sandbox by D6's setup), so a thin range-bundle would fail `git fetch` with "Repository lacks these
-prerequisite commits." The single-commit-history invariant from D6 makes the self-contained
-bundle cheap: it carries `symphony-base` plus the worker's commits, nothing more. The orchestrator
-fetches the bundle into the host repo as `symphony/<issue-id>` (which now anchors at the bundle's
-`symphony-base` commit). No worktree directories proliferate; the host repo accumulates
-`symphony/*` branches that humans can review and merge. The orchestrator never auto-merges to
-`main`.
-
-Patch-based artifacts (`git diff --binary > symphony-result.patch`) were rejected because they
-flatten history into a single squashed diff — the commit-by-commit thought process is a primary
-review artifact, not noise.
-
-The in-sandbox bundle command lives in `apps/symphony-orchestrator/src/sandbox-scripts/finalize.ts`
-(`SandboxScriptService.finalizeBundle`); the host-side fetch + branch-create lives in
-`apps/symphony-orchestrator/src/integration/bundle.ts`.
+The worker now pushes its branch from inside the sandbox, opens a non-draft GitHub PR, updates
+canonical fp metadata (`symphony_branch`, `symphony_pr_url`, `symphony_pr_number`,
+`symphony_base_sha`, `symphony_head_sha`, `symphony_run_id`, `symphony_sandbox_id`), and marks
+the issue done through fp REST no-clone mode. The orchestrator verifies the fp PR metadata after
+the worker turn closes; it no longer downloads `work.bundle`, decodes `outcome.json`, integrates
+host branches, or writes `symphony_artifact`.
 
 ### D8. `codex app-server`, not `codex exec --json`
 
@@ -185,10 +176,10 @@ configurable health probe before posting a `completed` outcome.
 Positive:
 
 - The spec stays small and demo-ready. Each deviation buys clarity at the cost of reach.
-- Worker contract stays narrow: read prompt, edit code, commit, write `outcome.json`. No tracker
-  SDK. No retry semantics. No filing follow-up issues.
-- Orchestrator is the single source of truth for `fp` writes. Reasoning about state is local to
-  one process.
+- Worker contract stays narrow: read prompt, edit code, commit, push the worker branch, open a
+  GitHub PR, and update the canonical fp metadata. No retry semantics.
+- Before remote Daytona mode, the orchestrator was the single source of truth for `fp` writes.
+  The active mode now hands terminal fp state to the sandbox worker after dispatch metadata is set.
 - The deferral list is explicit and tracked; future-us has a punch list, not surprises.
 
 Negative:

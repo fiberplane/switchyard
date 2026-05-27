@@ -8,6 +8,11 @@
   ],
   "scripts": {
     "codegen": "bun run scripts/codex-ts-codegen.ts",
+    "fallow": "fallow",
+    "fallow:audit": "fallow audit",
+    "fallow:dead-code": "fallow dead-code",
+    "fallow:dupes": "fallow dupes",
+    "fallow:health": "fallow health",
     "lint": "oxlint",
     "lint:ast": "ast-grep scan",
     "lint:drift": "node scripts/drift-check.mjs",
@@ -21,6 +26,7 @@
     "@ast-grep/cli": "^0.42.0",
     "@types/bun": "^1.2.14",
     "@typescript/native-preview": "7.0.0-dev.20260401.1",
+    "fallow": "2.82.0",
     "oxfmt": "0.43.0",
     "oxlint": "1.58.0"
   },

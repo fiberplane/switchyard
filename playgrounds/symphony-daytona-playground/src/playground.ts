@@ -99,10 +99,8 @@ const plannerLayer = Layer.effect(
 
 const makeDaytonaClient = Effect.gen(function* () {
   const apiKey = yield* Config.string("DAYTONA_API_KEY").pipe(Config.option);
-  const apiUrl = yield* Config.string("DAYTONA_API_URL").pipe(
-    Config.withDefault("http://localhost:3000/api"),
-  );
-  const target = yield* Config.string("DAYTONA_TARGET").pipe(Config.withDefault("local"));
+  const apiUrl = yield* Config.string("DAYTONA_API_URL").pipe(Config.option);
+  const target = yield* Config.string("DAYTONA_TARGET").pipe(Config.option);
 
   if (apiKey._tag === "None") {
     return yield* Effect.fail(
@@ -112,7 +110,11 @@ const makeDaytonaClient = Effect.gen(function* () {
     );
   }
 
-  return new Daytona({ apiKey: apiKey.value, apiUrl, target });
+  return new Daytona({
+    apiKey: apiKey.value,
+    ...(apiUrl._tag === "Some" ? { apiUrl: apiUrl.value } : {}),
+    ...(target._tag === "Some" ? { target: target.value } : {}),
+  });
 });
 
 const sampleIssue: unknown = {

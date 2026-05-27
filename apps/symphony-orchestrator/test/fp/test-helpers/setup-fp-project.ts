@@ -58,11 +58,24 @@ export const runFpSuccess = async (
 const makeTempDirectory = async (template: string): Promise<string> =>
   (await Bun.$`mktemp -d ${template}`.text()).trim();
 
+const localFpEnv = (): Record<string, string | undefined> => {
+  const env = {
+    ...process.env,
+    FP_REMOTE: "",
+    FP_TOKEN: "",
+    FP_SERVER_URL: "",
+    FP_WORKSPACE: "",
+    FP_PROJECT_ID: "",
+    FP_PROJECT_PREFIX: "",
+  };
+  return env;
+};
+
 export const setupFpProject = async (fpPath: string): Promise<FpTestProject> => {
   const projectDir = await makeTempDirectory("/tmp/swy-fp-XXXXXXXX");
   const homeDir = await makeTempDirectory("/tmp/swy-fp-home-XXXXXXXX");
   const env = {
-    ...process.env,
+    ...localFpEnv(),
     HOME: homeDir,
     SWITCHYARD_FP_BIN: fpPath,
   };

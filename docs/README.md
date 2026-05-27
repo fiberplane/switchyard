@@ -12,6 +12,7 @@ System of record for the repository. AGENTS.md is the map, this directory is the
 | `docs/patterns/`            | How we write code in this repo. Conventions, rules, idioms.              | Effect usage, coding style, observability setup    |
 | `docs/templates/`           | How to build things. Specs for software components.                      | Effect CLI setup, API service scaffold             |
 | `docs/architecture/`        | What the system looks like. Domain boundaries, data flow, key decisions. | Service architecture, data models                  |
+| `docs/code-quality/`        | Repo-wide quality tools and triage policies.                             | Static analysis baselines                          |
 | `docs/proposals/active/`    | What we are planning to change. Design docs with status and rationale.   | New app scaffolds, orchestration flows             |
 | `docs/proposals/completed/` | Proposals that shipped. Kept for historical context.                     | Accepted designs after implementation              |
 | `docs/experiments/`         | Feasibility notes and demo evidence that are not yet product decisions.  | Prototype results, spike findings                  |
@@ -110,12 +111,25 @@ Docs rot when they describe code that changed. To mitigate:
 | [0001-symphony-deviations.md](architecture/0001-symphony-deviations.md)   | ADR: switchyard deviations from upstream symphony                                            |
 | [daytona-streaming-session.md](architecture/daytona-streaming-session.md) | Daytona streaming-session contract                                                           |
 | [fp-boundary.md](architecture/fp-boundary.md)                             | fp adapter + eligibility predicate contract                                                  |
+| [orchestrator-runone.md](architecture/orchestrator-runone.md)             | Orchestrator runOne pipeline, GitHub clone handoff, worker PR completion                      |
 | [runner-protocol.md](architecture/runner-protocol.md)                     | codex app-server JSON-RPC client contract: approval shapes, capabilities, transcript surface |
+
+### code-quality/
+
+| Doc                                   | Topic                                                       |
+| ------------------------------------- | ----------------------------------------------------------- |
+| [fallow.md](code-quality/fallow.md)   | Fallow static-analysis setup, triage policy, and baselines |
 
 ### proposals/
 
 - `active/` -- In-progress design docs
 - `completed/` -- Shipped designs kept for historical context
+
+Active proposals:
+
+| Doc                                                                                                      | Topic                                          |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [2026-05-26-remote-daytona-sandboxes.md](proposals/active/2026-05-26-remote-daytona-sandboxes.md) | Switch orchestrator sandboxes to Daytona Cloud |
 
 Completed proposals:
 
@@ -128,6 +142,7 @@ Completed proposals:
 | Doc                                                                                                        | Topic                                               |
 | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | [2026-05-04-symphony-daytona-vertical-slice.md](experiments/2026-05-04-symphony-daytona-vertical-slice.md) | Symphony vertical slice with fp, Codex, and Daytona |
+| [2026-05-26-daytona-cloud-lifecycle-smoke.md](experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md)     | Daytona Cloud lifecycle smoke evidence              |
 
 ### testing/
 
@@ -136,6 +151,10 @@ Validation patterns, test infrastructure notes, and QA scenario indexes live her
 ### graveyard/
 
 Retired docs live here when they are useful historical context but no longer describe active code.
+
+| Doc                                                         | Topic                                      |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| [daytona-local-compose.md](graveyard/daytona-local-compose.md) | Removed Daytona OSS stack |
 
 ## references/
 

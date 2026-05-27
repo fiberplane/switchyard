@@ -10,8 +10,10 @@ import { TranscriptWriteError } from "./errors.js";
 // (`transcript.jsonl` under `.symphony/runs/<issue>/<attempt>/`).
 export const TRANSCRIPT_FILENAME = "transcript.jsonl";
 
-const formatJsonl = (events: ReadonlyArray<RunnerNotification>): string =>
-  events.map((event) => `${JSON.stringify(event)}\n`).join("");
+const formatJsonl = (
+  events: ReadonlyArray<RunnerNotification>,
+  redact: (text: string) => string = (text) => text,
+): string => events.map((event) => `${redact(JSON.stringify(event))}\n`).join("");
 
 const mapPlatformError =
   (path: string, operation: string) =>
@@ -26,6 +28,7 @@ const mapPlatformError =
 export const writeTranscript = (
   runDir: string,
   events: ReadonlyArray<RunnerNotification>,
+  options: { readonly redact?: (text: string) => string } = {},
 ): Effect.Effect<string, TranscriptWriteError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -36,7 +39,7 @@ export const writeTranscript = (
       .pipe(Effect.mapError(mapPlatformError(runDir, "create directory")));
 
     yield* fs
-      .writeFileString(path, formatJsonl(events))
+      .writeFileString(path, formatJsonl(events, options.redact))
       .pipe(Effect.mapError(mapPlatformError(path, "write file")));
 
     return path;

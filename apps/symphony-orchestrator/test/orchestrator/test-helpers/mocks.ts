@@ -6,8 +6,8 @@
 
 import { Effect, Queue, Stream } from "effect";
 
-import { ArtifactDecodeError, ArtifactPathError } from "../../../src/artifact/errors.js";
-import type { OrchestratorRecord, WorkerOutcome } from "../../../src/artifact/models.js";
+import { ArtifactPathError } from "../../../src/artifact/errors.js";
+import type { OrchestratorRecord } from "../../../src/artifact/models.js";
 import type { ArtifactStoreShape } from "../../../src/artifact/store.js";
 import type { DaytonaAdapterShape } from "../../../src/daytona/daytona.adapter.js";
 import type {
@@ -28,23 +28,47 @@ import type {
   SandboxHandle,
 } from "../../../src/daytona/models.js";
 import type { CandidateScan, FpServiceShape } from "../../../src/fp/service.js";
-import type { IntegrationResult, SourceHandoff } from "../../../src/integration/models.js";
+import { SYMPHONY_PROPERTIES_DEFAULTS } from "../../../src/fp/symphony-properties.js";
+import type { GithubCloneSourceHandoff } from "../../../src/integration/models.js";
+import type { GithubCloneSourceOptions } from "../../../src/integration/service.js";
 import type { IntegrationServiceShape } from "../../../src/integration/service.js";
 import type { RenderedPrompt } from "../../../src/prompt/models.js";
 import type { WorkerPromptServiceShape } from "../../../src/prompt/service.js";
 import type { TurnOutcome } from "../../../src/runner/service.js";
 import type { AgentRunnerShape } from "../../../src/runner/service.js";
-import type { SandboxBundleResult } from "../../../src/sandbox-scripts/models.js";
 import type { SandboxScriptServiceShape } from "../../../src/sandbox-scripts/service.js";
 
 export type FpCall =
   | { readonly kind: "fetchCandidates"; readonly running: ReadonlyArray<string> }
+  | { readonly kind: "fetchIssueState"; readonly id: string }
   | { readonly kind: "claimIssue"; readonly id: string }
   | { readonly kind: "setAttempt"; readonly id: string; readonly attempt: number }
+  | {
+      readonly kind: "setRunMetadata";
+      readonly id: string;
+      readonly metadata: {
+        readonly branch: string;
+        readonly baseSha: string;
+        readonly runId: string;
+        readonly sandboxId: string;
+      };
+    }
+  | {
+      readonly kind: "setPrMetadata";
+      readonly id: string;
+      readonly metadata: {
+        readonly branch: string;
+        readonly prUrl: string;
+        readonly prNumber: string;
+        readonly baseSha: string;
+        readonly headSha: string;
+        readonly runId: string;
+        readonly sandboxId: string;
+      };
+    }
   | { readonly kind: "addComment"; readonly id: string; readonly body: string }
   | { readonly kind: "markCompleted"; readonly id: string; readonly summary: string }
-  | { readonly kind: "markNeedsAttention"; readonly id: string; readonly error: string }
-  | { readonly kind: "setArtifact"; readonly id: string; readonly path: string };
+  | { readonly kind: "markNeedsAttention"; readonly id: string; readonly error: string };
 
 export type FpMock = {
   readonly shape: FpServiceShape;
@@ -53,6 +77,7 @@ export type FpMock = {
 
 export const makeFpMock = (overrides: {
   readonly fetchCandidates?: () => Effect.Effect<CandidateScan, never>;
+  readonly fetchIssueState?: () => ReturnType<FpServiceShape["fetchIssueState"]>;
 }): FpMock => {
   const calls: FpCall[] = [];
   const shape: FpServiceShape = {
@@ -63,6 +88,16 @@ export const makeFpMock = (overrides: {
           ? Effect.succeed({ eligible: [], rejected: [] })
           : overrides.fetchCandidates();
       }),
+    fetchIssueState: (id) =>
+      Effect.suspend(() => {
+        calls.push({ kind: "fetchIssueState", id });
+        return overrides.fetchIssueState === undefined
+          ? Effect.succeed({
+              status: "in-progress",
+              properties: { ...SYMPHONY_PROPERTIES_DEFAULTS, symphony_state: "active" },
+            })
+          : overrides.fetchIssueState();
+      }),
     claimIssue: (id) =>
       Effect.sync(() => {
         calls.push({ kind: "claimIssue", id });
@@ -71,6 +106,14 @@ export const makeFpMock = (overrides: {
       Effect.sync(() => {
         calls.push({ kind: "setAttempt", id, attempt });
       }),
+    setRunMetadata: (id, metadata) =>
+      Effect.sync(() => {
+        calls.push({ kind: "setRunMetadata", id, metadata });
+      }),
+    setPrMetadata: (id, metadata) =>
+      Effect.sync(() => {
+        calls.push({ kind: "setPrMetadata", id, metadata });
+      }),
     markCompleted: (id, summary) =>
       Effect.sync(() => {
         calls.push({ kind: "markCompleted", id, summary });
@@ -78,10 +121,6 @@ export const makeFpMock = (overrides: {
     markNeedsAttention: (id, error) =>
       Effect.sync(() => {
         calls.push({ kind: "markNeedsAttention", id, error });
-      }),
-    setArtifact: (id, path) =>
-      Effect.sync(() => {
-        calls.push({ kind: "setArtifact", id, path });
       }),
     addComment: (id, body) =>
       Effect.sync(() => {
@@ -134,6 +173,10 @@ const TEST_SANDBOX_HANDLE: SandboxHandle = {
 export const makeDaytonaAdapterMock = (overrides?: {
   readonly handle?: SandboxHandle;
   readonly createSandbox?: () => Effect.Effect<SandboxHandle, never>;
+  readonly executeCommand?: (
+    handle: SandboxHandle,
+    command: string,
+  ) => Effect.Effect<DaytonaCommandResult, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
   readonly downloadFiles?: () => Effect.Effect<
     void,
     DaytonaSandboxNotFoundError | DaytonaSandboxOpError
@@ -152,10 +195,12 @@ export const makeDaytonaAdapterMock = (overrides?: {
       }),
     deleteSandbox: () => Effect.void,
     executeCommand: (h, command) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         calls.push({ kind: "executeCommand", handle: h, command });
-        const result: DaytonaCommandResult = { exitCode: 0, stdout: "", stderr: "" };
-        return result;
+        if (overrides?.executeCommand !== undefined) {
+          return overrides.executeCommand(h, command);
+        }
+        return Effect.succeed({ exitCode: 0, stdout: "", stderr: "" });
       }),
     uploadFiles: (h, files) =>
       Effect.sync(() => {
@@ -188,13 +233,19 @@ export type DaytonaSessionMock = {
   readonly shape: DaytonaSessionShape;
   // All bytes the runner sent over `send`, decoded back to UTF-8 strings.
   readonly sent: () => ReadonlyArray<string>;
+  readonly starts: () => ReadonlyArray<{
+    readonly handle: SandboxHandle;
+    readonly command: string;
+  }>;
 };
 
 export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSessionMock => {
   const sent: string[] = [];
+  const starts: Array<{ readonly handle: SandboxHandle; readonly command: string }> = [];
   const shape: DaytonaSessionShape = {
-    start: () =>
+    start: (handle, command) =>
       Effect.gen(function* () {
+        starts.push({ handle, command });
         // Per-call (per-runOne) sendIndex so multi-tick tests get a fresh
         // reply sequence on every session.start. Tests that need cumulative
         // tracking can read shape.sent() across ticks.
@@ -236,57 +287,39 @@ export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSe
         return stream;
       }),
   };
-  return { shape, sent: () => [...sent] };
+  return { shape, sent: () => [...sent], starts: () => [...starts] };
 };
 
 export type IntegrationMock = {
   readonly shape: IntegrationServiceShape;
-  readonly prepareCalls: () => number;
-  readonly integrateCalls: () => ReadonlyArray<IntegrationCall>;
-};
-
-type IntegrationCall = {
-  readonly bundlePath: string;
-  readonly issueId: string;
-  readonly suffix: string | undefined;
+  readonly prepareGithubCloneCalls: () => ReadonlyArray<GithubCloneSourceOptions>;
 };
 
 export const makeIntegrationMock = (overrides: {
-  readonly prepare?: () => Effect.Effect<SourceHandoff, never>;
-  readonly integrate?: (
-    bundlePath: string,
-    issueId: string,
-  ) => Effect.Effect<IntegrationResult, never>;
+  readonly prepareGithubClone?: (
+    options: GithubCloneSourceOptions,
+  ) => Effect.Effect<GithubCloneSourceHandoff, never>;
 }): IntegrationMock => {
-  let prepareN = 0;
-  const integrateLog: IntegrationCall[] = [];
+  const prepareGithubCloneLog: GithubCloneSourceOptions[] = [];
   const shape: IntegrationServiceShape = {
-    prepareSourceHandoff: () =>
+    prepareGithubCloneSourceHandoff: (options) =>
       Effect.suspend(() => {
-        prepareN += 1;
-        return overrides.prepare === undefined
+        prepareGithubCloneLog.push(options);
+        return overrides.prepareGithubClone === undefined
           ? Effect.succeed({
-              baseRev: "deadbeef",
-              archivePath: "/tmp/swy-source-fixture/source.tar.gz",
+              kind: "githubClone" as const,
+              repoUrl: options.repoUrl,
+              baseBranch: options.baseBranch,
+              baseSha: "0123456789abcdef0123456789abcdef01234567",
+              repoPath: options.repoPath,
+              branchName: options.branchName,
             })
-          : overrides.prepare();
-      }),
-    integrateBundle: (bundlePath, issueId, options) =>
-      Effect.suspend(() => {
-        integrateLog.push({ bundlePath, issueId, suffix: options?.suffix });
-        return overrides.integrate === undefined
-          ? Effect.succeed({
-              branch: `symphony/${issueId}`,
-              commitsBeyondBase: 1,
-              attempt: 1,
-            })
-          : overrides.integrate(bundlePath, issueId);
+          : overrides.prepareGithubClone(options);
       }),
   };
   return {
     shape,
-    prepareCalls: () => prepareN,
-    integrateCalls: () => [...integrateLog],
+    prepareGithubCloneCalls: () => [...prepareGithubCloneLog],
   };
 };
 
@@ -301,12 +334,7 @@ export type ArtifactStoreMock = {
 
 export const makeArtifactStoreMock = (
   basePath: string,
-  overrides: {
-    readonly readOutcome?: () => Effect.Effect<
-      WorkerOutcome,
-      ArtifactPathError | ArtifactDecodeError
-    >;
-  } = {},
+  _overrides: Record<string, never> = {},
 ): ArtifactStoreMock => {
   const recordLog: Array<{
     readonly issueId: string;
@@ -316,12 +344,6 @@ export const makeArtifactStoreMock = (
   const shape: ArtifactStoreShape = {
     runDir: (issueId, attempt) => Effect.succeed(`${basePath}/runs/${issueId}/${attempt}`),
     listRuns: () => Effect.succeed([]),
-    readOutcome: () =>
-      Effect.suspend(() =>
-        overrides.readOutcome === undefined
-          ? Effect.succeed({ status: "completed", summary: "ok" } satisfies WorkerOutcome)
-          : overrides.readOutcome(),
-      ),
     writeRecord: (issueId, attempt, record) =>
       Effect.sync(() => {
         recordLog.push({ issueId, attempt, record });
@@ -337,19 +359,24 @@ export const makeArtifactStoreMock = (
 export const makePromptMock = (): WorkerPromptServiceShape => ({
   renderPrompt: (input) =>
     Effect.succeed({
-      content: `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
+      content:
+        input.source.kind === "githubClone"
+          ? [
+              `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
+              `branch=${input.source.branchName}`,
+              `base=${input.source.baseSha}`,
+              `run=${input.source.runId}`,
+              `sandbox=${input.source.sandboxId}`,
+              "properties=symphony_branch,symphony_pr_url,symphony_pr_number,symphony_base_sha,symphony_head_sha,symphony_run_id,symphony_sandbox_id",
+            ].join("\n")
+          : `Prompt for ${input.issue.displayId} (attempt ${input.attempt})`,
       hostPath: "/tmp/swy-prompt-fixture/prompt.md",
       sandboxPath: "/tmp/prompt.md",
     } satisfies RenderedPrompt),
 });
 
 export const makeSandboxScriptMock = (): SandboxScriptServiceShape => ({
-  setupRepo: () => Effect.void,
-  finalizeBundle: (_handle, options) =>
-    Effect.succeed({
-      bundlePath: options.bundlePath,
-      commitsBeyondBase: 1,
-    } satisfies SandboxBundleResult),
+  setupClone: () => Effect.void,
 });
 
 // AgentRunner — for cycles that don't need the runner's framing path, a stub

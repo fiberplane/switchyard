@@ -1,20 +1,136 @@
-docs/architecture/daytona-streaming-session.md -> apps/symphony-orchestrator/src/daytona/daytona-client.ts sig:a41a9c8b420875be
-docs/architecture/daytona-streaming-session.md -> apps/symphony-orchestrator/src/daytona/daytona.session.ts sig:9f1522d128bb3469
-docs/architecture/daytona-streaming-session.md -> apps/symphony-orchestrator/src/daytona/errors.ts sig:98c30cd5c4a79462
-docs/architecture/daytona-streaming-session.md -> apps/symphony-orchestrator/src/daytona/session-models.ts sig:070fefcacadd8344
-docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/adapter.ts sig:f01143378adfc686
-docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/eligibility.ts sig:c40686bc1da4f53a
-docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/errors.ts sig:b55a6fb6d3decb85
-docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/models.ts sig:e915a696c34306a0
-docs/architecture/fp-boundary.md -> apps/symphony-orchestrator/src/fp/symphony-properties.ts sig:eeb16ec80944614b
-docs/architecture/observability.md -> apps/symphony-orchestrator/src/index.ts sig:e50aa23e5d032c21
-docs/architecture/observability.md -> apps/symphony-orchestrator/src/observability/logger.ts sig:7f1d8b171d799051
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/errors.ts sig:2e599bb0981cc19e
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/selector.ts sig:880dcf0fb9410d79
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/service.ts sig:deadf7b8af3b9339
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/state.ts sig:b3d88b342c0bb21f
-docs/architecture/orchestrator-runone.md -> apps/symphony-orchestrator/src/orchestrator/transcript.ts sig:fc09e718f2cc3d86
-docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/protocol/InitializeCapabilities.ts sig:0b1b1bec7250bd1e
-docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/service.ts sig:76abc128e5bf8abb
-docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/session.ts sig:90534e0e3988e2af
-docs/architecture/runner-protocol.md -> apps/symphony-orchestrator/src/runner/turn.ts sig:112813f003357936
+version = 1
+
+[[bindings]]
+doc = "docs/architecture/daytona-streaming-session.md"
+target = "apps/symphony-orchestrator/src/daytona/daytona-client.ts"
+sig = "e74c305f704f784e"
+
+[[bindings]]
+doc = "docs/architecture/daytona-streaming-session.md"
+target = "apps/symphony-orchestrator/src/daytona/daytona.session.ts"
+sig = "13c8a1ee5bb5ec6b"
+
+[[bindings]]
+doc = "docs/architecture/daytona-streaming-session.md"
+target = "apps/symphony-orchestrator/src/daytona/errors.ts"
+sig = "98c30cd5c4a79462"
+
+[[bindings]]
+doc = "docs/architecture/daytona-streaming-session.md"
+target = "apps/symphony-orchestrator/src/daytona/session-models.ts"
+sig = "070fefcacadd8344"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/adapter.ts"
+sig = "f01143378adfc686"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/eligibility.ts"
+sig = "c40686bc1da4f53a"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/errors.ts"
+sig = "b55a6fb6d3decb85"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/models.ts"
+sig = "3f31a3dec239374d"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/symphony-properties.ts"
+sig = "3cff160eea648fa8"
+
+[[bindings]]
+doc = "docs/architecture/observability.md"
+target = "apps/symphony-orchestrator/src/index.ts"
+sig = "c83a0171e0984af8"
+
+[[bindings]]
+doc = "docs/architecture/observability.md"
+target = "apps/symphony-orchestrator/src/observability/logger.ts"
+sig = "7f1d8b171d799051"
+
+[[bindings]]
+doc = "docs/architecture/orchestrator-runone.md"
+target = "apps/symphony-orchestrator/src/orchestrator/errors.ts"
+sig = "cf709d720a05ac1f"
+
+[[bindings]]
+doc = "docs/architecture/orchestrator-runone.md"
+target = "apps/symphony-orchestrator/src/orchestrator/selector.ts"
+sig = "880dcf0fb9410d79"
+
+[[bindings]]
+doc = "docs/architecture/orchestrator-runone.md"
+target = "apps/symphony-orchestrator/src/orchestrator/service.ts"
+sig = "bf76338c953a7fc5"
+
+[[bindings]]
+doc = "docs/architecture/orchestrator-runone.md"
+target = "apps/symphony-orchestrator/src/orchestrator/state.ts"
+sig = "b3d88b342c0bb21f"
+
+[[bindings]]
+doc = "docs/architecture/orchestrator-runone.md"
+target = "apps/symphony-orchestrator/src/orchestrator/transcript.ts"
+sig = "8169de78b08b3e38"
+
+[[bindings]]
+doc = "docs/architecture/runner-protocol.md"
+target = "apps/symphony-orchestrator/src/runner/protocol/InitializeCapabilities.ts"
+sig = "0b1b1bec7250bd1e"
+
+[[bindings]]
+doc = "docs/architecture/runner-protocol.md"
+target = "apps/symphony-orchestrator/src/runner/service.ts"
+sig = "76abc128e5bf8abb"
+
+[[bindings]]
+doc = "docs/architecture/runner-protocol.md"
+target = "apps/symphony-orchestrator/src/runner/session.ts"
+sig = "90534e0e3988e2af"
+
+[[bindings]]
+doc = "docs/architecture/runner-protocol.md"
+target = "apps/symphony-orchestrator/src/runner/turn.ts"
+sig = "4f05f84367519872"
+
+[[bindings]]
+doc = "docs/code-quality/fallow.md"
+target = ".fallowrc.jsonc"
+sig = "a3edc2b1f772bc96"
+
+[[bindings]]
+doc = "docs/code-quality/fallow.md"
+target = "package.json"
+sig = "3081ae8d809265e5"
+
+[[bindings]]
+doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
+target = "apps/symphony-orchestrator/snapshot/Dockerfile"
+sig = "73ed5c7e2d164743"
+
+[[bindings]]
+doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
+target = "apps/symphony-orchestrator/snapshot/build.ts"
+sig = "cc2d8a2516c319bf"
+
+[[bindings]]
+doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
+target = "apps/symphony-orchestrator/src/daytona/daytona.session.ts"
+sig = "13c8a1ee5bb5ec6b"
+
+[[bindings]]
+doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
+target = "apps/symphony-orchestrator/test/daytona/remote-cloud.test.ts"
+sig = "d1f01c1d34f6978f"
+
+[[bindings]]
+doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
+target = "apps/symphony-orchestrator/test/daytona/test-helpers/remote-cloud.ts"
+sig = "b707406d4df43075"

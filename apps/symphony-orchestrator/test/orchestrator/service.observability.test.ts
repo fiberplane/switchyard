@@ -5,13 +5,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 
 import { structuredLoggerLayer } from "../../src/observability/logger.js";
 import {
   OrchestratorService,
   type OrchestratorServiceConfig,
 } from "../../src/orchestrator/service.js";
+import { AgentRunner } from "../../src/runner/service.js";
 import { fixtureEligible } from "./test-helpers/fixture-issue.js";
 import {
   makeArtifactStoreMock,
@@ -19,60 +20,26 @@ import {
   makeDaytonaSessionMock,
   makeFpMock,
   makeIntegrationMock,
+  makeStubAgentRunner,
 } from "./test-helpers/mocks.js";
 import { wire, writeFakeCodexAuth } from "./test-helpers/wire.js";
 
 const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   maxConcurrentAgents: 1,
   turnTimeoutMs: 60_000,
-  snapshotName: "symphony-test-codex",
+  snapshotName: "switchyard-codex-bun-test",
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath,
+  repoPath: "/workspace/repo",
+  source: {
+    kind: "githubClone",
+    repoUrl: "https://github.com/fiberplane/switchyard.git",
+    baseBranch: "main",
+    artifactStrategy: "pr",
+  },
+  fpRest: { remote: "rest-api" },
 });
-
-const codexResponses = (): ReadonlyArray<ReadonlyArray<string>> => [
-  [
-    JSON.stringify({
-      id: 1,
-      result: {
-        userAgent: "switchyard-test/0.1",
-        codexHome: "/workspace/codex-home",
-        platformFamily: "unix",
-        platformOs: "linux",
-      },
-    }),
-  ],
-  [
-    JSON.stringify({
-      id: 2,
-      result: {
-        thread: {
-          id: "thread-fixture",
-          forkedFromId: null,
-          preview: "",
-          ephemeral: true,
-          modelProvider: "openai",
-          createdAt: 1,
-          updatedAt: 1,
-          status: { type: "idle" },
-          path: null,
-          cwd: "/workspace/repo",
-          cliVersion: "0.128.0",
-          source: "vscode",
-          agentNickname: null,
-          agentRole: null,
-          gitInfo: null,
-          name: null,
-        },
-      },
-    }),
-  ],
-  [
-    JSON.stringify({ id: 3, result: { ok: true } }),
-    JSON.stringify({ method: "turn/completed", params: { turn: { status: "completed" } } }),
-  ],
-];
 
 let codexAuthPath: string;
 
@@ -87,12 +54,38 @@ afterEach(() => {});
 describe("OrchestratorService.runOne — observability emissions", () => {
   test("happy path emits one log line per umbrella-spec state-flow row, with annotation context", async () => {
     const issue = fixtureEligible("happy");
-    const fp = makeFpMock({});
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed({
+          status: "done",
+          properties: {
+            symphony_state: "end",
+            symphony_attempt: undefined,
+            symphony_last_error: undefined,
+            symphony_ready: "false",
+            symphony_branch: "symphony/happy",
+            symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+            symphony_pr_number: "123",
+            symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+            symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+            symphony_run_id: "swy-swy-happy-1",
+            symphony_sandbox_id: "sb-test-1",
+          },
+        }),
+    });
     const daytona = makeDaytonaAdapterMock();
-    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const session = makeDaytonaSessionMock({ perSendReplies: [] });
     const integration = makeIntegrationMock({});
     const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
     const config = baseConfig(codexAuthPath);
+    const agentRunner = Layer.succeed(
+      AgentRunner,
+      makeStubAgentRunner({
+        kind: "completed",
+        result: {},
+        events: [],
+      }),
+    );
 
     const lines: Record<string, unknown>[] = [];
 
@@ -101,7 +94,7 @@ describe("OrchestratorService.runOne — observability emissions", () => {
         const orch = yield* OrchestratorService;
         return yield* orch.runOne(issue);
       }).pipe(
-        Effect.provide(wire({ fp, daytona, session, integration, artifact, config })),
+        Effect.provide(wire({ fp, daytona, session, integration, artifact, config, agentRunner })),
         Effect.provide(
           structuredLoggerLayer({
             sink: (line) => {
@@ -119,9 +112,7 @@ describe("OrchestratorService.runOne — observability emissions", () => {
       "source.uploaded",
       "turn.started",
       "turn.completed",
-      "bundle.decoded",
-      "integration.succeeded",
-      "fp.done",
+      "worker.handoff.completed",
     ];
     for (const expected of expectedOrder) {
       expect(messages).toContain(expected);
@@ -144,7 +135,7 @@ describe("OrchestratorService.runOne — observability emissions", () => {
     expect(turnCompleted.sandbox_id).toBeDefined();
     expect(turnCompleted.issue_id).toBe(issue.detail.id);
 
-    const fpDone = lines.find((l) => l.message === "fp.done")!;
-    expect(fpDone.symphony_artifact).toBe("symphony/happy");
+    const handoffDone = lines.find((l) => l.message === "worker.handoff.completed")!;
+    expect(handoffDone.branch).toBe("symphony/happy");
   });
 });

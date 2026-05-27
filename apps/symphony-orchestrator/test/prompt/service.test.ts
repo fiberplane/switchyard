@@ -28,6 +28,19 @@ const runRender = <A, E>(
   effect: Effect.Effect<A, E, WorkerPromptService | FileSystem.FileSystem>,
 ) => Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)));
 
+const githubCloneSource = {
+  kind: "githubClone" as const,
+  repoUrl: "https://github.com/fiberplane/switchyard.git",
+  baseBranch: "main",
+  baseSha: "0123456789abcdef0123456789abcdef01234567",
+  repoPath: "/workspace/repo",
+  branchName: "symphony/SWYRD-abc123",
+  metadataPath: "/tmp/.symphony/source.json",
+  runId: "swy-swyrd-abc123-1",
+  sandboxId: "sb-123",
+  fpRestWorkdir: "/tmp/.symphony/fp-rest",
+};
+
 // Track every host tempdir created during a test so cleanup is reliable even on failure.
 const createdDirs: string[] = [];
 
@@ -55,7 +68,7 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     const result = await runRender(
       Effect.gen(function* () {
         const service = yield* WorkerPromptService;
-        return yield* service.renderPrompt({ issue, attempt: 1 });
+        return yield* service.renderPrompt({ issue, attempt: 1, source: githubCloneSource });
       }),
     );
 
@@ -77,6 +90,37 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     expect(result.content).toContain("SWYRD-abc123");
     expect(result.content).toContain("Add foo helper to message module");
     expect(result.content).toContain("Implement the foo helper.");
+    expect(result.content).toContain("symphony/SWYRD-abc123");
+  });
+
+  test("renders githubClone source metadata and branch instructions", async () => {
+    const issue = await readIssueFixture("issue-with-description.json");
+    const result = await runRender(
+      Effect.gen(function* () {
+        const service = yield* WorkerPromptService;
+        return yield* service.renderPrompt({
+          issue,
+          attempt: 1,
+          source: githubCloneSource,
+        });
+      }),
+    );
+
+    trackHostDir(result.hostPath);
+    expect(result.content).toContain("0123456789abcdef0123456789abcdef01234567");
+    expect(result.content).toContain("symphony/SWYRD-abc123");
+    expect(result.content).toContain("/tmp/.symphony/source.json");
+    expect(result.content).toContain("swy-swyrd-abc123-1");
+    expect(result.content).toContain("sb-123");
+    expect(result.content).toContain("FP_REMOTE=rest-api");
+    expect(result.content).toContain("gh pr create");
+    expect(result.content).toContain("symphony_pr_url");
+    expect(result.content).toContain("babysit");
+    expect(result.content).not.toContain("PrArtifactNotImplemented");
+    expect(result.content).not.toContain("outcome.json");
+    expect(result.content).not.toContain("symphony-base");
+    expect(result.content).not.toContain("git bundle");
+    expect(result.content).not.toContain("no `fp` credentials");
   });
 
   test("substitutes the fallback prose when description is null", async () => {
@@ -85,7 +129,7 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     const result = await runRender(
       Effect.gen(function* () {
         const service = yield* WorkerPromptService;
-        return yield* service.renderPrompt({ issue, attempt: 1 });
+        return yield* service.renderPrompt({ issue, attempt: 1, source: githubCloneSource });
       }),
     );
 
@@ -107,7 +151,11 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     const result = await runRender(
       Effect.gen(function* () {
         const service = yield* WorkerPromptService;
-        return yield* service.renderPrompt({ issue: issueNoKey, attempt: 1 });
+        return yield* service.renderPrompt({
+          issue: issueNoKey,
+          attempt: 1,
+          source: githubCloneSource,
+        });
       }),
     );
 
@@ -122,7 +170,11 @@ describe("WorkerPromptService.renderPrompt — happy path", () => {
     const result = await runRender(
       Effect.gen(function* () {
         const service = yield* WorkerPromptService;
-        return yield* service.renderPrompt({ issue: blankIssue, attempt: 2 });
+        return yield* service.renderPrompt({
+          issue: blankIssue,
+          attempt: 2,
+          source: githubCloneSource,
+        });
       }),
     );
 
@@ -168,7 +220,7 @@ describe("WorkerPromptService.renderPrompt — write failures", () => {
         Effect.either(
           Effect.gen(function* () {
             const service = yield* WorkerPromptService;
-            return yield* service.renderPrompt({ issue, attempt: 1 });
+            return yield* service.renderPrompt({ issue, attempt: 1, source: githubCloneSource });
           }),
         ),
       );

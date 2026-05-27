@@ -1,11 +1,9 @@
-# @switchyard/qa — vertical-slice end-to-end QA
+# @switchyard/qa — remote Daytona end-to-end QA
 
 Operator-followable scenarios that exercise the Switchyard vertical slice end-to-end against a
-real Daytona stack, real `fp` issues, real `codex app-server`, and a real host repo. Sibling
-deliverable to `apps/symphony-orchestrator/test/orchestrator/service.integration.test.ts` — the
-integration test proves the wiring works under controlled conditions; this package is what an
-operator follows when running the system fresh and needs to know what "working" looks like at
-every layer.
+real Daytona Cloud sandbox, real `fp` issues, real `codex app-server`, and GitHub PR handoff.
+This package is what an operator follows when running the remote path fresh and needs to know
+what "working" looks like at every layer.
 
 Modeled on `references/nocturne/packages/qa-scripts/` (or your local clone at
 `../nocturne/packages/qa-scripts/`). Read its README first if you've never worked with this style
@@ -16,8 +14,8 @@ of QA package — the conventions there are load-bearing.
 - **Descriptive scenarios, not scripts.** Each scenario describes the goal, the steps, and how to
   verify success. Helpers describe _what_ needs to happen, not _how_ — the operator (or agent)
   reads the helper, explores the codebase to find the right commands, then executes.
-- **Real surfaces only.** The package's value is being end-to-end. Mocked / synthetic happy paths
-  belong in `service.integration.test.ts`, not here.
+- **Real surfaces only.** The package's value is being end-to-end. Mocked / synthetic paths
+  belong in focused unit tests, not here.
 - **Drift-anchored where it counts.** Scenarios that cite concrete command/property/log surfaces
   have `drift link`s to the source files whose behavior the snippet depends on. Pure-prose
   scenarios skip drift; see "Drift conventions" below.
@@ -31,37 +29,43 @@ packages/qa/
 ├── .gitignore          # ignores results/ output
 ├── helpers/            # what-to-do descriptions, agent-readable
 ├── scenarios/          # numbered, frontmatter-tagged walkthroughs
-├── fixtures/           # ready-to-copy WORKFLOW.md + fp-issue bodies
+├── fixtures/           # remote workflow/task fixtures
 └── results/            # operator-captured run logs (gitignored)
 ```
 
 ## Scenario index
 
-| #   | Scenario                                                                 | Covers                                                                         |
-| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| 01  | [Vertical slice — happy path](scenarios/01-vertical-slice-happy-path.md) | Code-change task → `symphony/<id>` branch → fp `done`; structured-log contract |
+| #   | Scenario                                                                 | Covers                                                                 |
+| --- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| 02  | [Remote Daytona — happy path](scenarios/02-remote-daytona-happy-path.md) | Daytona Cloud sandbox -> GitHub PR -> worker-owned fp metadata cleanup |
 
-Scenario 01 is the v1 demo-readiness signal — happy-path success is what proves the slice
-works end-to-end.
+Scenario 02 is the active remote-Daytona migration signal. It is gated by
+`SWITCHYARD_REMOTE_DAYTONA_E2E=1` and is intentionally not wired into `bun run test`.
+Before it creates fp issues or Daytona sandboxes, the harness verifies that the configured
+`GITHUB_TOKEN` can create and delete an E2E-prefixed branch in the target repo. For GitHub
+fine-grained PATs, grant contents read/write, workflows read/write, and pull requests read/write
+access to the repo. GitHub may require workflow write permission when creating a branch at a commit
+that already contains `.github/workflows`.
 
-**Failure-path scenarios deferred to follow-up `SWYRD-euvkxyra`** (under epic `SWYRD-uouprnfv`):
-worker-blocked (02), research-task (03), re-arm (04), and signal-shutdown (05). Failure-mode
-behavior is covered at unit level by `osqltjnr`'s `service.integration.test.ts` (cycles 4-7 +
-12c); operator-followable forensics docs are nice-to-have, not v1-gating. Any of the four can
-be promoted in-place when a real incident provides higher-fidelity evidence than a guessed-up
-walkthrough would.
+Before spending a Daytona run, validate a new PAT with:
+
+```bash
+bun run --filter @switchyard/qa github-token:preflight
+```
+
+The preflight loads `apps/symphony-orchestrator/.env`, prints only token fingerprints, checks for
+ambient `process.env` override, and tries both REST create/delete-ref and isolated
+credential-helper-free `git push` create/delete under `symphony/e2e/`.
 
 ## Helpers
 
-| Helper                                                             | Purpose                                                                           |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [setup-daytona-test-stack.md](helpers/setup-daytona-test-stack.md) | Bring up the local Daytona OSS compose stack                                      |
-| [setup-host-repo.md](helpers/setup-host-repo.md)                   | Initialize a temp host repo as the integration target                             |
-| [bootstrap-codex-auth.md](helpers/bootstrap-codex-auth.md)         | Get `~/.codex/auth.json` into the sandbox snapshot                                |
-| [create-fp-issue.md](helpers/create-fp-issue.md)                   | Craft an `fp` issue with the right `symphony_*` properties                        |
-| [setup-workflow-config.md](helpers/setup-workflow-config.md)       | Materialize a working `WORKFLOW.md` from the fixture                              |
-| [cleanup.md](helpers/cleanup.md)                                   | Tear down the stack + prune sandboxes + optional run-record cleanup               |
-| [macos-host-fixes.md](helpers/macos-host-fixes.md)                 | macOS DNS workaround for `*.proxy.localhost` (now upstreamed; kept as a footnote) |
+| Helper                                                     | Purpose                                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| [remote-daytona-env.md](helpers/remote-daytona-env.md)     | Configure the gitignored orchestrator `.env`                |
+| [remote-fp-rest.md](helpers/remote-fp-rest.md)             | Verify fp REST/no-clone credentials                         |
+| [remote-github-pr.md](helpers/remote-github-pr.md)         | Verify GitHub branch/PR permissions                         |
+| [remote-daytona-cleanup.md](helpers/remote-daytona-cleanup.md) | Understand run-owned Cloud cleanup selectors             |
+| [cleanup.md](helpers/cleanup.md)                           | Manual cleanup for a partially kept or interrupted E2E run  |
 
 Helpers describe the _what_. The operator (or agent) reads the helper, explores the codebase to
 find the right commands, and executes. This is the load-bearing convention from nocturne.
@@ -81,7 +85,7 @@ Anchor patterns to apply:
 | Canonical `symphony_last_error` strings | `apps/symphony-orchestrator/src/orchestrator/service.ts`                                        |
 | Structured-log key set                  | `apps/symphony-orchestrator/src/observability/logger.ts` + `docs/architecture/observability.md` |
 | `bun run start` invocation shape        | `apps/symphony-orchestrator/src/index.ts`                                                       |
-| Worker prompt contract assertions       | `apps/symphony-orchestrator/src/prompt/template.ts`                                             |
+| Worker prompt contract assertions       | `apps/symphony-orchestrator/src/prompt/service.ts`                                              |
 
 Skip drift on scenarios that only describe operator UX flow at a high level. Add anchors via
 `drift link <doc> <code>` from the repo root; never edit `drift.lock` by hand. See
@@ -133,7 +137,6 @@ Notes about the run, any deviations, follow-up items.
 
 ## Out of scope (v1)
 
-- **Automated test harness.** Scenarios are operator-followable, not bun-test fixtures.
 - **CI integration.** Running scenarios in CI is a follow-up if anyone asks for it.
 - **Concurrency-cap testing.** v1 is single-flight; concurrency comes back when
   `agent.maxConcurrentAgents > 1` lands.
@@ -143,9 +146,8 @@ Notes about the run, any deviations, follow-up items.
 
 ## Related
 
-- Umbrella spec: `docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md`
+- Remote Daytona proposal: `docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md`
 - ADR: `docs/architecture/0001-symphony-deviations.md`
-- Orchestrator service ticket (locked behaviors): `SWYRD-osqltjnr`
-- Index.ts ticket: `SWYRD-ozdpzajz`
-- This package's parent ticket: `SWYRD-aojxuuft`
+- Remote E2E evidence:
+  `packages/qa/results/remote-daytona-e2e-4797077e-55fc-42c7-8152-bbddc9bbc1bc.md`
 - Nocturne reference: `../nocturne/packages/qa-scripts/`

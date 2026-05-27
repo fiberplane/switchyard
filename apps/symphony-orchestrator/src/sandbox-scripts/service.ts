@@ -4,23 +4,15 @@ import { DaytonaAdapter } from "../daytona/daytona.adapter.js";
 import type { DaytonaSandboxNotFoundError, DaytonaSandboxOpError } from "../daytona/errors.js";
 import type { SandboxHandle } from "../daytona/models.js";
 import type { SandboxScriptError } from "./errors.js";
-import { runFinalize } from "./finalize.js";
-import type { FinalizeBundleOptions, SandboxBundleResult, SetupRepoOptions } from "./models.js";
-import { runSetup } from "./setup.js";
+import type { SetupCloneOptions } from "./models.js";
+import { runSetupClone } from "./setup.js";
 
 export type SandboxScriptServiceShape = {
-  readonly setupRepo: (
+  readonly setupClone: (
     handle: SandboxHandle,
-    options: SetupRepoOptions,
+    options: SetupCloneOptions,
   ) => Effect.Effect<
     void,
-    SandboxScriptError | DaytonaSandboxNotFoundError | DaytonaSandboxOpError
-  >;
-  readonly finalizeBundle: (
-    handle: SandboxHandle,
-    options: FinalizeBundleOptions,
-  ) => Effect.Effect<
-    SandboxBundleResult,
     SandboxScriptError | DaytonaSandboxNotFoundError | DaytonaSandboxOpError
   >;
 };
@@ -35,8 +27,7 @@ export const SandboxScriptServiceLive = Layer.effect(
   Effect.gen(function* () {
     const adapter = yield* DaytonaAdapter;
     return {
-      setupRepo: (handle, options) => runSetup(adapter, handle, options),
-      finalizeBundle: (handle, options) => runFinalize(adapter, handle, options),
+      setupClone: (handle, options) => runSetupClone(adapter, handle, options),
     };
   }),
 );

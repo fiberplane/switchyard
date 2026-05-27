@@ -10,68 +10,74 @@
 
 ## Somewhat-quick Start
 
-End-to-end: clone, bring up a local Daytona, arm an `fp` ticket, dispatch it
-through the orchestrator, and watch a real Codex worker land a
-`symphony/<id>` branch on your local repo.
+End-to-end: configure Daytona Cloud credentials, validate GitHub/fp access, arm an `fp` ticket,
+dispatch it through the orchestrator, and watch a real Codex worker create a GitHub PR from a
+remote Daytona sandbox.
 
 ### Prereqs
 
-- `docker` (or OrbStack on macOS).
 - `bun` >= 1.3.13, `fp` CLI authenticated against this project.
 - `~/.codex/auth.json` on the host (ChatGPT login, not `OPENAI_API_KEY`).
+- Daytona Cloud API access and a snapshot with `git`, `gh`, `fp`, `rg`, `jq`, Bun, Codex, drift,
+  and ast-grep.
+- A GitHub token for this repo with contents read/write, workflows read/write, and pull requests
+  read/write.
 - Optional: `jq` for prettier log tailing.
-
-The Daytona stack is vendored in-repo at
-`apps/symphony-orchestrator/daytona/` — no upstream clone required. See
-[`docs/architecture/daytona-local-setup.md`](docs/architecture/daytona-local-setup.md)
-for the long-form setup notes; the short version is the steps below.
 
 ```bash
 bun install
 ```
 
-### 1. Bring up the local Daytona stack
+### 1. Configure host secrets
+
+Create `apps/symphony-orchestrator/.env` from `.env.example` and fill in the remote credentials.
+The file is gitignored; never put these values in `WORKFLOW.md`.
 
 ```bash
-bun run --filter @switchyard/symphony-orchestrator daytona:up
-curl -sf http://localhost:3000/api/health   # → {"status":"ok"}
+cp apps/symphony-orchestrator/.env.example apps/symphony-orchestrator/.env
+$EDITOR apps/symphony-orchestrator/.env
 ```
 
-First run pulls multi-GB images and takes a few minutes. Subsequent
-up/down cycles are sub-30s with a warm cache.
-
-### 2. Provision an API key + build the snapshot
-
-The dashboard onboarding key is read-scoped — it cannot create snapshots.
-Create a write-scoped key, then build the `symphony-codex-bun` snapshot
-the orchestrator dispatches into:
+Minimum values for the remote path:
 
 ```bash
-open http://localhost:3000/dashboard
-# Log in: dev@daytona.io / password (upstream dev defaults).
-# Dashboard → API Keys → New → grant write:snapshots + delete:snapshots.
-
-DAYTONA_API_KEY=<your-key> \
-  bun run --filter @switchyard/symphony-orchestrator snapshot:build
+DAYTONA_API_KEY=
+DAYTONA_SNAPSHOT=
+GITHUB_TOKEN=
+FP_REMOTE=rest-api
+FP_TOKEN=
+FP_SERVER_URL=
+FP_WORKSPACE=
+FP_PROJECT_ID=
+SWITCHYARD_CODEX_AUTH=/Users/<you>/.codex/auth.json
 ```
 
-`snapshot:build` is idempotent: it early-exits if `symphony-codex-bun` is
-already `active`. First build is 3–6 minutes (apt + npm + bun installer).
+### 2. Validate GitHub write access
 
-### 3. Inject your key into `WORKFLOW.md`
-
-`WORKFLOW.md` at the repo root is the operator config. The committed
-`sandbox.apiKey` is bound to a different machine's Daytona — replace it
-with your own:
+Before spending a Daytona run, validate that the GitHub token can create and delete an E2E branch:
 
 ```bash
-$EDITOR WORKFLOW.md   # paste your write-scoped key into sandbox.apiKey
+bun run --filter @switchyard/qa github-token:preflight
 ```
 
-The key authorizes `localhost:3000` only (per-machine). Do not commit the
-edit. `WORKFLOW.example.md` is the annotated reference for each field.
+This prints only token fingerprints and tests both GitHub REST create/delete-ref and isolated
+credential-helper-free `git push` create/delete under `symphony/e2e/`.
 
-### 4. Arm a demo ticket
+### 3. Validate the remote Daytona E2E
+
+The canonical remote proof creates a scratch fp issue, a Daytona Cloud sandbox, a GitHub branch,
+a non-draft PR, worker-owned fp terminal metadata, and then cleans up the PR, branch, and sandbox.
+
+```bash
+SWITCHYARD_REMOTE_DAYTONA_E2E=1 \
+SWITCHYARD_REMOTE_DAYTONA_BASE_BRANCH=proposal/remote-daytona-sandboxes \
+bun run --filter @switchyard/qa remote-daytona:e2e
+```
+
+The runner writes sanitized evidence under `packages/qa/results/`; commit only curated PASS
+evidence with `git add -f`.
+
+### 4. Arm a work ticket
 
 Flip an `fp` issue's `symphony_ready` flag. The orchestrator polls every
 `polling.intervalMs` (default 5s) and dispatches eligible issues on the
@@ -105,52 +111,35 @@ pipeline:
 
 ```
 candidate.selected → claim.acquired → sandbox.created → source.uploaded →
-turn.started → turn.completed → bundle.decoded → integration.succeeded →
-fp.done
+turn.started → turn.completed → worker.handoff.completed
 ```
 
-Three `fp` comments land alongside: `Dispatched to sandbox <uuid>`,
-`Worker turn completed; integrating`, then on success the worker's
-`outcome.summary` (verbatim). The result is a `symphony/<id>` branch on
-your local repo:
-
-```bash
-git log --oneline symphony/<id>
-git diff symphony/<id>~1..symphony/<id>   # clean diff (synthetic-base aware)
-```
-
-Per-run artifacts live under `.symphony/runs/runs/<id>/<attempt>/`
-(`outcome.json`, `outcome-record.json`, `transcript.jsonl`, `work.bundle`).
+The remote worker owns the GitHub handoff: it pushes an allowed-prefix branch, opens a PR, updates
+canonical `symphony_*` fp metadata, and marks the issue terminal. The host verifies fp/PR/base/head
+agreement before treating the run as integrated.
 
 ### 7. Cleanup
 
-`autoDeleteInterval: -1` in `WORKFLOW.md` keeps sandboxes alive for forensic
-SSH after a run. Prune them via the Daytona dashboard or by Daytona label
-`app=symphony` / `fp_issue_id=<internal-id>`. To re-arm an issue that ended
-in `needs-attention` (v1 has `maxAttempts: 1`, so retry is manual):
+Remote E2E cleanup closes only the matching PR, deletes only the matching branch, and deletes only
+Daytona sandboxes with the matching `test_run_id`. For normal dispatches, use Daytona labels such
+as `app=symphony`, `fp_issue_id=<internal-id>`, and `run_id=<run-id>` to inspect or prune sandboxes.
+
+To re-arm an issue that ended in `needs-attention` (v1 has `maxAttempts: 1`, so retry is manual):
 
 ```bash
 fp issue update <id> --status todo \
   --property symphony_state=idle \
   --property symphony_last_error= \
-  --property symphony_attempt=0
+  --property symphony_attempt=0 \
+  --property symphony_ready=true
 ```
-
-To shut everything down:
-
-```bash
-bun run --filter @switchyard/symphony-orchestrator daytona:down
-```
-
-(`down -v` — drops volumes, including your dashboard key. Drop `-v` in the
-script if you want to preserve state across restarts.)
 
 ### Going deeper
 
-- [`docs/architecture/daytona-local-setup.md`](docs/architecture/daytona-local-setup.md) — long-form Daytona setup, gotchas.
-- [`apps/symphony-orchestrator/daytona/README.md`](apps/symphony-orchestrator/daytona/README.md) — vendored stack details.
 - [`apps/symphony-orchestrator/snapshot/README.md`](apps/symphony-orchestrator/snapshot/README.md) — snapshot build internals + env overrides.
 - [`docs/architecture/orchestrator-runone.md`](docs/architecture/orchestrator-runone.md) — pipeline, three-comment cadence, codex auth.
+- [`docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md`](docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md) — accepted remote Daytona migration design.
+- [`docs/graveyard/daytona-local-compose.md`](docs/graveyard/daytona-local-compose.md) — retired local compose implementation notes.
 - [`docs/architecture/`](docs/architecture/) and [`docs/patterns/`](docs/patterns/) — design notes and Effect conventions.
 
 ## Philosophy

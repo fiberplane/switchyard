@@ -1,11 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import { Context, Deferred, Duration, Effect, Layer, Schedule } from "effect";
 
 import { ArtifactStoreLive } from "./artifact/store.js";
+import {
+  decodeHostRuntimeConfig,
+  loadHostEnv,
+  type EnvMap,
+  type HostRuntimeConfig,
+} from "./config/host-runtime.js";
 import { DaytonaAdapter, DaytonaAdapterLive } from "./daytona/daytona.adapter.js";
 import { DaytonaSession, DaytonaSessionLive } from "./daytona/daytona.session.js";
 import type { DaytonaConfig } from "./daytona/models.js";
@@ -29,6 +36,8 @@ import { WorkflowServiceLive } from "./workflow/service.js";
 
 type OrchestratorServiceShape = Context.Tag.Service<OrchestratorService>;
 
+const appRoot = fileURLToPath(new URL("..", import.meta.url));
+
 export type CliOptions = {
   readonly workflow: string;
 };
@@ -44,24 +53,54 @@ export const parseCliOptions = (
   return { workflow: workflow === undefined || workflow.length === 0 ? "./WORKFLOW.md" : workflow };
 };
 
-export const toDaytonaConfig = (cfg: SandboxConfig): DaytonaConfig => ({
-  apiUrl: cfg.apiUrl,
-  apiKey: cfg.apiKey,
-  target: cfg.target,
-  snapshotName: cfg.snapshot,
+export const toDaytonaConfig = (
+  cfg: SandboxConfig,
+  hostConfig: Pick<HostRuntimeConfig, "daytona">,
+): DaytonaConfig => ({
+  apiKey: hostConfig.daytona.apiKey,
+  ...(hostConfig.daytona.apiUrl === undefined ? {} : { apiUrl: hostConfig.daytona.apiUrl }),
+  ...(hostConfig.daytona.target === undefined ? {} : { target: hostConfig.daytona.target }),
+  snapshotName: hostConfig.daytona.snapshotName ?? cfg.snapshot,
 });
 
 export const toOrchestratorConfig = (
   cfg: WorkflowConfig,
-  env: Record<string, string | undefined> = process.env,
-): OrchestratorServiceConfig => ({
-  maxConcurrentAgents: cfg.agent.maxConcurrentAgents,
-  turnTimeoutMs: cfg.codex.turnTimeoutMs,
-  snapshotName: cfg.sandbox.snapshot,
-  autoStopInterval: cfg.sandbox.autoStopInterval,
-  autoDeleteInterval: cfg.sandbox.autoDeleteInterval,
-  codexAuthHostPath: env.SWITCHYARD_CODEX_AUTH ?? path.join(homedir(), ".codex/auth.json"),
-});
+  hostConfig: Pick<HostRuntimeConfig, "github" | "codex" | "fpRest">,
+): OrchestratorServiceConfig => {
+  return {
+    maxConcurrentAgents: cfg.agent.maxConcurrentAgents,
+    turnTimeoutMs: cfg.codex.turnTimeoutMs,
+    snapshotName: cfg.sandbox.snapshot,
+    autoStopInterval: cfg.sandbox.autoStopInterval,
+    autoDeleteInterval: cfg.sandbox.autoDeleteInterval,
+    codexAuthHostPath: hostConfig.codex.authPath ?? path.join(homedir(), ".codex/auth.json"),
+    repoPath: cfg.sandbox.repoPath,
+    source: {
+      kind: "githubClone" as const,
+      repoUrl: cfg.sandbox.repoUrl,
+      baseBranch: cfg.sandbox.baseBranch,
+      artifactStrategy: cfg.sandbox.artifactStrategy,
+      githubToken: hostConfig.github.token,
+    },
+    branchPrefix: cfg.integration.branchPrefix,
+    fpRest: {
+      remote: "rest-api",
+      ...(hostConfig.fpRest.token === undefined ? {} : { token: hostConfig.fpRest.token }),
+      ...(hostConfig.fpRest.serverUrl === undefined
+        ? {}
+        : { serverUrl: hostConfig.fpRest.serverUrl }),
+      ...(hostConfig.fpRest.workspace === undefined
+        ? {}
+        : { workspace: hostConfig.fpRest.workspace }),
+      ...(hostConfig.fpRest.projectId === undefined
+        ? {}
+        : { projectId: hostConfig.fpRest.projectId }),
+      ...(hostConfig.fpRest.projectPrefix === undefined
+        ? {}
+        : { projectPrefix: hostConfig.fpRest.projectPrefix }),
+    },
+  };
+};
 
 export const buildDaytonaLayers = (
   cfg: DaytonaConfig,
@@ -81,18 +120,19 @@ export const resolveHostRepoRoot = (cwd: string = process.cwd()): string => {
   }
 };
 
-export const buildPlatformLayer = (cfg: WorkflowConfig) => {
+export const buildPlatformLayer = (cfg: WorkflowConfig, env: EnvMap = process.env) => {
   const hostRepoRoot = resolveHostRepoRoot();
-  const daytonaLayers = buildDaytonaLayers(toDaytonaConfig(cfg.sandbox));
+  const hostRuntimeConfig = Effect.runSync(decodeHostRuntimeConfig(env));
+  const daytonaLayers = buildDaytonaLayers(toDaytonaConfig(cfg.sandbox, hostRuntimeConfig));
   const fpStack = FpServiceLive.pipe(
-    Layer.provide(FpAdapterLive({ cwd: hostRepoRoot })),
-    Layer.provide(FpBinaryLive()),
+    Layer.provide(FpAdapterLive({ cwd: hostRepoRoot, env })),
+    Layer.provide(FpBinaryLive({ env })),
   );
   const integrationStack = IntegrationServiceLive.pipe(
-    Layer.provide(GitAdapterLive({ cwd: hostRepoRoot })),
+    Layer.provide(GitAdapterLive({ cwd: hostRepoRoot, env })),
   );
   const sandboxScripts = SandboxScriptServiceLive.pipe(Layer.provide(daytonaLayers));
-  const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg));
+  const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg, hostRuntimeConfig));
 
   return orchestrator.pipe(
     Layer.provide(
@@ -136,7 +176,8 @@ export const makeProgram = (options: ProgramOptions = {}) =>
   Effect.gen(function* () {
     const workflowPath = options.workflowPath ?? parseCliOptions().workflow;
     const config = yield* loadWorkflowConfig(workflowPath);
-    const orchestratorLayer = options.orchestratorLayer ?? buildPlatformLayer(config);
+    const env = yield* loadHostEnv(appRoot);
+    const orchestratorLayer = options.orchestratorLayer ?? buildPlatformLayer(config, env);
 
     yield* Effect.gen(function* () {
       const orchestrator = yield* OrchestratorService;

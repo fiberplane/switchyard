@@ -5,8 +5,8 @@ import type { DaytonaConfig } from "./models.js";
 export const createDaytonaClient = (config: DaytonaConfig): Daytona =>
   new Daytona({
     apiKey: config.apiKey,
-    apiUrl: config.apiUrl,
-    target: config.target,
+    ...(config.apiUrl === undefined ? {} : { apiUrl: config.apiUrl }),
+    ...(config.target === undefined ? {} : { target: config.target }),
     _experimental: {
       otelEnabled: false,
     },

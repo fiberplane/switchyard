@@ -27,6 +27,8 @@ let project: FpTestProject;
 let readyIssue: SeedIssue;
 let notReadyIssue: SeedIssue;
 
+const FP_INTEGRATION_TIMEOUT_MS = 20_000;
+
 const seedIssue = async (
   title: string,
   ready: "true" | "false",
@@ -59,7 +61,7 @@ beforeAll(async () => {
   project = await setupFpProject(fpPath);
   readyIssue = await seedIssue("symphony service ready", "true", "idle");
   notReadyIssue = await seedIssue("symphony service not ready", "false", "idle");
-});
+}, FP_INTEGRATION_TIMEOUT_MS);
 
 afterAll(async () => {
   await project?.cleanup();
@@ -76,64 +78,72 @@ const runWithService = <A, E>(effect: Effect.Effect<A, E, FpService>) =>
   );
 
 describe("FpService — real fp integration smoke", () => {
-  test("fetchCandidates returns only the ready issue", async () => {
-    const result = await runWithService(
-      Effect.gen(function* () {
-        const service = yield* FpService;
-        return yield* service.fetchCandidates(new Set());
-      }),
-    );
+  test(
+    "fetchCandidates returns only the ready issue",
+    async () => {
+      const result = await runWithService(
+        Effect.gen(function* () {
+          const service = yield* FpService;
+          return yield* service.fetchCandidates(new Set());
+        }),
+      );
 
-    const eligibleIds = result.eligible.map((entry) => entry.detail.id);
-    expect(eligibleIds).toContain(readyIssue.id);
-    expect(eligibleIds).not.toContain(notReadyIssue.id);
+      const eligibleIds = result.eligible.map((entry) => entry.detail.id);
+      expect(eligibleIds).toContain(readyIssue.id);
+      expect(eligibleIds).not.toContain(notReadyIssue.id);
 
-    const notReadyRejection = result.rejected.find((entry) => entry.id === notReadyIssue.id);
-    expect(notReadyRejection?.reason).toBe("not-ready");
-  });
+      const notReadyRejection = result.rejected.find((entry) => entry.id === notReadyIssue.id);
+      expect(notReadyRejection?.reason).toBe("not-ready");
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
 
-  test("claimIssue → markCompleted lands status + symphony_state in atomic writes", async () => {
-    const claimable = await seedIssue("symphony service claim+complete", "true", "idle");
+  test(
+    "claimIssue → markCompleted lands status + symphony_state in atomic writes",
+    async () => {
+      const claimable = await seedIssue("symphony service claim+complete", "true", "idle");
 
-    await runWithService(
-      Effect.gen(function* () {
-        const service = yield* FpService;
-        yield* service.claimIssue(claimable.displayId);
-      }),
-    );
+      await runWithService(
+        Effect.gen(function* () {
+          const service = yield* FpService;
+          yield* service.claimIssue(claimable.displayId);
+        }),
+      );
 
-    const afterClaim = await Effect.runPromise(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        return yield* adapter.showIssue(claimable.displayId);
-      }).pipe(
-        Effect.provide(FpAdapterLive({ cwd: project.projectDir, env: project.env })),
-        Effect.provide(FpBinaryLive({ env: project.env })),
-        Effect.provide(NodeContext.layer),
-      ),
-    );
-    expect(afterClaim.status).toBe("in-progress");
-    expect(afterClaim.properties.symphony_state).toBe("active");
+      const afterClaim = await Effect.runPromise(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          return yield* adapter.showIssue(claimable.displayId);
+        }).pipe(
+          Effect.provide(FpAdapterLive({ cwd: project.projectDir, env: project.env })),
+          Effect.provide(FpBinaryLive({ env: project.env })),
+          Effect.provide(NodeContext.layer),
+        ),
+      );
+      expect(afterClaim.status).toBe("in-progress");
+      expect(afterClaim.properties.symphony_state).toBe("active");
 
-    await runWithService(
-      Effect.gen(function* () {
-        const service = yield* FpService;
-        yield* service.markCompleted(claimable.displayId, "service smoke summary");
-      }),
-    );
+      await runWithService(
+        Effect.gen(function* () {
+          const service = yield* FpService;
+          yield* service.markCompleted(claimable.displayId, "service smoke summary");
+        }),
+      );
 
-    const afterDone = await Effect.runPromise(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        return yield* adapter.showIssue(claimable.displayId);
-      }).pipe(
-        Effect.provide(FpAdapterLive({ cwd: project.projectDir, env: project.env })),
-        Effect.provide(FpBinaryLive({ env: project.env })),
-        Effect.provide(NodeContext.layer),
-      ),
-    );
-    expect(afterDone.status).toBe("done");
-    expect(afterDone.properties.symphony_state).toBe("end");
-    expect(afterDone.comments.length).toBeGreaterThan(0);
-  });
+      const afterDone = await Effect.runPromise(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          return yield* adapter.showIssue(claimable.displayId);
+        }).pipe(
+          Effect.provide(FpAdapterLive({ cwd: project.projectDir, env: project.env })),
+          Effect.provide(FpBinaryLive({ env: project.env })),
+          Effect.provide(NodeContext.layer),
+        ),
+      );
+      expect(afterDone.status).toBe("done");
+      expect(afterDone.properties.symphony_state).toBe("end");
+      expect(afterDone.comments.length).toBeGreaterThan(0);
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
 });

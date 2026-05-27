@@ -80,12 +80,26 @@ const inputPrompt = (notification: RunnerNotification): unknown => {
   return params.prompt ?? params.questions ?? params;
 };
 
+const threadIdOf = (notification: RunnerNotification): string | null => {
+  const params = notification.params;
+  if (!isRecord(params)) {
+    return null;
+  }
+  return typeof params.threadId === "string" ? params.threadId : null;
+};
+
 const terminalResult = (
   notification: RunnerNotification,
+  targetThreadId: string,
 ): Effect.Effect<
   unknown,
   RunnerTurnCancelledError | RunnerTurnFailedError | RunnerTurnInputRequiredError
 > | null => {
+  const observedThreadId = threadIdOf(notification);
+  if (observedThreadId !== targetThreadId) {
+    return null;
+  }
+
   switch (methodOf(notification)) {
     case "turn/completed": {
       const params = notification.params;
@@ -197,7 +211,7 @@ export const startTurn = ({
           return false;
         }
 
-        const terminal = terminalResult(notification);
+        const terminal = terminalResult(notification, session.threadId);
         if (terminal !== null) {
           yield* terminal.pipe(
             Effect.matchEffect({

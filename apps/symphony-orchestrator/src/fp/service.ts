@@ -7,10 +7,11 @@ import {
   type IneligibilityReason,
   isEligible,
 } from "./eligibility.js";
-import type { FpBinaryNotFoundError, FpCommandError, FpDecodeError } from "./errors.js";
-import { decodeSymphonyProperties } from "./symphony-properties.js";
+import { FpDecodeError, type FpBinaryNotFoundError, type FpCommandError } from "./errors.js";
+import { decodeSymphonyProperties, type SymphonyProperties } from "./symphony-properties.js";
 
 export type FetchCandidatesError = FpBinaryNotFoundError | FpCommandError | FpDecodeError;
+export type FetchIssueStateError = FpBinaryNotFoundError | FpCommandError | FpDecodeError;
 export type WriteError = FpBinaryNotFoundError | FpCommandError;
 
 export type CandidateRejection = {
@@ -24,15 +25,41 @@ export type CandidateScan = {
   readonly rejected: ReadonlyArray<CandidateRejection>;
 };
 
+export type FpIssueState = {
+  readonly status: string;
+  readonly properties: SymphonyProperties;
+};
+
 export type FpServiceShape = {
   readonly fetchCandidates: (
     runningSet: ReadonlySet<string>,
   ) => Effect.Effect<CandidateScan, FetchCandidatesError>;
+  readonly fetchIssueState: (id: string) => Effect.Effect<FpIssueState, FetchIssueStateError>;
   readonly claimIssue: (id: string) => Effect.Effect<void, WriteError>;
   readonly markCompleted: (id: string, summary: string) => Effect.Effect<void, WriteError>;
   readonly markNeedsAttention: (id: string, error: string) => Effect.Effect<void, WriteError>;
   readonly setAttempt: (id: string, attempt: number) => Effect.Effect<void, WriteError>;
-  readonly setArtifact: (id: string, path: string) => Effect.Effect<void, WriteError>;
+  readonly setRunMetadata: (
+    id: string,
+    metadata: {
+      readonly branch: string;
+      readonly baseSha: string;
+      readonly runId: string;
+      readonly sandboxId: string;
+    },
+  ) => Effect.Effect<void, WriteError>;
+  readonly setPrMetadata: (
+    id: string,
+    metadata: {
+      readonly branch: string;
+      readonly prUrl: string;
+      readonly prNumber: string;
+      readonly baseSha: string;
+      readonly headSha: string;
+      readonly runId: string;
+      readonly sandboxId: string;
+    },
+  ) => Effect.Effect<void, WriteError>;
   // Pure comment write — no status / property change. The orchestrator's
   // three-comment cadence ("Dispatched to sandbox <id>", "Worker turn
   // completed; integrating", final summary) uses this for the first two; the
@@ -98,6 +125,21 @@ export const FpServiceLive = Layer.effect(
           status: "in-progress",
           properties: { symphony_state: "active" },
         }),
+      fetchIssueState: (id) =>
+        Effect.gen(function* () {
+          const detail = yield* adapter.showIssue(id);
+          const decoded = decodeSymphonyProperties(detail.properties);
+          if (Either.isLeft(decoded)) {
+            return yield* Effect.fail(
+              new FpDecodeError({
+                path: `issue ${id}.properties`,
+                reason: decoded.left,
+                details: "symphony property decode failed",
+              }),
+            );
+          }
+          return { status: detail.status, properties: decoded.right };
+        }),
       markCompleted: (id, summary) =>
         adapter.updateIssue(id, {
           status: "done",
@@ -113,9 +155,26 @@ export const FpServiceLive = Layer.effect(
         adapter.updateIssue(id, {
           properties: { symphony_attempt: String(attempt) },
         }),
-      setArtifact: (id, path) =>
+      setRunMetadata: (id, metadata) =>
         adapter.updateIssue(id, {
-          properties: { symphony_artifact: path },
+          properties: {
+            symphony_branch: metadata.branch,
+            symphony_base_sha: metadata.baseSha,
+            symphony_run_id: metadata.runId,
+            symphony_sandbox_id: metadata.sandboxId,
+          },
+        }),
+      setPrMetadata: (id, metadata) =>
+        adapter.updateIssue(id, {
+          properties: {
+            symphony_branch: metadata.branch,
+            symphony_pr_url: metadata.prUrl,
+            symphony_pr_number: metadata.prNumber,
+            symphony_base_sha: metadata.baseSha,
+            symphony_head_sha: metadata.headSha,
+            symphony_run_id: metadata.runId,
+            symphony_sandbox_id: metadata.sandboxId,
+          },
         }),
       addComment: (id, body) => adapter.addComment(id, body),
     };

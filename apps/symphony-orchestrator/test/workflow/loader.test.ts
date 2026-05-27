@@ -31,7 +31,7 @@ describe("WorkflowService.load", () => {
     expect(config.tracker.kind).toBe("fp");
     expect(config.codex.command).toBe("codex app-server");
     expect(config.agent.maxAttempts).toBe(1);
-    expect(config.sandbox.apiUrl).toBe("$DAYTONA_API_URL");
+    expect(config.sandbox.snapshot).toBe("symphony-codex-bun");
     expect(config.codex.approvalPolicy).toBe("never");
     expect(config.codex.sandbox).toBe("danger-full-access");
     expect(config.codex.sandboxPolicy).toEqual({ type: "dangerFullAccess" });
@@ -49,6 +49,89 @@ describe("WorkflowService.load", () => {
       if (error instanceof WorkflowDecodeError) {
         expect(error.path).toBe("test/fixtures/workflow.invalid-missing-tracker.yml");
         expect(error.details).toContain('["tracker"]');
+      }
+    }
+  });
+
+  test("rejects stale sandbox.apiKey before schema decode without printing the value", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-secret.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.apiKey");
+        expect(error.message).not.toContain("secret-value-that-must-not-print");
+      }
+    }
+  });
+
+  test("rejects token-shaped workflow fields before schema decode without printing values", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-github-token.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.githubToken");
+        expect(error.message).not.toContain("github-token-that-must-not-print");
+      }
+    }
+  });
+
+  test("rejects common secret suffix fields before schema decode without printing values", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(WorkflowService.load("test/fixtures/workflow.invalid-client-secret.yml")),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("forbidden secret-bearing workflow field");
+        expect(error.details).toContain("sandbox.clientSecret");
+        expect(error.message).not.toContain("client-secret-that-must-not-print");
+      }
+    }
+  });
+
+  test("loads githubClone workflow config with PR artifact strategy", async () => {
+    const config = await runWithFileSystem(
+      WorkflowService.load("test/fixtures/workflow.github-clone.yml"),
+    );
+
+    expect(config.sandbox.sourceStrategy).toBe("githubClone");
+    if (config.sandbox.sourceStrategy !== "githubClone") {
+      throw new Error("expected githubClone sandbox config");
+    }
+    expect(config.sandbox.artifactStrategy).toBe("pr");
+    expect(config.sandbox.repoUrl).toBe("https://github.com/fiberplane/switchyard.git");
+    expect(config.sandbox.baseBranch).toBe("main");
+  });
+
+  test("rejects credentialed githubClone repoUrl without printing the credential", async () => {
+    const result = await runWithFileSystem(
+      Effect.either(
+        WorkflowService.load("test/fixtures/workflow.github-clone-credentialed-url.yml"),
+      ),
+    );
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left;
+      expect(error).toBeInstanceOf(WorkflowDecodeError);
+      if (error instanceof WorkflowDecodeError) {
+        expect(error.reason).toBe("invalid github clone source");
+        expect(error.message).not.toContain("token-value-that-must-not-print");
       }
     }
   });

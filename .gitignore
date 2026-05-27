@@ -12,6 +12,14 @@
 # symphony artifacts
 .symphony/
 
+# Fallow raw analysis output. Commit concise markdown summaries instead of
+# machine JSON dumps.
+.fallow/
+fallow-*.json
+fallow-*.jsonl
+docs/code-quality/fallow-baselines/*.json
+docs/code-quality/fallow-baselines/*.jsonl
+
 # Cloned upstream repos for agent reference
 references/
 

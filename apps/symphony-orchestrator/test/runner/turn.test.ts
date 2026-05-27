@@ -248,6 +248,73 @@ describe("startTurn", () => {
     ]);
   });
 
+  it("ignores terminal notifications from unrelated threads", async () => {
+    const helper = await Effect.runPromise(
+      makeScriptedStream((queue) =>
+        Effect.gen(function* () {
+          yield* Queue.offer(queue, encodeMessage({ id: 3, result: { turn: { id: "turn-1" } } }));
+          yield* Queue.offer(
+            queue,
+            encodeMessage({
+              method: "turn/completed",
+              params: {
+                threadId: "review-thread",
+                turn: {
+                  id: "review-turn",
+                  items: [],
+                  status: "completed",
+                  error: null,
+                  startedAt: 1,
+                  completedAt: 2,
+                  durationMs: 1_000,
+                },
+              },
+            }),
+          );
+          yield* Queue.offer(queue, encodeMessage(completedNotification));
+        }),
+      ),
+    );
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* makeSession({
+            stream: helper.stream,
+            cwd: "/work/repo",
+            requestTimeoutMs: 1_000,
+          });
+          const turn = yield* startTurn({
+            session,
+            cwd: "/work/repo",
+            prompt: "hello",
+            timeoutMs: 1_000,
+          });
+          const completed = yield* turn.completed;
+          const events = yield* Stream.runCollect(turn.events);
+          return { completed, events: Array.from(events) };
+        }),
+      ),
+    );
+
+    expect(result.completed).toMatchObject({ threadId: "thread-123" });
+    expect(result.events.map((event) => event.params)).toEqual([
+      {
+        threadId: "review-thread",
+        turn: {
+          id: "review-turn",
+          items: [],
+          status: "completed",
+          error: null,
+          startedAt: 1,
+          completedAt: 2,
+          durationMs: 1_000,
+        },
+      },
+      completedNotification.params,
+    ]);
+  });
+
   it("ends the event stream after the terminal notification", async () => {
     const helper = await Effect.runPromise(
       makeScriptedStream((queue) =>
@@ -448,15 +515,24 @@ describe("startTurn", () => {
   it("maps turn/failed, turn/cancelled, and requestUserInput to tagged terminal errors", async () => {
     const cases = [
       {
-        notification: { method: "turn/failed", params: { error: { message: "bad" } } },
+        notification: {
+          method: "turn/failed",
+          params: { threadId: "thread-123", error: { message: "bad" } },
+        },
         error: RunnerTurnFailedError,
       },
       {
-        notification: { method: "turn/cancelled", params: { reason: "user" } },
+        notification: {
+          method: "turn/cancelled",
+          params: { threadId: "thread-123", reason: "user" },
+        },
         error: RunnerTurnCancelledError,
       },
       {
-        notification: { method: "item/tool/requestUserInput", params: { prompt: "choose" } },
+        notification: {
+          method: "item/tool/requestUserInput",
+          params: { threadId: "thread-123", prompt: "choose" },
+        },
         error: RunnerTurnInputRequiredError,
       },
     ] as const;
@@ -615,7 +691,7 @@ describe("startTurn", () => {
             encodeMessage({
               id: 9,
               method: "item/tool/requestUserInput",
-              params: { prompt: "choose" },
+              params: { threadId: "thread-123", prompt: "choose" },
             }),
           );
         }),

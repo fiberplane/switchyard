@@ -13,16 +13,15 @@ agent:
 
 sandbox:
   kind: daytona
-  apiUrl: "$DAYTONA_API_URL"
-  apiKey: "$DAYTONA_API_KEY"
-  target: "$DAYTONA_TARGET"
   snapshot: symphony-codex-bun
   language: typescript
   autoStopInterval: 15
   autoDeleteInterval: -1
   repoPath: /workspace/repo
-  sourceStrategy: archive
-  artifactStrategy: bundle
+  sourceStrategy: githubClone
+  artifactStrategy: pr
+  repoUrl: https://github.com/fiberplane/switchyard.git
+  baseBranch: main
 
 codex:
   command: codex app-server

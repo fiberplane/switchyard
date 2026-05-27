@@ -16,6 +16,12 @@ const VAR_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 //   - issueTitle     — issue title
 //   - issueDescription — issue body, or a fallback string the service substitutes when the
 //     underlying value is null / undefined / whitespace-only
+//   - sourceInstructions — source-strategy-specific checkout and artifact notes
+//   - boundaryInstructions — source-strategy-specific worker ownership limits
+//   - workInstructions — source-strategy-specific work and artifact guidance
+//   - outcomeInstructions — source-strategy-specific outcome envelope preface
+//   - outcomeBody — source-strategy-specific durable outcome requirements
+//   - summaryInstructions — source-strategy-specific summary persistence note
 export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a Daytona sandbox for issue {{issueDisplayId}}: "{{issueTitle}}".
 
 ## Issue description
@@ -24,44 +30,24 @@ export const WORKER_PROMPT_TEMPLATE = `You are a Codex worker running inside a D
 
 ## Workspace
 
-- The local repo is \`/workspace/repo\`. Start there.
-- \`/workspace/repo\` mirrors the host repository root. Treat all file paths as host
-  repo-relative paths (for example, edit \`apps/symphony-orchestrator/test/...\` for
-  orchestrator tests, not top-level \`test/...\`).
-- The starting commit is tagged \`symphony-base\`. Make your changes on top of it.
-- The directory \`/tmp/.symphony/\` is pre-created for you by the orchestrator before your turn starts. Write your outcome envelope there (see below).
+{{sourceInstructions}}
+- The directory \`/tmp/.symphony/\` is pre-created for you by the orchestrator before your turn starts.
 
 ## Boundaries
 
-- You have **no \`fp\` credentials**. Do not attempt \`fp\` writes; the orchestrator owns all \`fp\` state.
-- You do not need to contact the host machine. Outcome flows entirely through files in the sandbox; the orchestrator collects them after your turn ends. **No host base URL is provided.**
-- Do **not** file follow-up issues yourself. Worker-driven follow-up filing is deferred. Put any out-of-scope observations or follow-up suggestions in your \`summary\` (see below) as prose.
+{{boundaryInstructions}}
 
 ## Working in the repo
 
-- Make code changes in the repo.
-- Cadence: **commit early, commit often**, with descriptive commit messages — the orchestrator will preserve your full commit history via \`git bundle\`, and the human reviewer reads commit messages to understand your reasoning. Prefer multiple small commits over one squash.
-- You may run any commands you need to validate your work (build, test, type-check). The output of those commands does **not** need to be persisted; the orchestrator does not validate or re-run them.
+{{workInstructions}}
 
 ## Outcome envelope (REQUIRED)
 
-**Before producing your final assistant message / exiting the turn**, you MUST write \`/tmp/.symphony/outcome.json\` with this exact shape and no extra fields:
+{{outcomeInstructions}}
 
-\`\`\`json
-{
-  "status": "completed" | "blocked" | "needs-human" | "failed",
-  "summary": "<markdown narrative — what you did, why, and any caveats>"
-}
-\`\`\`
+{{outcomeBody}}
 
-Pick \`status\` deliberately:
-
-- \`"completed"\` only if you believe the work is fully done and ready for a human to review the resulting branch.
-- \`"blocked"\` if a precondition you cannot satisfy stops you.
-- \`"needs-human"\` if the work is partially done but you are uncertain.
-- \`"failed"\` if you tried and could not produce useful output.
-
-The \`summary\` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose.
+{{summaryInstructions}}
 `;
 
 export const renderTemplate = (

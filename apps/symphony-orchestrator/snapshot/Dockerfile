@@ -20,12 +20,15 @@ ENV BUN_INSTALL=/usr/local
 # from system packages or one-shot installers.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-       bash ca-certificates coreutils curl git jq procps ripgrep sudo tar unzip \
+       bash ca-certificates coreutils curl gh git jq procps ripgrep sudo tar unzip \
   && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
   && apt-get install -y --no-install-recommends nodejs \
   && npm install -g @openai/codex@0.128.0 \
   && curl -fsSL https://bun.sh/install | bash \
   && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://setup.fp.dev/install.sh | sh -s -- --version latest --install-dir /usr/local/bin \
+  && fp --version
 
 # ast-grep: prebuilt release binary keeps us off the npm-postinstall path
 # (which collides with util-linux's /usr/bin/sg). Arch-aware via TARGETARCH.
@@ -72,6 +75,12 @@ USER daytona
 RUN bun --version \
   && drift --version \
   && codex --version \
+  && fp --version \
+  && gh --version \
+  && rg --version \
+  && bash --version \
+  && curl --version \
+  && jq --version \
   && sg --version \
   && git --version \
   && node --version

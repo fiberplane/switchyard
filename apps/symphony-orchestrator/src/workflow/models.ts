@@ -27,19 +27,24 @@ export const AgentConfig = Schema.Struct({
 });
 export type AgentConfig = Schema.Schema.Type<typeof AgentConfig>;
 
-export const SandboxConfig = Schema.Struct({
+const SandboxBaseConfig = {
   kind: Schema.Literal("daytona"),
-  apiUrl: NonEmptyString,
-  apiKey: NonEmptyString,
-  target: NonEmptyString,
   snapshot: NonEmptyString,
   language: Schema.Literal("typescript"),
   autoStopInterval: PositiveInteger,
   autoDeleteInterval: Integer,
   repoPath: NonEmptyString,
-  sourceStrategy: Schema.Literal("archive"),
-  artifactStrategy: Schema.Literal("bundle"),
+};
+
+export const GithubCloneSandboxConfig = Schema.Struct({
+  ...SandboxBaseConfig,
+  sourceStrategy: Schema.Literal("githubClone"),
+  artifactStrategy: Schema.Literal("pr"),
+  repoUrl: NonEmptyString,
+  baseBranch: NonEmptyString,
 });
+
+export const SandboxConfig = GithubCloneSandboxConfig;
 export type SandboxConfig = Schema.Schema.Type<typeof SandboxConfig>;
 
 export const CodexSandboxPolicy = Schema.Struct({

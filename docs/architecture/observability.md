@@ -26,13 +26,24 @@ Every state-flow row in the umbrella spec emits exactly one log line, named `<ph
 The orchestrator's `runOne` and `runOneTick` pipelines own these emissions. Annotation context
 (`issue_id`, `issue_display_id`, `attempt`, `sandbox_id`) is set at the `runOne` boundary via
 `Effect.annotateLogsScoped` so call sites only emit the message name plus message-specific
-extras (for example `worker_status`, `branch`, `symphony_artifact`).
+extras (for example `worker_status`, `branch`, `run_id`).
 
-Happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
-`sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`, `bundle.decoded`,
-`integration.succeeded`, `fp.done`. Failure paths emit a static `failure` message at warning
-level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and `reason`
-annotations — log searches should filter on `failure_code` rather than the message text.
+Remote PR happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
+`sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`,
+`worker.handoff.completed`. The local result becomes integrated only after fp, GitHub PR, pinned
+base, head SHA, and sandbox metadata read-back agree. Failure paths emit a static `failure`
+message at warning level with `failure_code`, `error_tag`, and `reason` annotations — log
+searches should filter on `failure_code` rather than the message text.
+
+Two post-handoff warnings are intentionally not named `failure`: `worker.handoff.incomplete`
+records missing or mismatched worker-owned PR/fp metadata, and `sandbox.secret-cleanup.failed`
+records a failed cleanup finalizer for copied Codex/worker secret files. Both carry the same
+issue/sandbox annotations so operators can correlate them with fp notes and retained Daytona
+sandboxes.
+
+`source.uploaded` is the stable boundary after sandbox input material is present. It fires after
+clone setup succeeds and includes prompt, Codex auth, and a secret-bearing worker env bridge
+uploaded outside the repo immediately before session start.
 
 ## Log Level
 
