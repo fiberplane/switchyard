@@ -52,7 +52,8 @@ When using Fallow for cleanup, record each deletion with both:
 
 ## First Baseline: SWYRD-nrmnqhhj
 
-The first configured Switchyard run was captured after `SWYRD-lwqdsyud` retired the OSS stack.
+The first configured Switchyard run was captured after `SWYRD-lwqdsyud` retired the OSS stack,
+but before the final remote-Daytona archive/bundle runtime removal pass.
 Red state before setup: `bun run fallow config` failed with `Script not found "fallow"`.
 
 Command suite:
@@ -99,11 +100,11 @@ Cleanup performed in this pass:
 | `DaytonaTestStackError` | unused export in `apps/symphony-orchestrator/test/daytona/test-helpers/errors.ts` | `rg` found no active references after the stack helper was removed |
 
 No files were deleted from this baseline. Fallow reported zero unused files. The remaining export
-and member findings were not independently safe deletion candidates for this ticket. The strongest
-false-positive classes were public boundary schemas/types, `TaggedError.message` accessors,
-unresolved root package path calculations in tests, duplicate `ProtocolStream` names in different
-domains, and archive/bundle symbols that remain modeled until a later runtime removal ticket proves
-the path is gone.
+and member findings were not independently safe deletion candidates for that ticket. At that
+point, the strongest false-positive classes were public boundary schemas/types,
+`TaggedError.message` accessors, unresolved root package path calculations in tests, duplicate
+`ProtocolStream` names in different domains, and archive/bundle symbols that were still modeled
+until the later closeout ticket proved the path was gone.
 
 ## Remote Daytona Closeout Rerun: SWYRD-ibmoeamq
 

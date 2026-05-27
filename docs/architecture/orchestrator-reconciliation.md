@@ -3,7 +3,7 @@
 **Status:** Accepted (v1)
 **Date:** 2026-05-05
 **Source-of-truth ticket:** `SWYRD-osqltjnr` (orchestrator service)
-**Drift-bound files (anchor-stamped):** `apps/symphony-orchestrator/src/orchestrator/service.ts` _(pending — file does not exist yet; bind on first commit of service.ts under `SWYRD-osqltjnr`)_
+**Drift-bound files (anchor-stamped):** `apps/symphony-orchestrator/src/orchestrator/service.ts`
 
 ## Context
 
@@ -31,7 +31,8 @@ This document records why v1 chooses (1), what the consequences are, and when (2
 Rationale:
 
 - **ADR D2** (`docs/architecture/0001-symphony-deviations.md`) makes in-memory state authoritative at runtime. fp is observed (eligibility scan), not consulted (claim verification).
-- **ADR D3** locks single-orchestrator. The only writer to a running entry is the orchestrator process itself. There is no other writer for a tick-start reconcile to detect.
+- **ADR D3** locks single-orchestrator. The only writer to the in-memory running set is the
+  orchestrator process itself. Worker-owned fp terminal writes do not mutate that in-process set.
 - **ADR D5** locks human-gated retry. Mid-flight tracker mutation by a human (e.g., manually flipping `status=done` while a `runOne` is in progress) is rare, undefined behavior in v1, and not something the orchestrator is responsible for unwinding.
 - The single-flight cap means at most one in-flight `runOne` per tick. There's no "stale entry from a prior tick" condition for tick-start reconciliation to address — finished `runOne` calls release their entry via the post-claim `Effect.addFinalizer(state.releaseEffect)` registered at pipeline step 3 (`SWYRD-osqltjnr` §5b).
 
@@ -59,11 +60,17 @@ This is the deliberate v1 posture: **fp state must always reflect reality on shu
 
 Concrete edge cases this leaves on the floor:
 
-- Human flips `status=done` on an in-flight issue. There is no merge: the orchestrator continues to `runOne` completion and issues a blind `markCompleted` (or `markNeedsAttention`) write on its own terminal transition, with no read-then-decide against the intervening human edit. ADR D4 makes the orchestrator the sole `fp` writer, so this is "last write wins" only by construction — there's no contention model to lose. The human can re-edit afterward. v1 accepts this because the cost of detection (re-fetch on every tick) is paid every tick to handle a near-zero-frequency failure mode.
-- Human deletes the issue from fp mid-flight. `runOne` continues until it tries `markCompleted/markNeedsAttention` and that fp write fails. Per the failure matrix in `SWYRD-osqltjnr` §7b (row F15), the write is retried once then logged. The running-set entry releases via finalizer regardless.
-- Issue's `dependencies` field changes mid-flight (parent now blocks). v1 doesn't re-validate eligibility once `runOne` starts. The orchestrator integrates the worker's branch normally; the dependency change matters only for the _next_ tick's eligibility scan.
+- Human flips `status=done` on an in-flight issue. There is no tick-start merge. The orchestrator
+  continues the running `runOne`; after the worker turn closes, the host reads fp and preserves
+  worker- or human-written terminal state instead of blindly overwriting it.
+- Human deletes the issue from fp mid-flight. `runOne` continues until a required fp read or write
+  fails. The failure is logged and the running-set entry releases via finalizer regardless.
+- Issue's `dependencies` field changes mid-flight (parent now blocks). v1 doesn't re-validate
+  eligibility once `runOne` starts. The worker-owned PR workflow continues; the dependency change
+  matters only for the _next_ tick's eligibility scan.
 
-These are accepted v1 trade-offs. None of them are silent corruption — the worst case is "orchestrator wins the race against a manual fp edit", and the human can re-edit.
+These are accepted v1 trade-offs. None of them are silent corruption: the active remote path keeps
+durable code state in the GitHub PR and re-reads fp terminal metadata after the worker handoff.
 
 ### Single-tick semantics
 
@@ -92,7 +99,10 @@ No reconcile step at the top. With single-flight + serialized ticks (above), the
 
 Two follow-ups make tracker-authoritative reconcile load-bearing:
 
-1. **Recovery (`SWYRD-uouprnfv` epic).** A startup-time reconcile that scans fp + Daytona labels to rebuild the running set after orchestrator restart. Per the spec's `## Recovery Rules` section, this needs Daytona label scanning (`fp_issue_id` per ADR D4b) and `outcome-record.json` inspection. v1 explicitly defers this.
+1. **Recovery (`SWYRD-uouprnfv` epic).** A startup-time reconcile that scans fp PR metadata,
+   Daytona labels, and GitHub PR state to rebuild or close out in-flight work after orchestrator
+   restart. Local `outcome-record.json` files can support forensics, but the active remote path's
+   durable recovery surface is fp metadata plus the GitHub PR. v1 explicitly defers this.
 2. **Concurrency > 1.** When `maxConcurrentAgents > 1`, multiple `runOne` calls can be in flight concurrently. Cross-fiber coordination still uses the in-memory `Ref<RunningSet>` (single-process per ADR D3), but operational complexity grows. Reconcile semantics may need revisiting at that point.
 
 Until either follows up, identity reconcile is the v1 contract.

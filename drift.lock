@@ -42,6 +42,11 @@ sig = "3f31a3dec239374d"
 
 [[bindings]]
 doc = "docs/architecture/fp-boundary.md"
+target = "apps/symphony-orchestrator/src/fp/service.ts"
+sig = "c51b76ff78b55b2c"
+
+[[bindings]]
+doc = "docs/architecture/fp-boundary.md"
 target = "apps/symphony-orchestrator/src/fp/symphony-properties.ts"
 sig = "3cff160eea648fa8"
 

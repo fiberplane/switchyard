@@ -1,6 +1,14 @@
 # Symphony Daytona Vertical Slice — v1 Spec
 
-Status: Draft v1 (2026-05-04). Brainstorm history under fp epic `SWYRD-ecirajtz`.
+Status: Historical experiment (2026-05-04). Brainstorm history under fp epic `SWYRD-ecirajtz`.
+
+This document records the first local-Daytona/archive-upload/git-bundle vertical slice. It no
+longer describes the active Switchyard runtime. The current path uses Daytona Cloud, GitHub clone
+source handoff, worker-owned GitHub PRs, and fp REST metadata; see
+[`docs/architecture/orchestrator-runone.md`](../architecture/orchestrator-runone.md) for the
+active lifecycle and
+[`docs/graveyard/daytona-local-compose.md`](../graveyard/daytona-local-compose.md) for the retired
+local compose stack.
 
 ## Overview
 
@@ -22,9 +30,9 @@ The pieces:
   branch. No automatic merge to `main`.
 
 Architectural decisions that diverge from upstream Symphony are recorded in
-`docs/architecture/0001-symphony-deviations.md`. Items intentionally deferred from this slice are
+`docs/architecture/0001-symphony-deviations.md`. Historical items deferred from this slice are
 collected under fp epic `SWYRD-uouprnfv` and listed in **Future Considerations** at the end of
-this spec.
+this spec; some have since been superseded by the remote Daytona PR workflow.
 
 ## Demo Thesis
 
@@ -74,8 +82,9 @@ runs recorded here, both from playgrounds at `playgrounds/symphony-daytona-playg
    upload, copied `CODEX_HOME` auth, host-reachability behavior, runner-DB repair on this
    machine — are protocol-agnostic and still hold; they are recorded below.
 2. The refresh under fp issue `SWYRD-gxgqehxl` (`src/smoke-app-server.ts`,
-   `bun run smoke:app-server`) drives the current contract — `codex app-server` over stdio
-   plus `git bundle` plus `outcome.json` — and is recorded in
+   `bun run smoke:app-server`) drove the then-current local artifact protocol — `codex app-server`
+   over stdio plus `git bundle` plus `outcome.json`. That protocol was later superseded by the
+   remote GitHub PR/fp metadata path. The smoke is recorded in
    **App-server smoke (SWYRD-gxgqehxl)** below.
 
 **Daytona local stack:**
@@ -115,8 +124,8 @@ commit -m "base" / tag symphony-base` to seed the repo (the source-handoff flow 
   edited a file (`message.txt`) and that a post-edit `node test.js` passed inside the sandbox.
 
 > The end-to-end run above used `codex exec --json` rather than `codex app-server`, and produced
-> patch-shaped artifacts. The re-run against the current design is recorded in **App-server
-> smoke (SWYRD-gxgqehxl)** below; the auth, upload, and lifecycle bullets above are
+> patch-shaped artifacts. The re-run against the then-current local artifact design is recorded in
+> **App-server smoke (SWYRD-gxgqehxl)** below; the auth, upload, and lifecycle bullets above are
 > protocol-agnostic and were re-confirmed by that run.
 
 **Host reachability:**
@@ -124,10 +133,9 @@ commit -m "base" / tag symphony-base` to seed the repo (the source-handoff flow 
 - `host.docker.internal` does **not** resolve inside the sandbox, and `172.17.0.1` does not
   reach the host. The host was reachable on this run through routable host addresses including
   `172.19.0.1`, `172.18.0.1`, `100.80.33.10`, and `167.235.24.99`.
-- This finding is no longer load-bearing for the worker: under the current design the worker
-  does not contact the host (artifacts move via sandbox-side files that the orchestrator
-  collects), but it remains relevant for any future feature that needs sandbox-to-host network
-  paths.
+- This finding is no longer load-bearing for the worker. Under the historical artifact-return
+  design, artifacts moved via sandbox-side files that the orchestrator collected; under the
+  active remote PR design, the worker still does not need a host callback path.
 
 **Codex auth (local demo path):**
 
@@ -155,8 +163,9 @@ commit -m "base" / tag symphony-base` to seed the repo (the source-handoff flow 
 
 ### App-server smoke (SWYRD-gxgqehxl)
 
-Re-run of the Daytona end-to-end against the current contract: `codex app-server` over stdio,
-`git bundle` artifact transport, `outcome.json` decoded with the `WorkerOutcome` Effect Schema.
+Re-run of the Daytona end-to-end against the then-current local artifact protocol:
+`codex app-server` over stdio, `git bundle` artifact transport, and `outcome.json` decoded with
+the `WorkerOutcome` Effect Schema.
 Entrypoint:
 
 ```bash
@@ -233,6 +242,11 @@ Run artifacts (gitignored) live under
 
 ## Scope
 
+Historical scope of the 2026-05-04 vertical slice. This section preserves the local
+archive/bundle artifact-return shape that has since been superseded. The active runtime scope is
+remote Daytona Cloud plus GitHub clone source handoff, worker-owned PRs, and fp REST metadata; see
+`docs/architecture/orchestrator-runone.md`.
+
 **Operational assumption (load-bearing):** exactly one orchestrator may run at a time. Running
 two orchestrators concurrently is undefined behavior — there is no defensive guard against
 double-dispatch. The operator is responsible for not starting a second orchestrator process.
@@ -262,6 +276,10 @@ Not included:
 - Solving all Codex authentication ergonomics inside the sandbox.
 
 ## fp Contract
+
+Historical fp contract for the local artifact-return slice. The active fp boundary has additional
+PR/run/sandbox metadata, worker-owned terminal writes after handoff, and rejects
+`symphony_artifact`; see `docs/architecture/fp-boundary.md`.
 
 ### Ready Rule
 
@@ -795,6 +813,10 @@ merge.
 
 ## Worker Prompt Contract
 
+Historical prompt contract for the local archive/bundle worker. The active worker prompt instead
+instructs the sandbox worker to push an allowed-prefix branch, open a GitHub PR, write fp REST
+metadata, and mark the issue terminal.
+
 The rendered worker prompt must say:
 
 - You are a Codex worker running inside a Daytona sandbox.
@@ -830,14 +852,18 @@ The rendered worker prompt must say:
 
 ## Recovery Rules
 
+This section records the original local-Daytona/archive-return recovery sketch. It is historical,
+not the active recovery contract. The active v1 remote path still defers restart recovery; future
+recovery should use fp PR metadata, Daytona labels, and GitHub PR state as the durable surface.
+
 The orchestrator's authoritative claim/run state lives in process memory and is **lost on
 restart**. Recovery uses `fp` + Daytona labels rather than `symphony_state` mirroring:
 
 1. **Tracker scan.** Query `fp` for issues with `status=in-progress AND symphony_ready=true`. These
    are issues that the orchestrator was working on (or had handed back to a human for re-arming).
-2. **Sandbox scan.** Query Daytona for sandboxes labelled with `fp_issue_id`. Sandbox labels are
-   the load-bearing identity for recovery (which is why `symphony_sandbox_id` is not part of the
-   `fp` property contract — see ADR D4b).
+2. **Sandbox scan.** Query Daytona for sandboxes labelled with `fp_issue_id`. In this historical
+   design, sandbox labels were the load-bearing identity for recovery; the active remote PR flow
+   now also writes `symphony_sandbox_id` to fp for correlation.
 3. **Reconcile per issue:**
    - Sandbox exists + reachable + worker process alive → either continue collecting (re-attach to
      `codex app-server` over the sandbox's stdio if possible; otherwise cancel and mark
@@ -850,12 +876,10 @@ restart**. Recovery uses `fp` + Daytona labels rather than `symphony_state` mirr
      `needs-attention`. Human re-arms by transitioning to `todo`.
 4. No state is recovered from the Codex protocol stream beyond what was already persisted to
    `transcript.jsonl`. Recovery does not replay protocol events.
-5. **Base revision recovery.** The orchestrator captures `baseRev` (host SHA at dispatch) into
-   the local `outcome-record.json` while a run is in flight. If a sandbox is recovered but the
-   matching `outcome-record.json` is missing or malformed, the orchestrator cannot reconstruct
-   `baseRev` deterministically and MUST mark the issue `needs-attention` rather than guessing.
-   This avoids integrating a worker bundle against a host SHA different from the one the worker
-   was given.
+5. **Base revision recovery.** The original archive-return flow captured `baseRev` (host SHA at
+   dispatch) into the local `outcome-record.json` while a run was in flight. The active remote PR
+   flow writes `symphony_base_sha` to fp and validates PR metadata instead of reconstructing a
+   host-side bundle integration.
 
 ## Feasibility
 
@@ -873,23 +897,25 @@ This is feasible to implement because:
 - `git bundle` round-trips cleanly across the sandbox-to-host boundary, preserving worker
   commits and messages.
 
-Open setup work before implementation begins:
+Historical setup work captured before implementation began:
 
-- Turn the local Daytona preflight into an explicit setup command: create a real API key, ensure
-  `DAYTONA_TARGET=us`, ensure the personal organization has nonzero `us` region quota, and
-  ensure runner availability thresholds can schedule work on a disk-constrained dev machine.
-- Keep `symphony-codex-bun` snapshot creation in setup or CI, and verify it is `active` before
-  dispatching.
-- Decide the cleanest Codex auth path inside Daytona. Copied `auth.json` is proven for local
-  demo use; scoped API-key injection remains the safer default and still needs a run with a
-  real `OPENAI_API_KEY`.
+- The local Daytona preflight was retired with the local compose path. Active runs use Daytona
+  Cloud credentials from host-only environment variables.
+- Snapshot creation moved to `apps/symphony-orchestrator/snapshot/`; active runs verify the
+  configured `DAYTONA_SNAPSHOT`.
+- The active auth path copies the configured Codex auth file into the sandbox worker's
+  `CODEX_HOME` for the session.
 - Re-run the smoke against `codex app-server` + `git bundle` + `outcome.json` —
   **done under `SWYRD-gxgqehxl`**; results recorded under **App-server smoke (SWYRD-gxgqehxl)**
   in **Smoke Evidence (2026-05-04)**.
 - Generate TypeScript bindings (`codex app-server generate-ts`) and wire them into a
-  `bun run codegen` script before runner module work begins.
+  `bun run codegen` script — done via `scripts/codex-ts-codegen.ts`.
 
 ## Alternatives Considered
+
+Historical alternatives for the local artifact-return slice. When these subsections say "the
+chosen path," they mean the choice made for this 2026-05-04 experiment, not the active remote
+Daytona PR workflow.
 
 A summary of the design choices that have a real "we could have done it differently" alternative,
 with the reasoning that pointed us at the chosen path. The ADR captures the divergences from
@@ -1026,9 +1052,9 @@ without that property, this becomes a real gap — tracked as `SWYRD-ovvmzqxw`.
 
 ## Future Considerations
 
-Items intentionally out of scope for this slice. Each is tracked as a child of fp epic
-`SWYRD-uouprnfv`. They are listed here so a reader can see the scope boundary without consulting
-fp.
+Historical items intentionally out of scope for this slice. Some were later superseded by the
+remote Daytona PR workflow; active follow-up status lives in
+`docs/architecture/0001-symphony-deviations.md` and fp.
 
 - **Worker follow-up reporting format and orchestrator filing behavior** (`SWYRD-oxevvenq`).
   The worker writes only `outcome.json` (status + summary) and does not file new fp issues.
@@ -1038,30 +1064,25 @@ fp.
 
 - **Continuation-turn behavior under `codex app-server`** (`SWYRD-clnybkgo`). Upstream Symphony
   defines continuation: after a clean `turn_completed`, the orchestrator can re-poll the tracker
-  and start another turn on the same live thread (up to `agent.max_turns`). The current design
-  does one turn per dispatch. With `app-server` already in place, adding continuation is a small
-  spec extension.
+  and start another turn on the same live thread (up to `agent.max_turns`). The historical
+  artifact-return design did one turn per dispatch. With `app-server` already in place, adding
+  continuation remains a small spec extension.
 
-- **Full git history transfer to sandbox** (`SWYRD-yailwgkj`). Archive upload seeds the sandbox
-  with a single-commit history; the worker cannot `git log` past `symphony-base`. Exploratory
-  tasks that benefit from real history are limited. Possible solutions: mount a host worktree
-  as a Daytona volume, clone from GitHub inside the sandbox (requires credential injection), or
-  sync the host repo including `.git` via a richer upload step.
+- **Full git history transfer to sandbox** (`SWYRD-yailwgkj`) — superseded by the remote Daytona
+  PR workflow. Active source handoff clones GitHub inside the sandbox at a pinned base SHA, so the
+  worker has real repository history.
 
 - **Orchestrator-side check verification** (`SWYRD-ovvmzqxw`). The orchestrator does not run
-  any health checks against the integrated branch on the host. Worker-side checks are
-  informational only. We use Switchyard to develop Switchyard, so the project's own CI on the
-  integration branch enforces health post-merge for the demo's purposes. A configurable
-  orchestrator-side health probe is a future addition.
+  health checks after the worker-owned PR is opened. The remote PR flow makes worker-side
+  verification and GitHub PR checks part of the completion contract, but an optional
+  orchestrator-side health probe remains a possible future addition.
 
-- **Worker-direct `fp` writes** (`SWYRD-jjlifoqq`). The worker is forbidden from writing to
-  `fp`, which deviates from upstream Symphony. The cost is one Effect-decoded outcome file; the
-  benefit is a clean security/auth boundary and a single source of truth for `fp` writes. Open
-  question for future iterations: relax this with scoped credentials? Constrain to comments
-  only?
+- **Worker-direct `fp` writes** (`SWYRD-jjlifoqq`) — superseded for the remote PR path. The sandbox
+  worker now receives scoped fp REST no-clone credentials for PR metadata, comments, and terminal
+  issue updates.
 
 See `docs/architecture/0001-symphony-deviations.md` for the architectural rationale behind
 several of these deferrals.
 
-(The end-to-end smoke re-run against the current artifact format ran under `SWYRD-gxgqehxl`
+(The end-to-end smoke re-run against the historical artifact format ran under `SWYRD-gxgqehxl`
 and is recorded in **App-server smoke (SWYRD-gxgqehxl)** under **Smoke Evidence (2026-05-04)**.)

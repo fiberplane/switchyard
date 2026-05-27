@@ -10,11 +10,11 @@ Switchyard implements a Symphony-style coordination model: an orchestrator polls
 and integrates worker outcomes back into the host repo. The upstream Symphony specification at
 `references/openai-symphony/SPEC.md` is our reference for shape, naming, and protocol semantics.
 
-The current vertical slice (see
-`docs/superpowers/specs/2026-05-04-symphony-daytona-vertical-slice.md`) is a deliberately narrow
-demo. Several architectural choices diverge from upstream. This ADR records those choices and
-the reasoning behind them so a reader familiar with upstream Symphony can quickly orient on what
-we did differently and why.
+The original vertical slice (see
+`docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md`) was a deliberately narrow demo.
+The active runtime has since moved to remote Daytona Cloud sandboxes and worker-owned GitHub PRs.
+This ADR records both the original deviations and the decisions superseded by the remote PR path
+so a reader familiar with upstream Symphony can quickly orient on what we do differently and why.
 
 ## Decisions
 
@@ -87,13 +87,16 @@ terminal fp state before writing `markNeedsAttention`.
 The original artifact-return flow used a five-property runtime surface including
 `symphony_artifact`. Remote Daytona PR mode retires that artifact property and uses the active
 surface documented in `docs/architecture/fp-boundary.md`. The historical candidates below explain
-why the first POC avoided extra metadata before worker-owned PRs existed:
+why the first POC avoided extra metadata before worker-owned PRs existed; they are not active
+constraints:
 
-- **`symphony_orchestrator_id`** — single-orchestrator assumption (D3) makes this redundant.
-- **`symphony_sandbox_id`** — recoverable from Daytona labels (sandboxes are labelled with
-  `fp_issue_id`); no need to duplicate that identity into `fp`.
-- **`symphony_base_rev`** — captured at dispatch in `outcome-record.json` on disk; no durable
-  `fp` consumer needs it.
+- **`symphony_orchestrator_id`** — the original single-orchestrator assumption (D3) made this
+  redundant.
+- **`symphony_sandbox_id`** — the original POC recovered this from Daytona labels instead of
+  duplicating it into `fp`; the remote PR flow now writes `symphony_sandbox_id` for fp/GitHub
+  correlation.
+- **`symphony_base_rev`** — the original POC captured this at dispatch in `outcome-record.json`;
+  the remote PR flow now writes `symphony_base_sha` in fp as canonical PR metadata.
 
 ### D5. Retry is **human-gated**; no auto-retry
 
@@ -158,15 +161,16 @@ Cost: ~1000–1500 lines of protocol client. The Switchyard implementation **doe
 Brettimus's single-file runner — we decompose into transport / events / session / turn modules
 so the protocol surface stays inspectable.
 
-### D9. Worker-side checks are informational; orchestrator does **not** re-run
+### D9. Worker-owned PR verification is required; orchestrator does **not** re-run checks
 
-The orchestrator does not run any health checks against the integrated branch on the host. The
-worker may run checks inside the sandbox (e.g., `bun run check`) but those results are not
-consumed by the orchestrator beyond informational logging.
+The orchestrator does not run health checks against the worker branch on the host. In the shipped
+remote PR flow, the sandbox worker is responsible for running required repo checks, opening a
+non-draft GitHub PR, babysitting PR checks, and reporting verification evidence in the PR/fp
+thread. The orchestrator consumes the worker's terminal fp metadata and verifies PR metadata, but
+does not independently re-run the project's health probes.
 
-Rationale: the demo will use Switchyard to develop Switchyard. The project's own CI on the
-`symphony/<issue-id>` branch enforces health on push/merge — orchestrator-side re-running would
-be redundant for our specific use case.
+Rationale: the demo uses Switchyard to develop Switchyard. The project's own checks on the
+worker-owned PR enforce health, so orchestrator-side re-running would be redundant for this repo.
 
 Tracked as `SWYRD-ovvmzqxw` for a future iteration where the orchestrator should run a
 configurable health probe before posting a `completed` outcome.
@@ -185,12 +189,12 @@ Positive:
 Negative:
 
 - We are not directly substitutable with upstream Symphony or with implementations that follow
-  upstream literally. Some of our deviations (worker can't write `fp`, no auto-retry) are real
-  capability deltas.
+  upstream literally. Some deviations remain real capability deltas, especially human-gated retry
+  and the absence of restart recovery.
 - `fp` UI does not show rich runtime chip transitions; demo narrative for "what is the
   orchestrator doing right now" relies on `fp` comments and the orchestrator's stdout/log.
-- Restart recovery has fewer breadcrumbs than upstream; we rely on Daytona labels rather than
-  tracker properties.
+- Restart recovery remains deferred. The active remote PR path leaves durable breadcrumbs in fp PR
+  metadata and the GitHub PR, with Daytona labels as supplemental sandbox lookup evidence.
 
 ## Tracking
 
@@ -198,7 +202,5 @@ Open follow-up decisions, captured as fp issues under epic `SWYRD-uouprnfv`:
 
 - `SWYRD-oxevvenq` — Worker follow-up reporting format and orchestrator filing behavior
 - `SWYRD-clnybkgo` — Continuation-turn behavior under `codex app-server`
-- `SWYRD-yailwgkj` — Full git history transfer to sandbox
 - `SWYRD-ovvmzqxw` — Orchestrator-side check verification
-- `SWYRD-jjlifoqq` — Decide whether the worker should write `fp` directly
 - `SWYRD-zituhadq` — Orchestrator policy for branch collision on integration retry

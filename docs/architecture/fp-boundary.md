@@ -1,12 +1,11 @@
 # fp Boundary
 
-Status: Active. Scope: **adapter + eligibility predicate only.** The `FpService` method
-surface (`fetchCandidates` / `claimIssue` / `markCompleted` / …) is intentionally **not**
-specified here yet — it remains consumer-shape until the orchestrator service consumes it. A
-future leaf extends this doc with the service surface once stable.
+Status: Active. Scope: **adapter + service + eligibility predicate.** The `FpService` method
+surface is now part of the active runOne contract, including candidate fetch, claim/terminal
+writes, run metadata, PR metadata, and comment writes.
 
-This doc is the contract for everything in `apps/symphony-orchestrator/src/fp/` **except**
-`service.ts`. It links UP to the umbrella spec's `## fp Contract` section in
+This doc is the contract for `apps/symphony-orchestrator/src/fp/`. It links UP to the umbrella
+spec's `## fp Contract` section in
 `docs/experiments/2026-05-04-symphony-daytona-vertical-slice.md` and DOWN to the source
 files that implement it.
 
@@ -15,8 +14,8 @@ Cross-links:
 - Umbrella spec: [`## fp Contract`](../experiments/2026-05-04-symphony-daytona-vertical-slice.md)
   (Ready Rule, Custom Properties, Writer Boundary, Status Transitions, Retry & Eligibility).
 - ADR: [`0001-symphony-deviations.md`](./0001-symphony-deviations.md) — D1 (`symphony_state`
-  naming), D4 (orchestrator is sole fp writer), D4b (minimal property surface), D5
-  (human-gated retry).
+  naming), D4 (worker-owned terminal fp writes after handoff), D4b (retired minimal property
+  surface), D5 (human-gated retry).
 
 ## Custom property surface
 
@@ -26,9 +25,9 @@ Lifted from the umbrella spec; the source-of-truth is the extension at
 | Property              | Type                                                         | Writer           | Meaning                                                                            |
 | --------------------- | ------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------- |
 | `symphony_ready`      | select `"true"` / `"false"`                                  | human or planner | Explicit dispatch gate.                                                            |
-| `symphony_state`      | select `"idle"` / `"active"` / `"end"` / `"needs-attention"` | orchestrator     | Coarse human-glance runtime hint. **Not authoritative; not read for correctness.** |
+| `symphony_state`      | select `"idle"` / `"active"` / `"end"` / `"needs-attention"` | orchestrator/worker | Coarse human-glance runtime hint. **Not authoritative; not read for correctness.** |
 | `symphony_attempt`    | text (numeric)                                               | orchestrator     | Current attempt number.                                                            |
-| `symphony_last_error` | text                                                         | orchestrator     | Last normalized failure reason.                                                    |
+| `symphony_last_error` | text                                                         | orchestrator/worker | Last normalized failure reason.                                                 |
 | `symphony_branch`     | text                                                         | worker/orchestrator | Deterministic branch for remote PR handoff.                                      |
 | `symphony_pr_url`     | text                                                         | worker           | GitHub PR URL opened by the sandbox worker.                                        |
 | `symphony_pr_number`  | text                                                         | worker           | GitHub PR number as text.                                                          |
@@ -109,6 +108,19 @@ call to every method on `FpAdapterShape` and assert both **presence** of the exp
 `updateIssue` call and **absence** of `setStatus` / `setProperty` / `addComment` after
 `updateIssue` is the contract. See `apps/symphony-orchestrator/test/fp/service.test.ts`.
 
+## `FpService` surface
+
+`FpService` is the semantic fp boundary used by orchestrator code and fp service tests. It exposes:
+
+- `fetchCandidates(runningSet)` and `fetchIssueState(id)` for reads.
+- `claimIssue`, `markCompleted`, `markNeedsAttention`, and `setAttempt` for orchestrator-owned
+  lifecycle writes.
+- `setRunMetadata` for pre-handoff dispatch metadata:
+  `symphony_branch`, `symphony_base_sha`, `symphony_run_id`, and `symphony_sandbox_id`.
+- `setPrMetadata` as a tested write helper for canonical PR metadata. The active remote runOne
+  path reads worker-written PR metadata with `fetchIssueState` and validates it against GitHub.
+- `addComment` for the non-terminal comments in the three-comment cadence.
+
 ## N+1 fetch — expected v1 behavior
 
 The Ready-Rule implementation runs a per-`todo`-candidate `showIssue` after the two
@@ -136,7 +148,5 @@ optimization lands, raise this concern on `SWYRD-jmxexmkw`.
 - [`eligibility.ts`](../../apps/symphony-orchestrator/src/fp/eligibility.ts) — pure
   `isEligible` predicate, `IneligibilityReason` union, `OpenIssueIndex`,
   `buildOpenIssueIndex`.
-
-`service.ts` is **deliberately NOT** linked here — its method surface is consumer-shape and
-not yet stable. The next consumer (orchestrator service leaf) extends this doc with the
-service surface and adds its `drift link`.
+- [`service.ts`](../../apps/symphony-orchestrator/src/fp/service.ts) — semantic fp service
+  consumed by runOne, including run metadata, PR metadata, and terminal write methods.
