@@ -1,9 +1,20 @@
 # Remote Daytona Sandboxes
 
-Status: Draft
+Status: Shipped
 Date: 2026-05-26
+Shipped: 2026-05-27 in PR #7
 
-## Agreed Decisions
+This proposal is historical implementation rationale. The active operator path is documented in
+[`README.md`](../../../README.md), the runOne lifecycle in
+[`docs/architecture/orchestrator-runone.md`](../../architecture/orchestrator-runone.md), and the
+QA scenario in
+[`packages/qa/scenarios/02-remote-daytona-happy-path.md`](../../../packages/qa/scenarios/02-remote-daytona-happy-path.md).
+The retired local Daytona compose implementation is preserved only in
+[`docs/graveyard/daytona-local-compose.md`](../../graveyard/daytona-local-compose.md).
+Sections that still use proposal-time words like "should", "must", or "add" are retained as
+implementation history for PR #7; they are not active operator instructions.
+
+## Shipped Decisions
 
 ### A1. Production Sandboxes Stay Forensic By Default
 
@@ -20,11 +31,11 @@ fail loudly if a workflow file still contains `sandbox.apiKey`; removing the sch
 is insufficient because Effect Schema's struct decoding can ignore unknown keys. Daytona
 credentials come from host-side secret ingestion.
 
-The implementation should take inspiration from `~/fiber/bb-libs/symphony`: resolve secrets from
-canonical environment variables, allow `$VAR` indirection only for fields that intentionally
-support it, treat empty secret env values as missing, and validate presence without printing the
-secret value. For Daytona/GitHub credentials specifically, prefer no workflow field at all; the
-canonical host env is the source.
+PR #7 followed the `~/fiber/bb-libs/symphony` secret-ingestion shape: secrets resolve from
+canonical environment variables, `$VAR` indirection is allowed only for fields that intentionally
+support it, empty secret env values decode as missing, and validation names missing fields without
+printing secret values. For Daytona/GitHub credentials, the canonical host env is the source; there
+is no workflow credential field.
 
 ### A3. Secrets May Come From Host Env Or Gitignored `.env`
 
@@ -35,19 +46,19 @@ workflow files, logs, transcripts, fp comments, or artifacts.
 
 ### A4. The Worker Owns Branch, PR, And fp Completion
 
-Remote Daytona should follow the Nocturne issue-to-PR shape: the sandbox clones the repo from
+Remote Daytona now follows the Nocturne issue-to-PR shape: the sandbox clones the repo from
 GitHub, receives scoped fp REST and GitHub credentials, creates a branch, opens a PR with `gh`,
 updates fp with branch/PR metadata, babysits the PR, and marks the issue done or blocked. The
 orchestrator no longer downloads a code artifact, creates a host branch, or performs host-side
 bundle integration for this path.
 
-This supersedes the current archive/bundle demo contract for the remote path. It intentionally
+This superseded the archive/bundle demo contract for the remote path. It intentionally
 relaxes ADR 0001 D4 for scoped fp writes from the sandbox and replaces ADR 0001 D7's bundle
 artifact with a PR artifact.
 
-The first implementation should remove host-side code artifact return for the remote path. The
-durable code artifact is the worker-created GitHub PR, with branch, PR, base SHA, and head SHA
-stored on the fp issue.
+The shipped implementation removed host-side code artifact return for the remote path. The durable
+code artifact is the worker-created GitHub PR, with branch, PR, base SHA, and head SHA stored on
+the fp issue.
 
 ### A5. Local Daytona Compose Is Removed In The Same Bout
 
@@ -72,18 +83,17 @@ old local artifact path.
 
 ### A8. End With Fallow, Dead-Code Removal, And Full Review Gates
 
-After remote Daytona is implemented and local Daytona compose is retired, add a terminal cleanup
-pass modeled on Nocturne's Fallow setup. Fallow findings are triage evidence, not automatic
-deletion authority: remove only clearly identifiable dead code after the architecture switch. A
-separate final closeout pass then reruns Fallow, runs an adversarial code-quality review loop until
-no actionable findings remain, runs root health checks and remote E2E, performs secret scans, and
-opens the GitHub PR.
+After remote Daytona was implemented and local Daytona compose was retired, PR #7 included a
+terminal cleanup pass modeled on Nocturne's Fallow setup. Fallow findings stayed triage evidence,
+not automatic deletion authority: only clearly identifiable dead code was removed after the
+architecture switch. The closeout pass reran Fallow, ran adversarial review, ran root health checks
+and remote E2E, performed secret scans, and opened the GitHub PR.
 
 ## Problem
 
-Switchyard currently dispatches workers into a local Daytona OSS compose stack. That was the
-right shape for the meetup vertical slice, but it creates the wrong operator model now that we
-have Daytona Cloud API access:
+Before this proposal shipped, Switchyard dispatched workers into a local Daytona OSS compose
+stack. That was the right shape for the meetup vertical slice, but it created the wrong operator
+model once Daytona Cloud API access was available:
 
 - Every developer has to run and repair a multi-service local Daytona stack before a real
   orchestrator run.
@@ -94,30 +104,32 @@ have Daytona Cloud API access:
 - Local Docker Compose details are mixed into active architecture docs, test helpers, app
   scripts, and QA scenarios.
 
-The target state is a host-side orchestrator that creates Daytona Cloud sandboxes through the
+The shipped state is a host-side orchestrator that creates Daytona Cloud sandboxes through the
 SDK, clones the repository from GitHub inside the sandbox, drives the existing `codex app-server`
 session protocol, and gives the worker enough scoped runtime context to complete an fp
-issue-to-GitHub-PR loop from inside the sandbox. The orchestrator must never place the Daytona
-API key in sandbox files, sandbox env, logs, committed workflow files, or artifacts.
+issue-to-GitHub-PR loop from inside the sandbox. The orchestrator never places the Daytona API key
+in sandbox files, sandbox env, logs, committed workflow files, or artifacts.
 
-## Current State
+## State At Proposal Time
 
-### Accepted Decisions
+### Baseline Decisions At Proposal Time
 
-The active system shape is still governed by ADR 0001 and the focused architecture docs:
+When this proposal was written, the system shape was governed by ADR 0001 and the focused
+architecture docs:
 
 - `docs/architecture/0001-symphony-deviations.md`
   - D3: exactly one orchestrator is load-bearing.
-  - D4: the orchestrator is the sole `fp` writer; workers receive no `fp` credentials. The remote
-    issue-to-PR path intentionally supersedes this with scoped REST fp credentials in the
-    sandbox.
+  - D4: the orchestrator was the sole `fp` writer; workers received no `fp` credentials. The
+    shipped remote issue-to-PR path supersedes this with scoped REST fp credentials in the sandbox.
   - D5: retry is human-gated.
-  - D6: source handoff is archive upload. The remote path supersedes this with GitHub clone.
-  - D7: artifact return is `git bundle`. The remote path supersedes this with a GitHub PR plus fp
-    metadata.
+  - D6: source handoff was archive upload. The shipped remote path supersedes this with GitHub
+    clone.
+  - D7: artifact return was `git bundle`. The shipped remote path supersedes this with a GitHub PR
+    plus fp metadata.
   - D8: the worker is `codex app-server`.
-  - D9: worker-side checks are informational. The remote issue-to-PR path makes worker-side
-    verification and PR checks part of the worker's completion contract.
+  - D9: worker-side checks were informational to the host orchestrator. The shipped remote
+    issue-to-PR path makes worker-side verification and PR checks part of the worker's completion
+    contract.
 - `docs/architecture/orchestrator-runone.md` defines the 20-step pipeline. The remote migration
   changes steps 5, 8, 9, 11, and 13-16. It should preserve the useful state transitions, comment
   cadence, and pre-handoff failure routing, but the code-return boundary becomes a worker-owned
@@ -126,7 +138,7 @@ The active system shape is still governed by ADR 0001 and the focused architectu
   workaround is explicitly OSS-observed and must be re-probed against Daytona Cloud before being
   retired.
 
-### Local Daytona Surfaces To Remove Or Replace
+### Local Daytona Surfaces Removed Or Replaced
 
 Runtime-local surfaces:
 
@@ -173,11 +185,11 @@ Retire rather than adapt:
 Use a host-only dotenv file plus environment overrides. Do not store Daytona or GitHub secrets in
 `WORKFLOW.md`.
 
-Add:
+The implementation added or used:
 
 - `apps/symphony-orchestrator/.env.example`
 - `apps/symphony-orchestrator/.gitignore` entry for `.env`
-- `docs/architecture/daytona-cloud-sandbox-lifecycle.md`
+- `docs/architecture/orchestrator-runone.md` for the active sandbox lifecycle
 
 Environment variables:
 
@@ -193,7 +205,7 @@ Environment variables:
 | `FP_SERVER_URL`, `FP_WORKSPACE`, `FP_PROJECT_ID`, `FP_PROJECT_PREFIX` | Host `.env` or host shell | fp no-clone REST project context | Command env only |
 | `SWITCHYARD_CODEX_AUTH` | Host `.env` or host shell | Optional host Codex auth path | Copied auth artifact only |
 
-Recommended behavior:
+Shipped behavior:
 
 1. `WORKFLOW.md` remains tracked as non-secret operator policy. It may name the sandbox kind,
    snapshot default, repo URL, repo path, source strategy, and artifact strategy, but not an API
@@ -205,7 +217,8 @@ Recommended behavior:
    host-env-owned.
 5. `GITHUB_TOKEN` must never be rendered into command text, clone URLs, git remotes, transcript
    logs, fp comments, or downloaded artifacts.
-6. Add a `Redactor`/artifact boundary, based on Nocturne's `remote-bootstrap/redaction.ts`,
+6. The implementation added a `Redactor`/artifact boundary, based on Nocturne's
+   `remote-bootstrap/redaction.ts`,
    `commands.ts`, and `artifacts.ts`.
 
 ### Credential Lifetimes
@@ -242,7 +255,7 @@ Copied Codex auth needs its own lifecycle:
 
 Secret hygiene is a boundary requirement, not a logging nicety.
 
-Add a redaction/artifact service with this contract:
+The implementation added a redaction/artifact service with this contract:
 
 - Persisted command stdout/stderr is sanitized before writing local transcripts.
 - Command metadata stores env key summaries and secret counts, never env values.
@@ -266,7 +279,7 @@ to debug which artifact failed. Do not post secret-containing text to `fp`.
 
 Replace archive upload with GitHub clone.
 
-Workflow config should evolve from:
+Workflow config evolved from:
 
 ```yaml
 sandbox:
@@ -282,7 +295,7 @@ sandbox:
   baseBranch: main
 ```
 
-Implementation shape:
+Implementation shape shipped in PR #7:
 
 1. Resolve source metadata on the host before claim: `repoUrl`, `baseBranch`, and `baseSha`.
 2. Add a source setup script in `sandbox-scripts/` that clones `repoUrl` into `repoPath`, fetches
@@ -329,7 +342,7 @@ Orchestrator responsibilities:
 6. Avoid terminal fp writes once the worker has taken ownership, except for launch/setup failures
    before worker handoff.
 
-`sourceStrategy: githubClone` and `artifactStrategy: pr` should replace the old
+`sourceStrategy: githubClone` and `artifactStrategy: pr` replaced the old
 `archive`/`bundle` pair for remote Daytona workflows.
 
 ### fp Properties For Worker-Owned PRs
@@ -431,9 +444,9 @@ Sweeper contract:
 
 ### Orchestrator Pipeline
 
-Change `runOne` minimally:
+PR #7 changed `runOne` while preserving the useful state transitions and comment cadence:
 
-| Current step | Current behavior | Remote behavior |
+| Original step | Original behavior | Shipped remote behavior |
 | --- | --- | --- |
 | 5 | `integration.prepareSourceHandoff()` creates host archive | Resolve clone source metadata: `repoUrl`, `baseBranch`, and `baseSha` |
 | 8 | Upload archive, prompt, Codex auth | Upload prompt and Codex auth only |
@@ -445,9 +458,8 @@ Failure routing changes after worker handoff: pre-handoff failures are still orc
 and route to `needs-attention`; post-handoff failures should be reported by the worker through fp
 comments/properties unless the session crashes before the worker can report.
 
-This requires replacing the current archive-shaped `SourceHandoff` with clone metadata, or using
-a discriminated union while the migration is in progress. The implementation must remove the
-archive tempdir finalizer and the archive upload entry from `runOne`.
+The shipped implementation replaced the archive-shaped `SourceHandoff` with clone metadata and
+removed the archive tempdir finalizer and archive upload entry from the remote `runOne` path.
 
 ### Snapshot
 
@@ -578,16 +590,13 @@ This is the implementor's clear signal that the migration works.
 
 ## Documentation Changes
 
-Add:
+Added:
 
-- `docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md`
-- `docs/architecture/daytona-cloud-sandbox-lifecycle.md`
-- `docs/testing/remote-daytona.md`
+- `docs/proposals/completed/2026-05-26-remote-daytona-sandboxes.md`
 - `apps/symphony-orchestrator/.env.example`
-- `apps/symphony-orchestrator/README.md` if app-local setup instructions need more room than the
-  root quick start
+- `packages/qa/scenarios/02-remote-daytona-happy-path.md`
 
-Update:
+Updated:
 
 - `README.md` quick start
 - `WORKFLOW.example.md`
@@ -622,9 +631,13 @@ Delete from active code after the graveyard note exists:
 - package scripts that boot local Daytona
 - QA helpers that instruct local compose setup
 
-## Implementation Phases
+## Historical Implementation Plan
 
-### Phase 0: Prove Daytona Cloud Basics
+These phases are retained as implementation history for PR #7. They are not the active operator
+workflow; active operation lives in `README.md`, `docs/architecture/orchestrator-runone.md`, and
+`packages/qa/scenarios/02-remote-daytona-happy-path.md`.
+
+### Completed Phase 0: Prove Daytona Cloud Basics
 
 - Receive API key out of band.
 - Export `DAYTONA_API_KEY` only in the host shell.
@@ -636,7 +649,7 @@ Delete from active code after the graveyard note exists:
 - Record feasibility evidence in `docs/experiments/<date>-daytona-cloud-probe.md`; summarize
   only accepted consequences back into this proposal.
 
-### Phase 1: Secret-Safe Config
+### Completed Phase 1: Secret-Safe Config
 
 - Add host `.env.example` and `.gitignore` coverage.
 - Remove `sandbox.apiKey` from workflow schema and tracked workflow files.
@@ -649,7 +662,7 @@ Delete from active code after the graveyard note exists:
 - Update or delete `decodeDaytonaConfigEnv` and add tests for Cloud defaults.
 - Add tests for missing env and no workflow-embedded secrets.
 
-### Phase 2: GitHub Clone Source Strategy
+### Completed Phase 2: GitHub Clone Source Strategy
 
 - Add `sourceStrategy: githubClone`, `repoUrl`, and `baseBranch`.
 - Resolve and pin `baseSha` before dispatch.
@@ -659,7 +672,7 @@ Delete from active code after the graveyard note exists:
 - Remove archive upload from the remote path.
 - Add unit tests for command rendering and secret hygiene.
 
-### Phase 3: Worker fp/GitHub PR Contract
+### Completed Phase 3: Worker fp/GitHub PR Contract
 
 - Add the Switchyard sandbox ticket skill and prompt references modeled on Nocturne.
 - Add fp REST env validation and sandbox-side REST workdir setup.
@@ -673,7 +686,7 @@ Delete from active code after the graveyard note exists:
 - Remove remote-path assumptions that the host finalizes, downloads, or integrates a code artifact.
 - Add tests for worker env rendering and redaction.
 
-### Phase 4: fp No-Clone Property Spike
+### Completed Phase 4: fp No-Clone Property Spike
 
 - Prove `FP_REMOTE=rest-api` can read and write the canonical `symphony_*` properties from a
   non-repo REST workdir inside the sandbox.
@@ -682,27 +695,27 @@ Delete from active code after the graveyard note exists:
 - If property writes fail, keep branch/PR metadata comments as temporary evidence only and add or
   upstream the missing fp REST support before enabling worker-owned completion.
 
-### Phase 5: Remote Daytona E2E Tests
+### Completed Phase 5: Remote Daytona E2E Tests
 
 - Replace compose-backed test helpers with remote-gated helpers.
 - Add remote adapter/session tests.
 - Add full orchestrator remote integration test.
 - Add label-based cleanup and orphan sweeping for Cloud.
 
-### Phase 6: Retire Local Daytona
+### Completed Phase 6: Retire Local Daytona
 
 - Move local setup doc to `docs/graveyard/`.
 - Delete production local compose files and package scripts.
 - Delete local compose test stack files.
 - Update README, QA scenarios, and docs index.
 
-### Phase 7: Re-evaluate Cloud Session Semantics
+### Completed Phase 7: Re-evaluate Cloud Session Semantics
 
 - Probe whether Daytona Cloud now populates session exit code or closes the log stream cleanly.
 - If yes, simplify `DaytonaSession` and update `daytona-streaming-session.md`.
 - If no, keep the exit-trap wrapper and document that the workaround applies to Cloud too.
 
-### Phase 8: Fallow And Dead-Code Cleanup
+### Completed Phase 8: Fallow And Dead-Code Cleanup
 
 - Add conservative Fallow configuration and package scripts modeled on Nocturne.
 - Run Fallow after the remote path is active and local compose has been removed.
@@ -711,7 +724,7 @@ Delete from active code after the graveyard note exists:
 - Commit a concise Fallow baseline summary with counts, command shapes, version, and known modeling
   gaps. Raw Fallow JSON is local evidence, not committed documentation.
 
-### Phase 9: Final Review, Gates, E2E, And PR
+### Completed Phase 9: Final Review, Gates, E2E, And PR
 
 - Rerun Fallow and confirm no clearly removable local-Daytona/archive/bundle dead code remains.
 - Run a thermonuclear code-quality review subagent loop until it reports no actionable findings.
@@ -719,8 +732,8 @@ Delete from active code after the graveyard note exists:
   scenario using `apps/symphony-orchestrator/.env`.
 - Scan logs, transcripts, diagnostics, PR text, fp comments/properties, and git remotes for exact
   registered secret values before opening the GitHub PR.
-- Push the branch and open a GitHub PR with links to the parent epic, child issues, proposal, E2E
-  evidence, health checks, Fallow summary, secret-scan result, and review-loop result.
+- PR #7 shipped with links to the parent epic, child issues, proposal, E2E evidence, health
+  checks, Fallow summary, secret-scan result, and review-loop result.
 
 ## Review Questions
 

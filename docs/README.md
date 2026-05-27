@@ -27,10 +27,10 @@ System of record for the repository. AGENTS.md is the map, this directory is the
 
 Skills live in two places:
 
-- `.claude/skills/` — repo-specific skills, versioned with the code. Techniques that reference this codebase's tools, scripts, or conventions.
-- `~/.claude/skills/` — personal skills, portable across repos. General techniques not tied to any codebase.
+- `.agents/skills/` — repo-specific skills, versioned with the code. Techniques that reference this codebase's tools, scripts, or conventions.
+- `~/.agents/skills/` or `~/.codex/skills/` — personal skills, portable across repos. General techniques not tied to any codebase.
 
-Overlap rule: if a pattern describes our codebase (our Effect conventions, our ast-grep rules), it belongs in docs/. If it teaches a technique for working on this codebase (how to run codemods here), it belongs in `.claude/skills/`. If it's a general technique (how ast-grep works), it belongs in `~/.claude/skills/`.
+Overlap rule: if a pattern describes our codebase (our Effect conventions, our ast-grep rules), it belongs in docs/. If it teaches a technique for working on this codebase (how to run codemods here), it belongs in `.agents/skills/`. If it's a general technique (how ast-grep works), it belongs in a personal skills directory.
 
 ### docs/ vs app READMEs
 
@@ -111,6 +111,8 @@ Docs rot when they describe code that changed. To mitigate:
 | [0001-symphony-deviations.md](architecture/0001-symphony-deviations.md)   | ADR: switchyard deviations from upstream symphony                                            |
 | [daytona-streaming-session.md](architecture/daytona-streaming-session.md) | Daytona streaming-session contract                                                           |
 | [fp-boundary.md](architecture/fp-boundary.md)                             | fp adapter + eligibility predicate contract                                                  |
+| [observability.md](architecture/observability.md)                         | Structured logging and trace surface                                                         |
+| [orchestrator-reconciliation.md](architecture/orchestrator-reconciliation.md) | Running-set reconciliation decision                                                       |
 | [orchestrator-runone.md](architecture/orchestrator-runone.md)             | Orchestrator runOne pipeline, GitHub clone handoff, worker PR completion                      |
 | [runner-protocol.md](architecture/runner-protocol.md)                     | codex app-server JSON-RPC client contract: approval shapes, capabilities, transcript surface |
 
@@ -127,15 +129,14 @@ Docs rot when they describe code that changed. To mitigate:
 
 Active proposals:
 
-| Doc                                                                                                      | Topic                                          |
-| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [2026-05-26-remote-daytona-sandboxes.md](proposals/active/2026-05-26-remote-daytona-sandboxes.md) | Switch orchestrator sandboxes to Daytona Cloud |
+No active proposals are currently tracked.
 
 Completed proposals:
 
 | Doc                                                                                                                | Topic                                      |
 | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | [2026-04-01-devtool-factory-template-design.md](proposals/completed/2026-04-01-devtool-factory-template-design.md) | Switchyard/devtool-factory template design |
+| [2026-05-26-remote-daytona-sandboxes.md](proposals/completed/2026-05-26-remote-daytona-sandboxes.md)               | Shipped Daytona Cloud sandbox migration    |
 
 ### experiments/
 
