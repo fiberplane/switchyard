@@ -87,6 +87,7 @@ export const toOrchestratorConfig = (
     codexAuthHostPath: hostConfig.codex.authPath ?? path.join(homedir(), ".codex/auth.json"),
     repoPath: cfg.sandbox.repoPath,
     source,
+    branchPrefix: cfg.integration.branchPrefix,
     fpRest: {
       remote: "rest-api",
       ...(hostConfig.fpRest.token === undefined ? {} : { token: hostConfig.fpRest.token }),

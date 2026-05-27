@@ -24,7 +24,7 @@ import type {
 import type { DaytonaSandboxSpec, SandboxHandle } from "../daytona/models.js";
 import type { EligibleIssue } from "../fp/eligibility.js";
 import { FpService } from "../fp/service.js";
-import type { WriteError } from "../fp/service.js";
+import type { FpIssueState, WriteError } from "../fp/service.js";
 import {
   sourceBaseRev,
   symphonyBranchName,
@@ -106,7 +106,7 @@ const codexAppServerCommand = (
     "export GIT_CONFIG_COUNT=0",
     "unset GIT_CONFIG_PARAMETERS || true",
     `cd ${shellQuote(repoPath)} && codex app-server`,
-  ].join("; ");
+  ].join("\n");
 };
 
 // Truncate the worker's `summary` for the `summary head` portion of
@@ -120,6 +120,11 @@ const prepareSourceHandoff = (
   issueId: string,
   attempt: number,
 ): Effect.Effect<SourceHandoff, DispatchError> => {
+  const branchName = symphonyBranchName(issueId, attempt);
+  const githubCloneBranchName =
+    config.branchPrefix === undefined
+      ? branchName
+      : `${config.branchPrefix.replace(/\/?$/u, "/")}${branchName.slice("symphony/".length)}`;
   const prepared =
     config.source.kind === "archive"
       ? integration.prepareSourceHandoff()
@@ -127,7 +132,7 @@ const prepareSourceHandoff = (
           repoUrl: config.source.repoUrl,
           baseBranch: config.source.baseBranch,
           repoPath: config.repoPath,
-          branchName: symphonyBranchName(issueId, attempt),
+          branchName: githubCloneBranchName,
           githubToken: config.source.githubToken,
         });
 
@@ -211,8 +216,129 @@ const renderWorkerEnvFile = (
   ].join("\n");
 };
 
-const githubCloneHandoffGateReason =
-  "worker-owned PR completion is gated until fp no-clone property writes are verified";
+type GithubCloneCompletion = {
+  readonly branch: string;
+  readonly prUrl: string;
+  readonly prNumber: string;
+  readonly baseSha: string;
+  readonly headSha: string;
+  readonly runId: string;
+  readonly sandboxId: string;
+};
+
+const missingGithubCloneCompletionReason = (details: ReadonlyArray<string>): string =>
+  `worker-owned PR metadata incomplete: ${details.join(", ")}`;
+
+const validateGithubCloneCompletion = (
+  state: FpIssueState,
+  expected: {
+    readonly branch: string;
+    readonly baseSha: string;
+    readonly runId: string;
+    readonly sandboxId: string;
+  },
+):
+  | { readonly kind: "ok"; readonly completion: GithubCloneCompletion }
+  | {
+      readonly kind: "missing";
+      readonly reason: string;
+    } => {
+  const problems: string[] = [];
+  const properties = state.properties;
+
+  if (state.status !== "done") {
+    problems.push(`status=${state.status}`);
+  }
+  if (properties.symphony_state !== "end") {
+    problems.push(`symphony_state=${properties.symphony_state}`);
+  }
+
+  const branch = properties.symphony_branch;
+  const baseSha = properties.symphony_base_sha;
+  const runId = properties.symphony_run_id;
+  const sandboxId = properties.symphony_sandbox_id;
+  const required = [
+    ["symphony_branch", branch, expected.branch],
+    ["symphony_base_sha", baseSha, expected.baseSha],
+    ["symphony_run_id", runId, expected.runId],
+    ["symphony_sandbox_id", sandboxId, expected.sandboxId],
+  ] as const;
+  for (const [key, actual, wanted] of required) {
+    if (actual === undefined) {
+      problems.push(`${key}=missing`);
+    } else if (actual !== wanted) {
+      problems.push(`${key}=mismatch`);
+    }
+  }
+
+  const prUrl = properties.symphony_pr_url;
+  if (prUrl === undefined) {
+    problems.push("symphony_pr_url=missing");
+  }
+  const prNumber = properties.symphony_pr_number;
+  if (prNumber === undefined) {
+    problems.push("symphony_pr_number=missing");
+  }
+  const headSha = properties.symphony_head_sha;
+  if (headSha === undefined) {
+    problems.push("symphony_head_sha=missing");
+  }
+
+  if (
+    problems.length > 0 ||
+    branch === undefined ||
+    baseSha === undefined ||
+    runId === undefined ||
+    sandboxId === undefined ||
+    prUrl === undefined ||
+    prNumber === undefined ||
+    headSha === undefined
+  ) {
+    return { kind: "missing", reason: missingGithubCloneCompletionReason(problems) };
+  }
+
+  return {
+    kind: "ok",
+    completion: {
+      branch,
+      prUrl,
+      prNumber,
+      baseSha,
+      headSha,
+      runId,
+      sandboxId,
+    },
+  };
+};
+
+const verifyGithubCloneCompletion = (
+  fp: Context.Tag.Service<FpService>,
+  issueId: string,
+  expected: {
+    readonly branch: string;
+    readonly baseSha: string;
+    readonly runId: string;
+    readonly sandboxId: string;
+  },
+): Effect.Effect<
+  | { readonly kind: "ok"; readonly completion: GithubCloneCompletion }
+  | {
+      readonly kind: "missing";
+      readonly reason: string;
+    }
+> =>
+  fp.fetchIssueState(issueId).pipe(
+    Effect.map((state) => validateGithubCloneCompletion(state, expected)),
+    Effect.catchAll((error) =>
+      Effect.logWarning("worker.handoff.read-failed").pipe(
+        Effect.annotateLogs({ error_tag: error._tag }),
+        Effect.as({
+          kind: "missing" as const,
+          reason: `worker-owned PR metadata read failed: ${error._tag}`,
+        }),
+      ),
+    ),
+  );
 
 const cleanupWorkerEnv = (
   daytona: Context.Tag.Service<DaytonaAdapter>,
@@ -305,8 +431,14 @@ export type OrchestratorServiceConfig = {
     readonly projectId?: string | undefined;
     readonly projectPrefix?: string | undefined;
   };
+  readonly branchPrefix?: string | undefined;
   // Optional sandbox-name template. Defaults to `swy-<displayId>-<attempt>`.
   readonly sandboxNameFor?: (issue: EligibleIssue, attempt: number) => string;
+  readonly sandboxLabelsFor?: (
+    issue: EligibleIssue,
+    attempt: number,
+    baseLabels: Record<string, string>,
+  ) => Record<string, string>;
 };
 
 export type RunOneResult = {
@@ -561,16 +693,23 @@ const runOneImpl =
           // Step 7: create sandbox. The first post-claim failure mode (F3).
           const sandboxName = (config.sandboxNameFor ?? defaultSandboxName)(issue, attempt);
           const runId = defaultRunId(issue, attempt);
+          const baseLabels = {
+            fp_issue_id: issueId,
+            fp_display_id: displayId,
+            app: "symphony",
+            attempt: String(attempt),
+            run_id: runId,
+            created_at_ms: String(Date.now()),
+          };
           const spec: DaytonaSandboxSpec = {
             name: sandboxName,
             snapshotName: config.snapshotName,
             language: "typescript",
-            labels: {
-              fp_issue_id: issueId,
-              app: "symphony",
-              attempt: String(attempt),
-              run_id: runId,
-            },
+            labels: (config.sandboxLabelsFor ?? ((_issue, _attempt, labels) => labels))(
+              issue,
+              attempt,
+              baseLabels,
+            ),
             envVars: { CODEX_HOME: SANDBOX_CODEX_HOME },
             autoStopInterval: config.autoStopInterval,
             autoDeleteInterval: config.autoDeleteInterval,
@@ -881,11 +1020,48 @@ const runOneImpl =
           }
 
           if (handoff.kind === "githubClone" && config.source.kind === "githubClone") {
-            const record = makeRecord({
-              status: "needs-attention",
+            const verified = yield* verifyGithubCloneCompletion(fp, issueId, {
               branch: handoff.branchName,
-              baseRev: handoff.baseSha,
-              workerStatus: Option.none(),
+              baseSha: handoff.baseSha,
+              runId,
+              sandboxId: handle.id,
+            });
+            if (verified.kind === "missing") {
+              const record = makeRecord({
+                status: "needs-attention",
+                branch: handoff.branchName,
+                baseRev: handoff.baseSha,
+                workerStatus: Option.none(),
+                startedAt,
+                attempt,
+                integrationError: verified.reason,
+              });
+              yield* artifactStore
+                .writeRecord(issueId, attempt, record)
+                .pipe(Effect.mapError(mapArtifactWriteError));
+              yield* Effect.logWarning("worker.handoff.incomplete").pipe(
+                Effect.annotateLogs({
+                  branch: handoff.branchName,
+                  run_id: runId,
+                  sandbox_id: handle.id,
+                  reason: verified.reason,
+                }),
+              );
+              return {
+                issueId,
+                attempt,
+                status: "needs-attention" as const,
+                branch: handoff.branchName,
+                summary: undefined,
+                lastError: verified.reason,
+              };
+            }
+
+            const record = makeRecord({
+              status: "integrated",
+              branch: verified.completion.branch,
+              baseRev: verified.completion.baseSha,
+              workerStatus: Option.some("completed"),
               startedAt,
               attempt,
             });
@@ -894,18 +1070,21 @@ const runOneImpl =
               .pipe(Effect.mapError(mapArtifactWriteError));
             yield* Effect.logInfo("worker.handoff.completed").pipe(
               Effect.annotateLogs({
-                branch: handoff.branchName,
-                run_id: runId,
-                sandbox_id: handle.id,
+                branch: verified.completion.branch,
+                run_id: verified.completion.runId,
+                sandbox_id: verified.completion.sandboxId,
+                pr_url: verified.completion.prUrl,
+                pr_number: verified.completion.prNumber,
+                head_sha: verified.completion.headSha,
               }),
             );
             return {
               issueId,
               attempt,
-              status: "needs-attention" as const,
-              branch: handoff.branchName,
-              summary: undefined,
-              lastError: githubCloneHandoffGateReason,
+              status: "integrated" as const,
+              branch: verified.completion.branch,
+              summary: `Worker opened PR ${verified.completion.prUrl}`,
+              lastError: undefined,
             };
           }
 

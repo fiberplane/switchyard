@@ -14,11 +14,11 @@ export const FpIssueSchema = Schema.Struct({
   title: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: FpIssueStatusSchema,
-  priority: Schema.NullOr(FpIssuePrioritySchema),
-  parent: Schema.NullOr(Schema.String),
-  dependencies: Schema.Array(Schema.String),
-  createdAt: Schema.String,
-  updatedAt: Schema.String,
+  priority: Schema.optionalWith(Schema.NullOr(FpIssuePrioritySchema), { default: () => null }),
+  parent: Schema.optionalWith(Schema.NullOr(Schema.String), { default: () => null }),
+  dependencies: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] }),
+  createdAt: Schema.optionalWith(Schema.String, { default: () => "" }),
+  updatedAt: Schema.optionalWith(Schema.String, { default: () => "" }),
 });
 export type FpIssue = Schema.Schema.Type<typeof FpIssueSchema>;
 
@@ -33,17 +33,17 @@ export const FpIssueDetailSchema = Schema.Struct({
   title: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: FpIssueStatusSchema,
-  priority: Schema.NullOr(FpIssuePrioritySchema),
-  parent: Schema.NullOr(Schema.String),
-  dependencies: Schema.Array(Schema.String),
-  revisions: Schema.Array(Schema.Unknown),
-  author: Schema.String,
-  createdAt: Schema.String,
-  updatedAt: Schema.String,
+  priority: Schema.optionalWith(Schema.NullOr(FpIssuePrioritySchema), { default: () => null }),
+  parent: Schema.optionalWith(Schema.NullOr(Schema.String), { default: () => null }),
+  dependencies: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] }),
+  revisions: Schema.optionalWith(Schema.Array(Schema.Unknown), { default: () => [] }),
+  author: Schema.optionalWith(Schema.String, { default: () => "" }),
+  createdAt: Schema.optionalWith(Schema.String, { default: () => "" }),
+  updatedAt: Schema.optionalWith(Schema.String, { default: () => "" }),
   properties: Schema.optionalWith(Schema.Record({ key: Schema.String, value: Schema.Unknown }), {
     default: () => ({}),
   }),
-  comments: Schema.Array(Schema.Unknown),
+  comments: Schema.optionalWith(Schema.Array(Schema.Unknown), { default: () => [] }),
 });
 export type FpIssueDetail = Schema.Schema.Type<typeof FpIssueDetailSchema>;
 

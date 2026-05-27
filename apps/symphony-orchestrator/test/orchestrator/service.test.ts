@@ -50,6 +50,24 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   },
 });
 
+const workerDoneState = (
+  issueId: string,
+  options: { readonly branch?: string; readonly sandboxId?: string } = {},
+) => ({
+  status: "done",
+  properties: {
+    ...SYMPHONY_PROPERTIES_DEFAULTS,
+    symphony_state: "end" as const,
+    symphony_branch: options.branch ?? `symphony/${issueId}`,
+    symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+    symphony_pr_number: "123",
+    symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+    symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+    symphony_run_id: `swy-swy-${issueId}-1`,
+    symphony_sandbox_id: options.sandboxId ?? "sb-test-1",
+  },
+});
+
 // Codex protocol responses the runner expects: initialize ack (sendIndex=0),
 // thread/start ack (sendIndex=1), and turn/start ack + terminal
 // turn/completed notification (sendIndex=2). Wire-shape stays compatible with
@@ -98,7 +116,7 @@ const codexResponses = (
     JSON.stringify({ id: 3, result: { ok: true } }),
     JSON.stringify({
       method: "turn/completed",
-      params: { turn: { status: turnStatus } },
+      params: { threadId, turn: { status: turnStatus } },
     }),
   ],
 ];
@@ -190,7 +208,9 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
 
   test("githubClone source uploads no archive and sets up the pinned remote checkout", async () => {
     const issue = fixtureEligible("clone");
-    const fp = makeFpMock({});
+    const fp = makeFpMock({
+      fetchIssueState: () => Effect.succeed(workerDoneState("clone")),
+    });
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
     const integration = makeIntegrationMock({});
@@ -236,9 +256,10 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       ),
     );
 
-    expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe(
-      "worker-owned PR completion is gated until fp no-clone property writes are verified",
+    expect(result.status).toBe("integrated");
+    expect(result.lastError).toBeUndefined();
+    expect(result.summary).toBe(
+      "Worker opened PR https://github.com/fiberplane/switchyard/pull/123",
     );
     expect(result.branch).toBe("symphony/clone");
     expect(integration.prepareCalls()).toBe(0);
@@ -286,6 +307,8 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     ]);
     expect(integration.integrateCalls()).toEqual([]);
     expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
+    expect(artifact.records()[0]?.record.status).toBe("integrated");
+    expect(artifact.records()[0]?.record.branch).toBe("symphony/clone");
     expect(fp.calls.find((call) => call.kind === "setRunMetadata")).toEqual({
       kind: "setRunMetadata",
       id: "clone",
@@ -311,6 +334,191 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(fp.calls)).not.toContain("symphony_artifact");
+  });
+
+  test("githubClone completed turn verifies worker-owned fp terminal metadata", async () => {
+    const issue = fixtureEligible("clone-missing-metadata");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+      },
+    };
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () => Effect.void,
+              finalizeBundle: () =>
+                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toContain("worker-owned PR metadata incomplete");
+    expect(result.lastError).toContain("status=in-progress");
+    expect(result.lastError).toContain("symphony_pr_url=missing");
+    expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
+    expect(artifact.records()[0]?.record.status).toBe("needs-attention");
+    expect(artifact.records()[0]?.record.integrationError).toContain(
+      "worker-owned PR metadata incomplete",
+    );
+    expect(integration.integrateCalls()).toEqual([]);
+  });
+
+  test("sandboxLabelsFor can add E2E labels without losing canonical labels", async () => {
+    const issue = fixtureEligible("labelled-clone");
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed(
+          workerDoneState("labelled-clone", {
+            sandboxId: "sb-test-1",
+          }),
+        ),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+      },
+      sandboxLabelsFor: (_issue, _attempt, base) => ({
+        ...base,
+        app: "symphony-test",
+        source: "remote-daytona",
+        test_run_id: "e2e-run-123",
+        owner: "qa",
+      }),
+    };
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () => Effect.void,
+              finalizeBundle: () =>
+                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    const sandbox = daytona.calls.find((call) => call.kind === "createSandbox");
+    if (sandbox?.kind !== "createSandbox") {
+      throw new Error("expected createSandbox call");
+    }
+    expect(sandbox.spec.labels).toMatchObject({
+      fp_issue_id: "labelled-clone",
+      fp_display_id: "SWY-labelled-clone",
+      app: "symphony-test",
+      source: "remote-daytona",
+      test_run_id: "e2e-run-123",
+      owner: "qa",
+      attempt: "1",
+      run_id: "swy-swy-labelled-clone-1",
+    });
+    expect(sandbox.spec.labels.created_at_ms).toMatch(/^\d+$/);
+  });
+
+  test("githubClone branchPrefix customizes worker-owned PR branch names", async () => {
+    const issue = fixtureEligible("e2e-prefix");
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed(
+          workerDoneState("e2e-prefix", {
+            branch: "symphony/e2e/e2e-prefix",
+            sandboxId: "sb-test-1",
+          }),
+        ),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config: OrchestratorServiceConfig = {
+      ...baseConfig(codexAuthPath),
+      source: {
+        kind: "githubClone",
+        repoUrl: "https://github.com/fiberplane/switchyard.git",
+        baseBranch: "main",
+        artifactStrategy: "pr",
+      },
+      branchPrefix: "symphony/e2e/",
+    };
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            sandboxScripts: {
+              setupRepo: () => {
+                throw new Error("archive setup must not run for githubClone");
+              },
+              setupClone: () => Effect.void,
+              finalizeBundle: () =>
+                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("integrated");
+    expect(result.branch).toBe("symphony/e2e/e2e-prefix");
   });
 
   test("githubClone transcript redacts fp and github tokens", async () => {

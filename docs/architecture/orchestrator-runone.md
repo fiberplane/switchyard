@@ -81,28 +81,31 @@ when no decoded GitHub token is configured, so local credential state cannot mak
 workflow appear valid or rewrite the validated GitHub URL. If a scoped GitHub token is used,
 `ls-remote` failure stderr is redacted before it can become a `GitCommandError` reason.
 Sandbox clone setup applies the same Git config-source sanitization before clone/fetch, then
-writes safe-directory into `/tmp/.symphony/gitconfig`; the Codex app-server command exports
-that path as `GIT_CONFIG_GLOBAL` and disables system/env Git config sources so later
-worker-side Git operations inherit the safe-directory setting without inheriting image-global
-credential config. Clone setup also writes a persistent `/tmp/.symphony/git-askpass` script
-that reads `GITHUB_TOKEN` from the worker process environment; the token is supplied through a
-temporary `/tmp/.symphony/worker-env` bridge uploaded outside the repo and removed as the
-app-server session starts. Clone setup fetches the branch ref and the exact pinned SHA before
-checkout, so a branch move between host resolution and sandbox setup does not silently change
-the worker base. Clone setup writes `/tmp/.symphony/source.json` with the sanitized clone
-metadata (`repoUrl`, `baseBranch`, `baseSha`, `repoPath`, `branchName`) so the worker-owned PR
-workflow can create and push the deterministic branch without asking the orchestrator for more
-state.
+writes safe-directory into `/tmp/.symphony/gitconfig`; the Codex app-server command is rendered
+as a newline-delimited shell script that sources the worker env, removes it, exports that path
+as `GIT_CONFIG_GLOBAL`, and disables system/env Git config sources so later worker-side Git
+operations inherit the safe-directory setting without inheriting image-global credential config.
+Clone setup also writes a persistent `/tmp/.symphony/git-askpass` script that reads
+`GITHUB_TOKEN` from the worker process environment; the token is supplied through a temporary
+`/tmp/.symphony/worker-env` bridge uploaded outside the repo and removed as the app-server
+session starts. Clone setup fetches the branch ref and the exact pinned SHA before checkout, so
+a branch move between host resolution and sandbox setup does not silently change the worker base.
+Clone setup writes `/tmp/.symphony/source.json` with the sanitized clone metadata (`repoUrl`,
+`baseBranch`, `baseSha`, `repoPath`, `branchName`) so the worker-owned PR workflow can create
+and push the deterministic branch without asking the orchestrator for more state.
 
 For `githubClone`/PR runs, the orchestrator writes `symphony_branch`,
 `symphony_base_sha`, `symphony_run_id`, and `symphony_sandbox_id` at handoff, injects fp REST
 and GitHub credentials into the app-server process without rendering secrets into commands or
-prompts, and then stops after the worker turn completes. Until the fp no-clone property-write
-spike proves worker-side PR metadata writes, a completed worker turn records a local
-`needs-attention` gate reason rather than a false integrated result. It does not
-finalize/download bundles, decode `outcome.json`, integrate a host branch, or write
-`symphony_artifact`. Non-completed `githubClone` turns still skip bundle salvage because there is
-no archive/bundle return channel for the remote PR strategy; before parking the issue
+prompts, and then verifies worker-owned fp metadata after the worker turn completes. A
+completed worker turn is locally `integrated` only when fp reads back `status=done`,
+`symphony_state=end`, and the complete PR metadata surface (`symphony_branch`,
+`symphony_pr_url`, `symphony_pr_number`, `symphony_base_sha`, `symphony_head_sha`,
+`symphony_run_id`, `symphony_sandbox_id`) matching the handoff. Missing or mismatched metadata
+records a local `needs-attention` result without overwriting the worker-owned fp state. The PR
+strategy does not finalize/download bundles, decode `outcome.json`, integrate a host branch, or
+write `symphony_artifact`. Non-completed `githubClone` turns still skip bundle salvage because
+there is no archive/bundle return channel for the remote PR strategy; before parking the issue
 needs-attention, the orchestrator checks whether the worker already wrote terminal state and
 skips the fp write if it did.
 

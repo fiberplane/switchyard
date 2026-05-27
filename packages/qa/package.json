@@ -1,5 +1,15 @@
 {
   "name": "@switchyard/qa",
   "version": "0.0.0",
-  "private": true
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "remote-daytona:e2e": "bun run src/remote-daytona-e2e.ts"
+  },
+  "dependencies": {
+    "@daytona/sdk": "0.171.0",
+    "@effect/platform-bun": "0.85.0",
+    "@effect/platform-node": "0.105.0",
+    "effect": "3.20.0"
+  }
 }

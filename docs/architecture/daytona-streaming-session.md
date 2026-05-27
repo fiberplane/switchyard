@@ -49,9 +49,12 @@ delegates to `deleteSession`, idempotent via a `Ref<boolean>`).
 
 After `executeSessionCommand(runAsync: true)` returns a command id, `start` waits for the
 SDK-managed session input pipe to appear before exposing `send`. The readiness poll uses a
-30 second deadline with a 50ms cadence. The longer deadline is intentional for Daytona Cloud:
-the local stack typically exposes the pipe quickly, but the Cloud lifecycle smoke showed 5
-seconds was too short even though the command and exit-trap protocol were otherwise healthy.
+120 second deadline with a 250ms pipe-probe cadence. The longer deadline is intentional for
+Daytona Cloud: the local stack typically exposes the pipe quickly, but the Cloud E2E path has
+observed snapshot/codex startup taking longer than 30 seconds even though the command and
+exit-trap protocol were otherwise healthy. The readiness loop also checks the wrapper exit file
+and Daytona's command status once per second, so shell syntax errors or other early command
+exits fail fast without hammering the Cloud API on every pipe probe.
 
 **Frame type is `string`.** Codex app-server JSON-RPC is line-delimited UTF-8 text; the
 SDK accepts `string` only on `sendSessionCommandInput` and emits `string` on
@@ -181,7 +184,7 @@ Six `Data.TaggedError` classes plus the existing `DaytonaSandboxNotFoundError`:
 | Error                         | When it fires                                                                                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DaytonaSessionCreateError`   | `process.createSession` failed (non-404).                                                                                                              |
-| `DaytonaSessionExecError`     | `process.executeSessionCommand` failed (non-404), or response decode failed.                                                                           |
+| `DaytonaSessionExecError`     | `process.executeSessionCommand` failed (non-404), response decode failed, the input pipe did not appear, or the command exited before pipe readiness.  |
 | `DaytonaSessionLogError`      | Streaming WebSocket closed with error, or SIGKILL detected, or grace timeout expired.                                                                  |
 | `DaytonaSessionInputError`    | `process.sendSessionCommandInput` failed (non-404).                                                                                                    |
 | `DaytonaSessionNotFoundError` | Session-level 404 from any of the four session-targeted SDK calls.                                                                                     |
@@ -253,9 +256,9 @@ orchestrator-service consumers:
    if real-world drop rates demand tuning (`SWYRD-flvidfql`).
 3. **`waitExit` cadence = 200ms fixed**, no wall-clock deadline. Consumer scope governs
    lifetime.
-4. **Session input-pipe readiness waits up to 30 seconds.** This is based on Cloud smoke
-   evidence; do not reduce it to the older 5 second local-stack assumption without Cloud
-   evidence.
+4. **Session input-pipe readiness waits up to 120 seconds and fails fast on early command
+   exit.** This is based on Cloud E2E evidence; do not reduce it to the older local-stack
+   assumption without Cloud evidence.
 5. **Exit-trap wrapper is the OSS-Daytona workaround.** Production Daytona Cloud may
    behave differently; confirm before retiring.
 6. **PID-file-based SIGKILL probe** uses `/proc/<pid>/exe`, not `kill -0` (zombie-safe).

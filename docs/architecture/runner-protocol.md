@@ -48,7 +48,7 @@ fire-and-forget.
 
 ## Terminal notifications
 
-Four notification methods can terminate a turn (`TERMINAL_METHODS` set in `runner/turn.ts`):
+Six notification forms can terminate a turn (`terminalResult` in `runner/turn.ts`):
 
 - `turn/completed` — canonical success, but only when `params.turn.status` is not `"failed"`
   or `"interrupted"`. `runTurn` resolves `{ kind: "completed", result, events }`. The
@@ -70,6 +70,13 @@ Four notification methods can terminate a turn (`TERMINAL_METHODS` set in `runne
 The reason string follows a fallback chain: `params.turn.error` → `params.error` →
 `params.message` → `params.reason` → the method name. See the `terminalResult` switch in
 `runner/turn.ts`.
+
+Terminal notifications are scoped to the session's root thread. Codex can emit notifications
+for review subagents or other child threads on the same app-server stream; those unrelated
+thread ids stay in the buffered `events` stream but must not resolve the main worker turn.
+Terminal notifications without a matching `params.threadId` are ignored; the generated v2
+protocol requires thread ids on these notifications, and accepting missing ids can turn an
+unrelated child-thread completion into a false main-turn completion.
 
 `TurnOutcome` (the public discriminated union returned by `runTurn`) has exactly these four
 variants: `completed | failed | cancelled | input-required`. Every variant carries

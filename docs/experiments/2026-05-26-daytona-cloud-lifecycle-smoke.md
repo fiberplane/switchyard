@@ -48,6 +48,6 @@ The Nocturne snapshots `fp-nocturne-dev-20260525-v3` and `fp-nocturne-dev-202605
 were active but failed the Switchyard verifier because `codex` was missing. That is why this
 ticket now builds and verifies the Switchyard-specific snapshot.
 
-The first Cloud session smoke also showed the previous 5 second input-pipe readiness timeout was
-too short for Cloud. Increasing the readiness wait to 30 seconds kept the exit-trap protocol
-unchanged and allowed the stream smoke to pass.
+The first Cloud session smoke showed the previous 5 second input-pipe readiness timeout was too
+short for Cloud. Later remote E2E runs increased the readiness wait to 120 seconds and added an
+early command-exit check while keeping the exit-trap protocol unchanged.

@@ -45,7 +45,9 @@ import { DaytonaSessionExecuteResponseSchema } from "./session-models.js";
 // this configurable per-session if the orchestrator-service leaf observes
 // real-world drop rates above a threshold.
 const STDOUT_QUEUE_CAPACITY = 1024;
-const INPUT_PIPE_READY_TIMEOUT_MS = 30_000;
+const INPUT_PIPE_READY_TIMEOUT_MS = 120_000;
+const INPUT_PIPE_POLL_DELAY_MS = 250;
+const INPUT_PIPE_STATUS_POLL_DELAY_MS = 1_000;
 
 export type DaytonaSessionExitInfo = {
   readonly exitCode: number;
@@ -190,7 +192,83 @@ const waitForSessionInputPipe = (
   const inputPipe = `/home/daytona/.daytona/sessions/${sessionId}/${commandId}/input.pipe`;
   const deadline = Date.now() + INPUT_PIPE_READY_TIMEOUT_MS;
 
-  const poll = (): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> =>
+  const readExitStatus = (): Effect.Effect<
+    Option.Option<string>,
+    DaytonaSessionExecError | DaytonaSessionNotFoundError
+  > =>
+    Effect.tryPromise({
+      try: () => sandbox.process.executeCommand(`cat ${exitFilePath(sessionId)} 2>/dev/null`),
+      catch: (error) => {
+        if (isDaytonaNotFound(error)) {
+          return new DaytonaSessionNotFoundError({
+            sessionId,
+            operation: "waitForSessionInputPipe",
+            reason: describeUnknown(error),
+          });
+        }
+
+        return new DaytonaSessionExecError({
+          sessionId,
+          reason: describeUnknown(error),
+        });
+      },
+    }).pipe(
+      Effect.map((result) => {
+        if (result.exitCode !== 0) {
+          return Option.none<string>();
+        }
+        const trimmed = (result.result ?? "").trim();
+        return trimmed.length === 0 ? Option.none<string>() : Option.some(trimmed);
+      }),
+    );
+
+  const readCommandExitCode = (): Effect.Effect<
+    Option.Option<number>,
+    DaytonaSessionExecError | DaytonaSessionNotFoundError
+  > =>
+    Effect.tryPromise({
+      try: () => sandbox.process.getSessionCommand(sessionId, commandId),
+      catch: (error) => {
+        if (isDaytonaNotFound(error)) {
+          return new DaytonaSessionNotFoundError({
+            sessionId,
+            operation: "waitForSessionInputPipe",
+            reason: describeUnknown(error),
+          });
+        }
+
+        return new DaytonaSessionExecError({
+          sessionId,
+          reason: describeUnknown(error),
+        });
+      },
+    }).pipe(
+      Effect.map((command) =>
+        typeof command.exitCode === "number" ? Option.some(command.exitCode) : Option.none(),
+      ),
+    );
+
+  const readEarlyExit = (): Effect.Effect<
+    Option.Option<string>,
+    DaytonaSessionExecError | DaytonaSessionNotFoundError
+  > =>
+    readExitStatus().pipe(
+      Effect.flatMap((exitCode) =>
+        Option.isSome(exitCode)
+          ? Effect.succeed(exitCode)
+          : readCommandExitCode().pipe(
+              Effect.map((commandExitCode) =>
+                Option.isSome(commandExitCode)
+                  ? Option.some(String(commandExitCode.value))
+                  : Option.none<string>(),
+              ),
+            ),
+      ),
+    );
+
+  const poll = (
+    nextStatusPollAt: number,
+  ): Effect.Effect<void, DaytonaSessionExecError | DaytonaSessionNotFoundError> =>
     Effect.tryPromise({
       try: () => sandbox.process.executeCommand(`test -p ${inputPipe}`),
       catch: (error) => {
@@ -212,19 +290,40 @@ const waitForSessionInputPipe = (
         if (result.exitCode === 0) {
           return Effect.void;
         }
-        if (Date.now() >= deadline) {
-          return Effect.fail(
-            new DaytonaSessionExecError({
-              sessionId,
-              reason: `input pipe was not ready for command ${commandId} within ${INPUT_PIPE_READY_TIMEOUT_MS}ms`,
-            }),
-          );
-        }
-        return Effect.sleep("50 millis").pipe(Effect.zipRight(poll()));
+
+        const now = Date.now();
+        const shouldPollStatus = now >= nextStatusPollAt;
+        const status = shouldPollStatus ? readEarlyExit() : Effect.succeed(Option.none<string>());
+
+        return status.pipe(
+          Effect.flatMap((exitCode) => {
+            if (Option.isSome(exitCode)) {
+              return Effect.fail(
+                new DaytonaSessionExecError({
+                  sessionId,
+                  reason: `command ${commandId} exited with code ${exitCode.value} before input pipe was ready`,
+                }),
+              );
+            }
+            if (now >= deadline) {
+              return Effect.fail(
+                new DaytonaSessionExecError({
+                  sessionId,
+                  reason: `input pipe was not ready for command ${commandId} within ${INPUT_PIPE_READY_TIMEOUT_MS}ms`,
+                }),
+              );
+            }
+            return Effect.sleep(`${INPUT_PIPE_POLL_DELAY_MS} millis`).pipe(
+              Effect.zipRight(
+                poll(shouldPollStatus ? now + INPUT_PIPE_STATUS_POLL_DELAY_MS : nextStatusPollAt),
+              ),
+            );
+          }),
+        );
       }),
     );
 
-  return poll().pipe(Effect.withSpan("DaytonaSession.waitForInputPipe"));
+  return poll(Date.now()).pipe(Effect.withSpan("DaytonaSession.waitForInputPipe"));
 };
 
 type DropEvent = {

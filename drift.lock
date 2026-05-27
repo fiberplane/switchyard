@@ -8,7 +8,7 @@ sig = "e74c305f704f784e"
 [[bindings]]
 doc = "docs/architecture/daytona-streaming-session.md"
 target = "apps/symphony-orchestrator/src/daytona/daytona.session.ts"
-sig = "9af35d4fcc17521e"
+sig = "13c8a1ee5bb5ec6b"
 
 [[bindings]]
 doc = "docs/architecture/daytona-streaming-session.md"
@@ -38,7 +38,7 @@ sig = "b55a6fb6d3decb85"
 [[bindings]]
 doc = "docs/architecture/fp-boundary.md"
 target = "apps/symphony-orchestrator/src/fp/models.ts"
-sig = "e915a696c34306a0"
+sig = "3f31a3dec239374d"
 
 [[bindings]]
 doc = "docs/architecture/fp-boundary.md"
@@ -48,7 +48,7 @@ sig = "3cff160eea648fa8"
 [[bindings]]
 doc = "docs/architecture/observability.md"
 target = "apps/symphony-orchestrator/src/index.ts"
-sig = "89b1f29ba10ef39a"
+sig = "3d0104c00e45c149"
 
 [[bindings]]
 doc = "docs/architecture/observability.md"
@@ -68,7 +68,7 @@ sig = "880dcf0fb9410d79"
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"
 target = "apps/symphony-orchestrator/src/orchestrator/service.ts"
-sig = "f978089c15dd6d1b"
+sig = "9e64b91aa09bdc0e"
 
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"
@@ -98,7 +98,7 @@ sig = "90534e0e3988e2af"
 [[bindings]]
 doc = "docs/architecture/runner-protocol.md"
 target = "apps/symphony-orchestrator/src/runner/turn.ts"
-sig = "112813f003357936"
+sig = "4f05f84367519872"
 
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
@@ -113,7 +113,7 @@ sig = "cc2d8a2516c319bf"
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
 target = "apps/symphony-orchestrator/src/daytona/daytona.session.ts"
-sig = "9af35d4fcc17521e"
+sig = "13c8a1ee5bb5ec6b"
 
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"

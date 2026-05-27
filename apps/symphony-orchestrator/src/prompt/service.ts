@@ -83,8 +83,9 @@ const workInstructions = (input: WorkerPromptInput): string => {
     `- Create or reset local branch \`${input.source.branchName}\` from pinned base SHA \`${input.source.baseSha}\`, then make the requested changes there.`,
     "- Follow the repo's fp workflow: inspect context, comment useful milestones, implement, verify, request an adversarial review, address findings, and keep commits associated with the fp issue.",
     "- Push the branch to GitHub with git using `GIT_ASKPASS`; do not put tokens in the remote URL.",
-    "- Open a non-draft PR with `gh pr create`, then babysit checks and review comments until the PR is in a reviewable state.",
+    `- Open a non-draft PR against base branch \`${input.source.baseBranch}\` with \`gh pr create --base ${input.source.baseBranch} --head ${input.source.branchName}\`, then babysit checks and review comments until the PR is in a reviewable state.`,
     "- Set fp custom properties as soon as values are known: `symphony_branch`, `symphony_pr_url`, `symphony_pr_number`, `symphony_base_sha`, `symphony_head_sha`, `symphony_run_id`, and `symphony_sandbox_id`.",
+    `- When the PR and verification are ready, mark issue \`${input.issue.displayId}\` done with \`symphony_state=end\` in the same fp update that records final metadata.`,
     "- Record clear verification evidence in fp comments and the PR body. Keep all credentials out of those texts.",
   ].join("\n");
 };
@@ -121,6 +122,7 @@ const outcomeBody = (input: WorkerPromptInput): string =>
         "- `symphony_head_sha`: the pushed branch HEAD SHA",
         `- \`symphony_run_id\`: \`${input.source.runId}\``,
         `- \`symphony_sandbox_id\`: \`${input.source.sandboxId}\``,
+        `- fp issue \`${input.issue.displayId}\`: \`status=done\` and \`symphony_state=end\``,
       ].join("\n");
 
 const summaryInstructions = (input: WorkerPromptInput): string =>

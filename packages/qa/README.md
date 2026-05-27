@@ -40,9 +40,16 @@ packages/qa/
 | #   | Scenario                                                                 | Covers                                                                         |
 | --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | 01  | [Vertical slice — happy path](scenarios/01-vertical-slice-happy-path.md) | Code-change task → `symphony/<id>` branch → fp `done`; structured-log contract |
+| 02  | [Remote Daytona — happy path](scenarios/02-remote-daytona-happy-path.md) | Daytona Cloud sandbox → GitHub PR → worker-owned fp metadata → cleanup         |
 
 Scenario 01 is the v1 demo-readiness signal — happy-path success is what proves the slice
 works end-to-end.
+
+Scenario 02 is the remote-Daytona migration signal. It is gated by
+`SWITCHYARD_REMOTE_DAYTONA_E2E=1` and is intentionally not wired into `bun run test`.
+Before it creates fp issues or Daytona sandboxes, the harness verifies that the configured
+`GITHUB_TOKEN` can create and delete an E2E-prefixed branch in the target repo. For GitHub
+fine-grained PATs, grant contents read/write and pull requests read/write access to the repo.
 
 **Failure-path scenarios deferred to follow-up `SWYRD-euvkxyra`** (under epic `SWYRD-uouprnfv`):
 worker-blocked (02), research-task (03), re-arm (04), and signal-shutdown (05). Failure-mode
