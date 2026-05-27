@@ -52,6 +52,10 @@ FP_PROJECT_ID=
 SWITCHYARD_CODEX_AUTH=/Users/<you>/.codex/auth.json
 ```
 
+If the REST-capable `fp` binary you want the E2E runner to use is not the first `fp` on `PATH`,
+set `SWITCHYARD_FP_BIN=/absolute/path/to/fp`. The orchestrator and QA helpers both honor that
+override.
+
 ### 2. Validate GitHub write access
 
 Before spending a Daytona run, validate that the GitHub token can create and delete an E2E branch:
@@ -70,12 +74,15 @@ a non-draft PR, worker-owned fp terminal metadata, and then cleans up the PR, br
 
 ```bash
 SWITCHYARD_REMOTE_DAYTONA_E2E=1 \
-SWITCHYARD_REMOTE_DAYTONA_BASE_BRANCH=proposal/remote-daytona-sandboxes \
 bun run --filter @switchyard/qa remote-daytona:e2e
 ```
 
 The runner writes sanitized evidence under `packages/qa/results/`; commit only curated PASS
 evidence with `git add -f`.
+
+By default the E2E validates the current git branch. Set
+`SWITCHYARD_REMOTE_DAYTONA_BASE_BRANCH=<branch>` only when proving an unmerged feature branch;
+normal operator runs on `main` do not need an override.
 
 ### 4. Arm a work ticket
 
@@ -138,7 +145,7 @@ fp issue update <id> --status todo \
 
 - [`apps/symphony-orchestrator/snapshot/README.md`](apps/symphony-orchestrator/snapshot/README.md) — snapshot build internals + env overrides.
 - [`docs/architecture/orchestrator-runone.md`](docs/architecture/orchestrator-runone.md) — pipeline, three-comment cadence, codex auth.
-- [`docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md`](docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md) — accepted remote Daytona migration design.
+- [`docs/proposals/completed/2026-05-26-remote-daytona-sandboxes.md`](docs/proposals/completed/2026-05-26-remote-daytona-sandboxes.md) — shipped remote Daytona migration design.
 - [`docs/graveyard/daytona-local-compose.md`](docs/graveyard/daytona-local-compose.md) — retired local compose implementation notes.
 - [`docs/architecture/`](docs/architecture/) and [`docs/patterns/`](docs/patterns/) — design notes and Effect conventions.
 

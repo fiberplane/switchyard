@@ -1,10 +1,10 @@
-# Daytona snapshot — `symphony-codex-bun`
+# Daytona snapshot
 
-The orchestrator dispatches workers into Daytona sandboxes built from the
-`symphony-codex-bun` snapshot. During the remote Daytona migration, the active
-smoke snapshot is `switchyard-codex-bun-20260526`. This
-directory holds the Dockerfile, the build/register script, and the docs
-needed to provision Cloud snapshots through the Daytona API.
+The orchestrator dispatches workers into Daytona Cloud sandboxes built from the configured
+`DAYTONA_SNAPSHOT`. The workflow default remains `symphony-codex-bun`; the currently validated
+Cloud snapshot for remote E2E runs is `switchyard-codex-bun-20260526`. This directory holds the
+Dockerfile, the build/register script, and the docs needed to provision Cloud snapshots through
+the Daytona API.
 
 The retired local compose snapshot notes live in
 [`docs/graveyard/daytona-local-compose.md`](../../../docs/graveyard/daytona-local-compose.md).
@@ -38,11 +38,10 @@ DAYTONA_SNAPSHOT=switchyard-codex-bun-20260526 \
 bun run --filter @switchyard/symphony-orchestrator snapshot:build
 ```
 
-The script (`build.ts`) is idempotent: if `symphony-codex-bun` already exists
-and is `active`, it exits 0. Otherwise it submits the build, polls every 3 s,
-and exits when the snapshot reaches `active` or `build_failed` (15 min
-ceiling). Build time is dominated by apt + npm + bun installer steps —
-expect several minutes depending on Daytona Cloud build cache warmth.
+The script (`build.ts`) is idempotent: if the configured `DAYTONA_SNAPSHOT` already exists and is
+`active`, it exits 0. Otherwise it submits the build, polls every 3 s, and exits when the snapshot
+reaches `active` or `build_failed` (15 min ceiling). Build time is dominated by apt + npm + bun
+installer steps — expect several minutes depending on Daytona Cloud build cache warmth.
 
 ### Targeting Daytona
 

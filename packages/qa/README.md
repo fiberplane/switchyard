@@ -39,7 +39,7 @@ packages/qa/
 | --- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
 | 02  | [Remote Daytona — happy path](scenarios/02-remote-daytona-happy-path.md) | Daytona Cloud sandbox -> GitHub PR -> worker-owned fp metadata cleanup |
 
-Scenario 02 is the active remote-Daytona migration signal. It is gated by
+Scenario 02 is the canonical remote Daytona E2E signal. It is gated by
 `SWITCHYARD_REMOTE_DAYTONA_E2E=1` and is intentionally not wired into `bun run test`.
 Before it creates fp issues or Daytona sandboxes, the harness verifies that the configured
 `GITHUB_TOKEN` can create and delete an E2E-prefixed branch in the target repo. For GitHub
@@ -146,7 +146,7 @@ Notes about the run, any deviations, follow-up items.
 
 ## Related
 
-- Remote Daytona proposal: `docs/proposals/active/2026-05-26-remote-daytona-sandboxes.md`
+- Remote Daytona proposal: `docs/proposals/completed/2026-05-26-remote-daytona-sandboxes.md`
 - ADR: `docs/architecture/0001-symphony-deviations.md`
 - Remote E2E evidence:
   `packages/qa/results/remote-daytona-e2e-4797077e-55fc-42c7-8152-bbddc9bbc1bc.md`

@@ -24,6 +24,12 @@ FP_PROJECT_ID=<fp-project-id>
 SWITCHYARD_CODEX_AUTH=/absolute/path/to/auth.json
 ```
 
+If the required REST-capable `fp` binary is not the first `fp` on `PATH`, also set:
+
+```bash
+SWITCHYARD_FP_BIN=/absolute/path/to/fp
+```
+
 Optional controls:
 
 ```bash

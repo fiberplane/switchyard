@@ -28,7 +28,9 @@ Effect.ts monorepo template with agent-friendly tooling for code quality, docume
 
 ## Packages
 
-`packages/` is reserved for internal shared packages. It is currently empty.
+| Package               | Purpose                                                       |
+| --------------------- | ------------------------------------------------------------- |
+| `packages/qa`         | Remote Daytona E2E scenarios, helpers, fixtures, and evidence |
 
 ## Prerequisites
 
@@ -102,7 +104,7 @@ user tells you to continue.
 | Observability setup              | `docs/patterns/observability.md`           |
 | App templates (CLI, API, worker) | `docs/templates/`                          |
 | Architecture notes               | `docs/architecture/`                       |
-| Proposals (active designs)       | `docs/proposals/active/`                   |
+| Proposals (active/completed)     | `docs/proposals/`                          |
 | Experiments and demo evidence    | `docs/experiments/`                        |
 | Testing patterns                 | `docs/testing/`                            |
 | Retired docs                     | `docs/graveyard/`                          |

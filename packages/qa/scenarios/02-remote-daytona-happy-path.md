@@ -40,9 +40,11 @@ runs.
   and pull requests read/write access to the target repository.
 - The configured Daytona snapshot contains `git`, `gh`, `fp`, `rg`, `jq`, Bun, Codex, drift,
   and ast-grep.
+- Optional: `SWITCHYARD_FP_BIN=/absolute/path/to/fp` when the REST-capable `fp` binary is not the
+  first `fp` on `PATH`.
 - The configured base branch exists on GitHub. Override with
-  `SWITCHYARD_REMOTE_DAYTONA_BASE_BRANCH=<branch>` when validating this feature branch before it
-  is merged.
+  `SWITCHYARD_REMOTE_DAYTONA_BASE_BRANCH=<branch>` only when validating an unmerged feature
+  branch; normal `main` runs use the current git branch by default.
 
 ## Steps
 
@@ -82,7 +84,7 @@ Inspect the runner output and the scratch issue.
 **Verify:**
 
 - `symphony_branch` matches the GitHub PR head branch.
-- `symphony_pr_url` and `symphony_pr_number` match `gh pr view`.
+- `symphony_pr_url` and `symphony_pr_number` match GitHub PR read-back.
 - `symphony_base_sha` matches the PR base ref SHA.
 - `symphony_head_sha` matches the PR head ref SHA.
 - `symphony_run_id` and `symphony_sandbox_id` are present.

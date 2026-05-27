@@ -84,10 +84,10 @@ codex:
   command: codex app-server
   turnTimeoutMs: 3600000
 
-# integration — how worker output is woven back into the host repo.
+# integration — worker branch naming.
 #
-# `branchPrefix` is retained for the archive/bundle legacy path. The active
-# remote PR path derives the worker branch from sandbox-side workflow guidance
-# and validates it through fp/GitHub metadata.
+# `branchPrefix` prefixes deterministic worker-owned PR branches. The remote
+# path validates the final branch through fp/GitHub metadata before it reports
+# the run as integrated.
 integration:
   branchPrefix: symphony/

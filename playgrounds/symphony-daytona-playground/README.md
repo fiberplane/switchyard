@@ -1,10 +1,13 @@
 # Symphony Daytona Playground
 
-Smoke playground for the Daytona-backed Symphony/Codex runner path. It builds a tiny
-repository archive, creates a Daytona sandbox from the `symphony-codex-bun` snapshot by
-default, uploads a prompt and Codex auth into the sandbox, asks Codex to edit the tiny repo,
-checks the result, probes sandbox-to-host reachability, downloads non-source smoke evidence,
-and deletes the sandbox.
+Historical smoke playground for early Daytona/Codex experiments. The active Switchyard proof is
+the remote Daytona QA runner under `packages/qa`, which uses Daytona Cloud, GitHub clone source
+handoff, worker-owned PRs, and fp REST metadata.
+
+The older playground smokes still exist as local experiments. They build tiny throwaway repos,
+create Daytona sandboxes, upload prompts and Codex auth, and collect ignored evidence under
+`artifacts/`. Treat archive/bundle behavior here as historical evidence, not the production
+orchestrator path.
 
 Generated evidence stays under the ignored local `artifacts/` directory. Do not copy historical
 smoke output into the repo; it may contain token-bearing logs or auth-derived state.
@@ -35,16 +38,20 @@ bun install
 bun run --cwd playgrounds/symphony-daytona-playground typecheck
 bun run --cwd playgrounds/symphony-daytona-playground demo
 bun run --cwd playgrounds/symphony-daytona-playground smoke
+bun run --cwd playgrounds/symphony-daytona-playground smoke:app-server
 bun run --cwd playgrounds/symphony-daytona-playground auth:probe
 ```
 
-The smoke command builds `dist/smoke.mjs`, writes generated artifacts under
+The legacy `smoke` command builds `dist/smoke.mjs`, writes generated artifacts under
 `playgrounds/symphony-daytona-playground/artifacts/`, and uploads the configured Codex auth only
 into the temporary Daytona sandbox. Use `smoke:bun` to run the TypeScript source directly:
 
 ```bash
 bun run --cwd playgrounds/symphony-daytona-playground smoke:bun
 ```
+
+The historical `smoke:app-server` command exercises `codex app-server` against the tiny playground
+repo. It is useful protocol evidence, but it is not the active remote PR-owned workflow.
 
 The auth probe isolates copied ChatGPT `auth.json`, inherited `OPENAI_API_KEY`, and
 `codex login --with-api-key` behavior in disposable `CODEX_HOME` directories inside one Daytona
