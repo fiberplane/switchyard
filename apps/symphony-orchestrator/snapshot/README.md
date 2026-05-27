@@ -6,9 +6,8 @@ smoke snapshot is `switchyard-codex-bun-20260526`. This
 directory holds the Dockerfile, the build/register script, and the docs
 needed to provision Cloud snapshots through the Daytona API.
 
-For the integration **test stack** snapshot (`symphony-test-codex`, used only
-by the orchestrator's `test:daytona:*` adapter and session tests), see
-`../test/daytona/Dockerfile.snapshot` instead.
+The retired local compose snapshot notes live in
+[`docs/graveyard/daytona-local-compose.md`](../../../docs/graveyard/daytona-local-compose.md).
 
 ## What's inside
 
@@ -85,9 +84,8 @@ sg --version
 
 All commands should print versions cleanly.
 
-Local Daytona OSS snapshot build details are historical for this repo. They
-will move to `docs/graveyard` when the local compose retirement ticket deletes
-the old compose stack and local snapshot scripts.
+Local Daytona OSS snapshot build details are historical for this repo and live in
+[`docs/graveyard/daytona-local-compose.md`](../../../docs/graveyard/daytona-local-compose.md).
 
 ## Iterating on the Dockerfile
 

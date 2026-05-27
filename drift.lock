@@ -118,7 +118,7 @@ sig = "13c8a1ee5bb5ec6b"
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
 target = "apps/symphony-orchestrator/test/daytona/remote-cloud.test.ts"
-sig = "1d9fa2937db0c8b7"
+sig = "b9e363dd3a737902"
 
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"

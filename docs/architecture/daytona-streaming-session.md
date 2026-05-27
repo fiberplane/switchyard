@@ -1,8 +1,8 @@
 # Daytona Streaming Session
 
-Status: Active. Scope: **`DaytonaSession` Effect service surface and the OSS-Daytona
-exit-detection workaround** that makes its `waitExit` / receive-stream-completion contracts
-work in the local test stack. The `DaytonaAdapter` boundary (config, sandbox lifecycle,
+Status: Active. Scope: **`DaytonaSession` Effect service surface and the Daytona
+exit-detection wrapper** that makes its `waitExit` / receive-stream-completion contracts
+work for remote Cloud sessions. The `DaytonaAdapter` boundary (config, sandbox lifecycle,
 file transfer, sync exec) is documented inline in `daytona.adapter.ts`; this doc is only
 about the streaming-session surface added by `SWYRD-omdkfnbz`.
 
@@ -61,9 +61,9 @@ SDK accepts `string` only on `sendSessionCommandInput` and emits `string` on
 `getSessionCommandLogs`. A future `Uint8Array` overload of `start` is left as a separate
 follow-up; do not lift `string` out of the contract preemptively.
 
-## Why the wrapper exists (SDK limitations on the OSS test stack)
+## Why the wrapper exists
 
-Two `@daytona/sdk@0.171.0` behaviors observed against the local Daytona OSS test stack
+Two `@daytona/sdk@0.171.0` behaviors observed during the original Daytona integration
 forced a pivot away from the ticket's originally-planned exit-detection design:
 
 1. **`process.getSessionCommand` does not populate `Command.exitCode`** for runAsync
@@ -213,19 +213,10 @@ log annotations in the drop-queue logger (`sessionId`, `commandId`, `channel`,
 
 ## Test-isolation pattern
 
-Inherited from the gzszputs leaf — no new infrastructure. Test sandboxes use the same
-`switchyard-test` Daytona stack on the `+30000` port range, the same `symphony-test-codex`
-snapshot, and the same `app=symphony-test` + `test_run_id` labels via
-`buildTestSandboxSpec`. The session tests pass no caller labels beyond what
-`buildTestSandboxSpec` supplies; cleanup via `deleteByTestRunId` (paginated, from gzszputs
-commit `174b565`) covers cancellation cycles.
-
-A small set of test-only helpers lives in
-[`test/daytona/test-helpers/session-helpers.ts`](../../apps/symphony-orchestrator/test/daytona/test-helpers/session-helpers.ts):
-`withSession` (Effect.scoped wrapper around `start`), `collectFor` (Stream.runCollect with
-deadline), `waitForCondition` (poll predicate with deadline), `forkBufferReceive`. The
-orchestrator-service leaf and the runner leaf are expected to compose these primitives
-when wrapping `ProtocolStream` for codex app-server.
+The active live signal is remote and explicit. `remote-cloud.test.ts` skips unless
+`SWITCHYARD_REMOTE_DAYTONA_TEST=1` is present, then creates Cloud sandboxes labelled with
+`app=symphony-test`, `source=remote-daytona`, and a unique `test_run_id`. The full
+orchestrator-level proof lives in `packages/qa` behind `SWITCHYARD_REMOTE_DAYTONA_E2E=1`.
 
 ## Source bindings
 
@@ -259,8 +250,8 @@ orchestrator-service consumers:
 4. **Session input-pipe readiness waits up to 120 seconds and fails fast on early command
    exit.** This is based on Cloud E2E evidence; do not reduce it to the older local-stack
    assumption without Cloud evidence.
-5. **Exit-trap wrapper is the OSS-Daytona workaround.** Production Daytona Cloud may
-   behave differently; confirm before retiring.
+5. **Exit-trap wrapper remains part of the Cloud session contract.** Confirm with gated Cloud
+   evidence before changing it.
 6. **PID-file-based SIGKILL probe** uses `/proc/<pid>/exe`, not `kill -0` (zombie-safe).
    Linux-only; Daytona snapshots are Linux so this is fine.
 7. **`ProtocolStream.close` is idempotent** (`Ref.getAndSet` pattern). Multiple calls are

@@ -19,9 +19,8 @@ fp scratch issue -> Daytona Cloud sandbox -> GitHub clone at pinned base SHA -> 
 push -> non-draft PR -> worker-owned fp terminal metadata -> host-side fp/GitHub/Daytona
 agreement checks -> cleanup.
 
-This scenario supersedes the local archive/bundle verification shape for remote runs. Scenario
-01 remains as historical local-compose coverage until the local Daytona retirement ticket removes
-it.
+This scenario supersedes the retired local archive/bundle verification shape for active remote
+runs.
 
 ## Prerequisites
 

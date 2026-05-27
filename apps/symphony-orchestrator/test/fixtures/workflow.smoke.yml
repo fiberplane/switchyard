@@ -13,7 +13,7 @@ agent:
 
 sandbox:
   kind: daytona
-  snapshot: symphony-test-codex
+  snapshot: switchyard-codex-bun-test
   language: typescript
   autoStopInterval: 15
   autoDeleteInterval: -1

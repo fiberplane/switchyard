@@ -115,8 +115,8 @@ Keep your final assistant message brief (one sentence). Do not modify package.js
 };
 
 const apiKey = getRequired("DAYTONA_API_KEY", process.env.DAYTONA_API_KEY_FILE);
-const apiUrl = process.env.DAYTONA_API_URL || "http://localhost:3000/api";
-const target = process.env.DAYTONA_TARGET || "us";
+const apiUrl = process.env.DAYTONA_API_URL;
+const target = process.env.DAYTONA_TARGET;
 const snapshotName = process.env.DAYTONA_SNAPSHOT || "symphony-codex-bun";
 const codexAuthPath = process.env.CODEX_AUTH_JSON || `${process.env.HOME}/.codex/auth.json`;
 
@@ -129,31 +129,16 @@ writePrompt();
 mkdirSync(artifactDir, { recursive: true });
 chmodSync(artifactDir, 0o700);
 
-const repairLocalRunnerScheduling = () => {
-  if (
-    !apiUrl.startsWith("http://localhost:3000/") ||
-    process.env.DAYTONA_SKIP_LOCAL_DB_REPAIR === "1"
-  ) {
-    return;
-  }
-  const sql = [
-    "update runner",
-    'set "availabilityScore"=100, "currentDiskUsagePercentage"=50',
-    `where region=${sq(target)} and state='ready' and draining=false;`,
-  ].join(" ");
-  try {
-    sh(`docker exec daytona-db-1 psql -U user -d daytona -v ON_ERROR_STOP=1 -c ${sq(sql)}`);
-  } catch (err) {
-    console.warn(`runner repair skipped: ${err instanceof Error ? err.message : String(err)}`);
-  }
-};
-
 console.log(`artifactDir=${artifactDir}`);
-console.log(`apiUrl=${apiUrl}`);
-console.log(`target=${target}`);
+console.log(`apiUrl=${apiUrl ?? "<sdk-default>"}`);
+console.log(`target=${target ?? "<sdk-default>"}`);
 console.log(`snapshot=${snapshotName}`);
 
-const daytona = new Daytona({ apiKey, apiUrl, target });
+const daytona = new Daytona({
+  apiKey,
+  ...(apiUrl ? { apiUrl } : {}),
+  ...(target ? { target } : {}),
+});
 
 let sandbox: Awaited<ReturnType<Daytona["create"]>> | undefined;
 const evidence: CommandEvidence[] = [];
@@ -204,17 +189,7 @@ try {
       { timeout: 300 },
     );
 
-  repairLocalRunnerScheduling();
-  try {
-    sandbox = await createSandbox();
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("No available runners")) {
-      repairLocalRunnerScheduling();
-      sandbox = await createSandbox();
-    } else {
-      throw error;
-    }
-  }
+  sandbox = await createSandbox();
 
   console.log(`sandbox id=${sandbox.id} name=${sandbox.name} state=${sandbox.state}`);
 

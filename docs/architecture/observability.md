@@ -32,8 +32,8 @@ Archive happy-path messages, in order: `tick.start`, `candidate.selected`, `clai
 `sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`, `bundle.decoded`,
 `integration.succeeded`, `fp.done`. `githubClone`/PR runs skip bundle decode and host
 integration after a completed worker turn and emit `worker.handoff.completed` with the branch,
-run id, and sandbox id; until worker-side fp no-clone property writes are proven, the local
-run result remains gated instead of integrated. Failure paths emit a static `failure` message at
+run id, and sandbox id; the local result becomes integrated only after fp, GitHub PR, pinned base,
+head SHA, and sandbox metadata read-back agree. Failure paths emit a static `failure` message at
 warning level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and
 `reason` annotations — log searches should filter on `failure_code` rather than the message text.
 

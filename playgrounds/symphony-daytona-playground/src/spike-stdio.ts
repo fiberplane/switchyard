@@ -36,8 +36,8 @@ const getRequired = (name: string, fallbackPath?: string) => {
 };
 
 const apiKey = getRequired("DAYTONA_API_KEY", process.env.DAYTONA_API_KEY_FILE);
-const apiUrl = process.env.DAYTONA_API_URL || "http://localhost:3000/api";
-const target = process.env.DAYTONA_TARGET || "us";
+const apiUrl = process.env.DAYTONA_API_URL;
+const target = process.env.DAYTONA_TARGET;
 const snapshotName = process.env.DAYTONA_SNAPSHOT || "symphony-codex-bun";
 
 const timestamp = new Date().toISOString().replaceAll(":", "").replaceAll(".", "");
@@ -46,11 +46,15 @@ mkdirSync(artifactDir, { recursive: true });
 chmodSync(artifactDir, 0o700);
 
 console.log(`artifactDir=${artifactDir}`);
-console.log(`apiUrl=${apiUrl}`);
-console.log(`target=${target}`);
+console.log(`apiUrl=${apiUrl ?? "<sdk-default>"}`);
+console.log(`target=${target ?? "<sdk-default>"}`);
 console.log(`snapshot=${snapshotName}`);
 
-const daytona = new Daytona({ apiKey, apiUrl, target });
+const daytona = new Daytona({
+  apiKey,
+  ...(apiUrl ? { apiUrl } : {}),
+  ...(target ? { target } : {}),
+});
 
 const probes: RoundTripProbe[] = [];
 const stdoutChunks: { at: string; chunk: string }[] = [];

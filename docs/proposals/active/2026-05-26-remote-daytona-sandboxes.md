@@ -156,9 +156,15 @@ Keep, but adapt:
 - `apps/symphony-orchestrator/src/daytona/models.ts`
 - `apps/symphony-orchestrator/test/daytona/adapter.test.ts`
 - `apps/symphony-orchestrator/test/daytona/session.test.ts`
-- `apps/symphony-orchestrator/test/orchestrator/service.integration.test.ts`
 - `apps/symphony-orchestrator/snapshot/`
 - `packages/qa/`
+
+Retire rather than adapt:
+
+- `apps/symphony-orchestrator/test/orchestrator/service.integration.test.ts`, because it was a
+  Docker Compose lifecycle harness. The active full-system signal is the gated remote E2E in
+  `packages/qa`, while mocked orchestrator tests cover runOne branch behavior without booting a
+  local stack.
 
 ## Design
 

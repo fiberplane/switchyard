@@ -34,7 +34,7 @@ import { wire, writeFakeCodexAuth } from "./test-helpers/wire.js";
 const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   maxConcurrentAgents: 1,
   turnTimeoutMs: 60_000,
-  snapshotName: "symphony-test-codex",
+  snapshotName: "switchyard-codex-bun-test",
   autoStopInterval: 15,
   autoDeleteInterval: -1,
   codexAuthHostPath,

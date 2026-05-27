@@ -110,6 +110,7 @@ Docs rot when they describe code that changed. To mitigate:
 | [0001-symphony-deviations.md](architecture/0001-symphony-deviations.md)   | ADR: switchyard deviations from upstream symphony                                            |
 | [daytona-streaming-session.md](architecture/daytona-streaming-session.md) | Daytona streaming-session contract                                                           |
 | [fp-boundary.md](architecture/fp-boundary.md)                             | fp adapter + eligibility predicate contract                                                  |
+| [orchestrator-runone.md](architecture/orchestrator-runone.md)             | Orchestrator runOne pipeline, GitHub clone handoff, worker PR completion                      |
 | [runner-protocol.md](architecture/runner-protocol.md)                     | codex app-server JSON-RPC client contract: approval shapes, capabilities, transcript surface |
 
 ### proposals/
@@ -143,6 +144,10 @@ Validation patterns, test infrastructure notes, and QA scenario indexes live her
 ### graveyard/
 
 Retired docs live here when they are useful historical context but no longer describe active code.
+
+| Doc                                                         | Topic                                      |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| [daytona-local-compose.md](graveyard/daytona-local-compose.md) | Removed Daytona OSS/docker-compose stacks |
 
 ## references/
 

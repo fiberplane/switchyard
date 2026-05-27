@@ -209,7 +209,7 @@ describe("remote Daytona Cloud smoke", () => {
     const source = [testImports, helperSource].join("\n");
     expect(source).not.toContain("sandbox-spec");
     expect(source).not.toContain("stack.js");
-    expect(source).not.toContain("ensureStackUp");
+    expect(source).not.toContain(["ensure", "StackUp"].join(""));
     expect(source).not.toContain("compose");
   });
 

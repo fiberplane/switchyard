@@ -49,8 +49,16 @@ agent:
 #     around for forensic SSH. Manual cleanup via the dashboard or
 #     `daytona sandbox delete`. Tracked by SWYRD-xlgiuegf.
 #
-# `repoPath`, `sourceStrategy`, `artifactStrategy` are stable conventions; do
-# not change unless you know why.
+# `repoPath` is the checkout path inside the sandbox.
+#
+# `sourceStrategy: githubClone` tells the orchestrator to pass clone metadata
+# into the sandbox instead of uploading a host archive. `artifactStrategy: pr`
+# means the worker owns branch push, PR creation, and fp terminal metadata. The
+# host verifies the PR/fp/sandbox read-back rather than downloading a bundle.
+#
+# `repoUrl` must be a clean HTTPS GitHub URL with no embedded credentials.
+# `baseBranch` is fetched and resolved to a pinned SHA before dispatch. Override
+# it when validating a feature branch; use `main` for normal operator runs.
 sandbox:
   kind: daytona
   snapshot: <DAYTONA_SNAPSHOT>
@@ -58,8 +66,10 @@ sandbox:
   autoStopInterval: 15
   autoDeleteInterval: -1
   repoPath: /workspace/repo
-  sourceStrategy: archive
-  artifactStrategy: bundle
+  sourceStrategy: githubClone
+  artifactStrategy: pr
+  repoUrl: https://github.com/fiberplane/switchyard.git
+  baseBranch: main
 
 # codex — the worker runtime spawned inside the sandbox.
 #
@@ -76,7 +86,8 @@ codex:
 
 # integration — how worker output is woven back into the host repo.
 #
-# `branchPrefix` is prepended to the issue's internal id when the orchestrator
-# creates the integrated branch (e.g., `symphony/<id>`).
+# `branchPrefix` is retained for the archive/bundle legacy path. The active
+# remote PR path derives the worker branch from sandbox-side workflow guidance
+# and validates it through fp/GitHub metadata.
 integration:
   branchPrefix: symphony/
