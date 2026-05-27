@@ -53,6 +53,16 @@ fine-grained PATs, grant contents read/write, workflows read/write, and pull req
 access to the repo. GitHub may require workflow write permission when creating a branch at a commit
 that already contains `.github/workflows`.
 
+Before spending a Daytona run, validate a new PAT with:
+
+```bash
+bun run --filter @switchyard/qa github-token:preflight
+```
+
+The preflight loads `apps/symphony-orchestrator/.env`, prints only token fingerprints, checks for
+ambient `process.env` override, and tries both REST create/delete-ref and isolated
+credential-helper-free `git push` create/delete under `symphony/e2e/`.
+
 **Failure-path scenarios deferred to follow-up `SWYRD-euvkxyra`** (under epic `SWYRD-uouprnfv`):
 worker-blocked (02), research-task (03), re-arm (04), and signal-shutdown (05). Failure-mode
 behavior is covered at unit level by `osqltjnr`'s `service.integration.test.ts` (cycles 4-7 +

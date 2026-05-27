@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "github-token:preflight": "bun run src/github-token-preflight.test.ts",
     "remote-daytona:e2e": "bun run src/remote-daytona-e2e.ts"
   },
   "dependencies": {
