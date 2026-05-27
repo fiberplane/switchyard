@@ -197,7 +197,7 @@ describe("remote Daytona Cloud smoke", () => {
     remoteContext = await loadRemoteContext();
   });
 
-  test("remote smoke stays decoupled from local Daytona compose helpers", async () => {
+  test("remote smoke stays decoupled from retired stack helpers", async () => {
     const testImports = (await readFile(fileURLToPath(import.meta.url), "utf8"))
       .split("\n")
       .filter((line) => line.startsWith("import "))

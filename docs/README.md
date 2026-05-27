@@ -12,6 +12,7 @@ System of record for the repository. AGENTS.md is the map, this directory is the
 | `docs/patterns/`            | How we write code in this repo. Conventions, rules, idioms.              | Effect usage, coding style, observability setup    |
 | `docs/templates/`           | How to build things. Specs for software components.                      | Effect CLI setup, API service scaffold             |
 | `docs/architecture/`        | What the system looks like. Domain boundaries, data flow, key decisions. | Service architecture, data models                  |
+| `docs/code-quality/`        | Repo-wide quality tools and triage policies.                             | Static analysis baselines                          |
 | `docs/proposals/active/`    | What we are planning to change. Design docs with status and rationale.   | New app scaffolds, orchestration flows             |
 | `docs/proposals/completed/` | Proposals that shipped. Kept for historical context.                     | Accepted designs after implementation              |
 | `docs/experiments/`         | Feasibility notes and demo evidence that are not yet product decisions.  | Prototype results, spike findings                  |
@@ -113,6 +114,12 @@ Docs rot when they describe code that changed. To mitigate:
 | [orchestrator-runone.md](architecture/orchestrator-runone.md)             | Orchestrator runOne pipeline, GitHub clone handoff, worker PR completion                      |
 | [runner-protocol.md](architecture/runner-protocol.md)                     | codex app-server JSON-RPC client contract: approval shapes, capabilities, transcript surface |
 
+### code-quality/
+
+| Doc                                   | Topic                                                       |
+| ------------------------------------- | ----------------------------------------------------------- |
+| [fallow.md](code-quality/fallow.md)   | Fallow static-analysis setup, triage policy, and baselines |
+
 ### proposals/
 
 - `active/` -- In-progress design docs
@@ -147,7 +154,7 @@ Retired docs live here when they are useful historical context but no longer des
 
 | Doc                                                         | Topic                                      |
 | ----------------------------------------------------------- | ------------------------------------------ |
-| [daytona-local-compose.md](graveyard/daytona-local-compose.md) | Removed Daytona OSS/docker-compose stacks |
+| [daytona-local-compose.md](graveyard/daytona-local-compose.md) | Removed Daytona OSS stack |
 
 ## references/
 

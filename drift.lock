@@ -101,6 +101,16 @@ target = "apps/symphony-orchestrator/src/runner/turn.ts"
 sig = "4f05f84367519872"
 
 [[bindings]]
+doc = "docs/code-quality/fallow.md"
+target = ".fallowrc.jsonc"
+sig = "a3edc2b1f772bc96"
+
+[[bindings]]
+doc = "docs/code-quality/fallow.md"
+target = "package.json"
+sig = "3081ae8d809265e5"
+
+[[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
 target = "apps/symphony-orchestrator/snapshot/Dockerfile"
 sig = "73ed5c7e2d164743"
@@ -118,7 +128,7 @@ sig = "13c8a1ee5bb5ec6b"
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"
 target = "apps/symphony-orchestrator/test/daytona/remote-cloud.test.ts"
-sig = "b9e363dd3a737902"
+sig = "d1f01c1d34f6978f"
 
 [[bindings]]
 doc = "docs/experiments/2026-05-26-daytona-cloud-lifecycle-smoke.md"

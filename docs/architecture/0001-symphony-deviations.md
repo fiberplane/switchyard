@@ -83,7 +83,7 @@ boundary.
 
 ### D4b. Minimal `fp` property surface (superseded)
 
-The original local-Daytona artifact flow used a five-property runtime surface including
+The original artifact-return flow used a five-property runtime surface including
 `symphony_artifact`. Remote Daytona PR mode retires that artifact property and uses the active
 surface documented in `docs/architecture/fp-boundary.md`. The historical candidates below explain
 why the first POC avoided extra metadata before worker-owned PRs existed:

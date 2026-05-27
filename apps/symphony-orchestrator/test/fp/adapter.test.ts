@@ -32,6 +32,8 @@ const ScratchIssueSchema = Schema.Struct({
 let project: FpTestProject;
 let seeds: SeededIssues;
 
+const FP_INTEGRATION_TIMEOUT_MS = 20_000;
+
 beforeAll(async () => {
   const fpPath = await Effect.runPromise(
     Effect.gen(function* () {
@@ -41,7 +43,7 @@ beforeAll(async () => {
   );
   project = await setupFpProject(fpPath);
   seeds = await seedTestIssues(project);
-});
+}, FP_INTEGRATION_TIMEOUT_MS);
 
 afterAll(async () => {
   await project?.cleanup();
@@ -115,87 +117,111 @@ describe("FpIssueListSchema", () => {
 });
 
 describe("FpAdapter", () => {
-  test("listIssuesByStatus returns schema-decoded issues for a real project", async () => {
-    const issues = await runWithAdapter(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        return yield* adapter.listIssuesByStatus("todo");
-      }),
-    );
-    const seed = issues.find((issue) => issue.shortId === seeds.todoIdle.shortId);
-
-    expect(seed?.title).toBe(seeds.todoIdle.title);
-    expect(seed?.status).toBe("todo");
-  });
-
-  test("showIssue returns issue detail with custom properties", async () => {
-    const detail = await runWithAdapter(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        return yield* adapter.showIssue(seeds.todoIdle.displayId);
-      }),
-    );
-
-    expect(detail.displayId).toBe(seeds.todoIdle.displayId);
-    expect(detail.properties.symphony_state).toBe(seeds.todoIdle.symphonyState);
-  });
-
-  test("setStatus updates an issue status", async () => {
-    const scratch = await createScratchIssue(`scratch status ${crypto.randomUUID()}`);
-
-    const updated = await runWithAdapter(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        yield* adapter.setStatus(scratch.displayId, "in-progress");
-        return yield* adapter.showIssue(scratch.displayId);
-      }),
-    );
-
-    expect(updated.status).toBe("in-progress");
-  });
-
-  test("setProperty updates a custom property", async () => {
-    const scratch = await createScratchIssue(`scratch property ${crypto.randomUUID()}`);
-
-    const updated = await runWithAdapter(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        yield* adapter.setProperty(scratch.displayId, "symphony_state", "active");
-        return yield* adapter.showIssue(scratch.displayId);
-      }),
-    );
-
-    expect(updated.properties.symphony_state).toBe("active");
-  });
-
-  test("addComment succeeds without reading comments back", async () => {
-    const scratch = await createScratchIssue(`scratch comment ${crypto.randomUUID()}`);
-
-    await expect(
-      runWithAdapter(
+  test(
+    "listIssuesByStatus returns schema-decoded issues for a real project",
+    async () => {
+      const issues = await runWithAdapter(
         Effect.gen(function* () {
           const adapter = yield* FpAdapter;
-          return yield* adapter.addComment(scratch.displayId, "adapter comment smoke");
+          return yield* adapter.listIssuesByStatus("todo");
         }),
-      ),
-    ).resolves.toBeUndefined();
-  });
+      );
+      const seed = issues.find((issue) => issue.shortId === seeds.todoIdle.shortId);
 
-  test("maps non-zero writes to FpCommandError with stderr and exit code", async () => {
-    const result = await runWithAdapter(
-      Effect.gen(function* () {
-        const adapter = yield* FpAdapter;
-        return yield* Effect.either(adapter.setStatus("SWY-missingx", "done"));
-      }),
-    );
+      expect(seed?.title).toBe(seeds.todoIdle.title);
+      expect(seed?.status).toBe("todo");
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
 
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left).toBeInstanceOf(FpCommandError);
-      if (result.left instanceof FpCommandError) {
-        expect(result.left.exitCode).not.toBe(0);
-        expect(result.left.stderr.length).toBeGreaterThan(0);
+  test(
+    "showIssue returns issue detail with custom properties",
+    async () => {
+      const detail = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          return yield* adapter.showIssue(seeds.todoIdle.displayId);
+        }),
+      );
+
+      expect(detail.displayId).toBe(seeds.todoIdle.displayId);
+      expect(detail.properties.symphony_state).toBe(seeds.todoIdle.symphonyState);
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
+
+  test(
+    "setStatus updates an issue status",
+    async () => {
+      const scratch = await createScratchIssue(`scratch status ${crypto.randomUUID()}`);
+
+      const updated = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          yield* adapter.setStatus(scratch.displayId, "in-progress");
+          return yield* adapter.showIssue(scratch.displayId);
+        }),
+      );
+
+      expect(updated.status).toBe("in-progress");
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
+
+  test(
+    "setProperty updates a custom property",
+    async () => {
+      const scratch = await createScratchIssue(`scratch property ${crypto.randomUUID()}`);
+
+      const updated = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          yield* adapter.setProperty(scratch.displayId, "symphony_state", "active");
+          return yield* adapter.showIssue(scratch.displayId);
+        }),
+      );
+
+      expect(updated.properties.symphony_state).toBe("active");
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
+
+  test(
+    "addComment succeeds without reading comments back",
+    async () => {
+      const scratch = await createScratchIssue(`scratch comment ${crypto.randomUUID()}`);
+
+      await expect(
+        runWithAdapter(
+          Effect.gen(function* () {
+            const adapter = yield* FpAdapter;
+            return yield* adapter.addComment(scratch.displayId, "adapter comment smoke");
+          }),
+        ),
+      ).resolves.toBeUndefined();
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
+
+  test(
+    "maps non-zero writes to FpCommandError with stderr and exit code",
+    async () => {
+      const result = await runWithAdapter(
+        Effect.gen(function* () {
+          const adapter = yield* FpAdapter;
+          return yield* Effect.either(adapter.setStatus("SWY-missingx", "done"));
+        }),
+      );
+
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        expect(result.left).toBeInstanceOf(FpCommandError);
+        if (result.left instanceof FpCommandError) {
+          expect(result.left.exitCode).not.toBe(0);
+          expect(result.left.stderr.length).toBeGreaterThan(0);
+        }
       }
-    }
-  });
+    },
+    FP_INTEGRATION_TIMEOUT_MS,
+  );
 });
