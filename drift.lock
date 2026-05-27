@@ -48,7 +48,7 @@ sig = "3cff160eea648fa8"
 [[bindings]]
 doc = "docs/architecture/observability.md"
 target = "apps/symphony-orchestrator/src/index.ts"
-sig = "3d0104c00e45c149"
+sig = "c83a0171e0984af8"
 
 [[bindings]]
 doc = "docs/architecture/observability.md"
@@ -58,7 +58,7 @@ sig = "7f1d8b171d799051"
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"
 target = "apps/symphony-orchestrator/src/orchestrator/errors.ts"
-sig = "63c362e1bd2a3acc"
+sig = "cf709d720a05ac1f"
 
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"
@@ -68,7 +68,7 @@ sig = "880dcf0fb9410d79"
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"
 target = "apps/symphony-orchestrator/src/orchestrator/service.ts"
-sig = "9e64b91aa09bdc0e"
+sig = "bf76338c953a7fc5"
 
 [[bindings]]
 doc = "docs/architecture/orchestrator-runone.md"

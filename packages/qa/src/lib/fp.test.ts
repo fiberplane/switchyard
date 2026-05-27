@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
 
 import type { EligibleIssue } from "../../../../apps/symphony-orchestrator/src/fp/eligibility.js";
 import {
@@ -97,7 +97,7 @@ export const cleanupScratchIssue = async (env: RemoteE2EEnv, id: string): Promis
 
 export const toEligibleIssue = (detail: FpIssueDetail): EligibleIssue => {
   const decoded = decodeSymphonyProperties(detail.properties);
-  if (decoded._tag === "Left") {
+  if (Either.isLeft(decoded)) {
     throw new Error(`scratch issue properties failed to decode: ${decoded.left}`);
   }
   return { detail, properties: decoded.right };

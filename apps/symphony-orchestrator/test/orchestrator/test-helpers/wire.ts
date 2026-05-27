@@ -48,8 +48,8 @@ export type WireOptions = {
   // Use the real AgentRunner (drives the protocol) by default, or override
   // when a stub is desired (failure-path cycles).
   readonly agentRunner?: Layer.Layer<AgentRunner>;
-  // Override the SandboxScriptService mock when a cycle needs to drive the
-  // empty-bundle (commitsBeyondBase=0) or finalize-failure path.
+  // Override the SandboxScriptService mock when a cycle needs to drive clone
+  // setup failure or inspect clone setup options.
   readonly sandboxScripts?: SandboxScriptServiceShape;
 };
 

@@ -28,19 +28,22 @@ The orchestrator's `runOne` and `runOneTick` pipelines own these emissions. Anno
 `Effect.annotateLogsScoped` so call sites only emit the message name plus message-specific
 extras (for example `worker_status`, `branch`, `run_id`).
 
-Archive happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
-`sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`, `bundle.decoded`,
-`integration.succeeded`, `fp.done`. `githubClone`/PR runs skip bundle decode and host
-integration after a completed worker turn and emit `worker.handoff.completed` with the branch,
-run id, and sandbox id; the local result becomes integrated only after fp, GitHub PR, pinned base,
-head SHA, and sandbox metadata read-back agree. Failure paths emit a static `failure` message at
-warning level with `failure_code` (for example `F11` for an empty bundle), `error_tag`, and
-`reason` annotations — log searches should filter on `failure_code` rather than the message text.
+Remote PR happy-path messages, in order: `tick.start`, `candidate.selected`, `claim.acquired`,
+`sandbox.created`, `source.uploaded`, `turn.started`, `turn.completed`,
+`worker.handoff.completed`. The local result becomes integrated only after fp, GitHub PR, pinned
+base, head SHA, and sandbox metadata read-back agree. Failure paths emit a static `failure`
+message at warning level with `failure_code`, `error_tag`, and `reason` annotations — log
+searches should filter on `failure_code` rather than the message text.
 
-`source.uploaded` is the stable boundary after sandbox input material is present. In archive mode
-that includes the source archive, prompt, and Codex auth before setup. In `githubClone` mode it
-fires after clone setup succeeds and includes prompt, Codex auth, and a secret-bearing worker env
-bridge uploaded outside the repo immediately before session start.
+Two post-handoff warnings are intentionally not named `failure`: `worker.handoff.incomplete`
+records missing or mismatched worker-owned PR/fp metadata, and `sandbox.secret-cleanup.failed`
+records a failed cleanup finalizer for copied Codex/worker secret files. Both carry the same
+issue/sandbox annotations so operators can correlate them with fp notes and retained Daytona
+sandboxes.
+
+`source.uploaded` is the stable boundary after sandbox input material is present. It fires after
+clone setup succeeds and includes prompt, Codex auth, and a secret-bearing worker env bridge
+uploaded outside the repo immediately before session start.
 
 ## Log Level
 

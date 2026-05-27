@@ -3,20 +3,11 @@ import { join } from "node:path";
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Either, Option, Schema } from "effect";
+import { Effect, Either, Option } from "effect";
 
 import { ArtifactDecodeError, ArtifactPathError } from "../../src/artifact/errors.js";
-import {
-  decodeWorkerOutcome,
-  type OrchestratorRecord,
-  WorkerOutcomeSchema,
-} from "../../src/artifact/models.js";
+import { type OrchestratorRecord } from "../../src/artifact/models.js";
 import { ArtifactStore, ArtifactStoreLive } from "../../src/artifact/store.js";
-
-const fixturePath = (name: string) => `test/fixtures/artifact/${name}`;
-
-const readFixture = async (name: string): Promise<unknown> =>
-  JSON.parse(await Bun.file(fixturePath(name)).text());
 
 const artifactBase = "/tmp/switchyard-artifacts";
 
@@ -50,33 +41,6 @@ const withTempArtifactStore = async <A>(run: (basePath: string) => Promise<A>): 
     );
   }
 };
-
-describe("WorkerOutcomeSchema", () => {
-  test("decodes the completed outcome fixture", async () => {
-    const outcome = await Effect.runPromise(
-      Schema.decodeUnknown(WorkerOutcomeSchema)(await readFixture("outcome.completed.json")),
-    );
-
-    expect(outcome.status).toBe("completed");
-  });
-
-  test("maps malformed status to ArtifactDecodeError", async () => {
-    const path = fixturePath("outcome.malformed-status.json");
-    const result = await Effect.runPromise(
-      Effect.either(decodeWorkerOutcome(await readFixture("outcome.malformed-status.json"), path)),
-    );
-
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      const error = result.left;
-      expect(error).toBeInstanceOf(ArtifactDecodeError);
-      if (error instanceof ArtifactDecodeError) {
-        expect(error.path).toBe(path);
-        expect(error.details).toContain('["status"]');
-      }
-    }
-  });
-});
 
 describe("ArtifactStore", () => {
   test("computes the run directory for an issue attempt", async () => {
@@ -176,56 +140,6 @@ describe("ArtifactStore", () => {
     );
 
     expect(attempts).toEqual([]);
-  });
-
-  test("reads a worker outcome from a run directory", async () => {
-    const outcomeJson = await Bun.file(fixturePath("outcome.failed.json")).text();
-    const outcome = await withTempArtifactStore((basePath) =>
-      runWithArtifactStore(
-        basePath,
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const store = yield* ArtifactStore;
-          const dir = yield* store.runDir("SWYRD-abc", 1);
-
-          yield* fs.makeDirectory(dir, { recursive: true });
-          yield* fs.writeFileString(join(dir, "outcome.json"), outcomeJson);
-
-          return yield* store.readOutcome("SWYRD-abc", 1);
-        }),
-      ),
-    );
-
-    expect(outcome.status).toBe("failed");
-    expect(outcome.summary).toContain("unrecoverable error");
-  });
-
-  test("maps malformed worker outcome files to ArtifactDecodeError", async () => {
-    const outcomeJson = await Bun.file(fixturePath("outcome.malformed-status.json")).text();
-    const result = await withTempArtifactStore((basePath) =>
-      runWithArtifactStore(
-        basePath,
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const store = yield* ArtifactStore;
-          const dir = yield* store.runDir("SWYRD-abc", 1);
-
-          yield* fs.makeDirectory(dir, { recursive: true });
-          yield* fs.writeFileString(join(dir, "outcome.json"), outcomeJson);
-
-          return yield* Effect.either(store.readOutcome("SWYRD-abc", 1));
-        }),
-      ),
-    );
-
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left).toBeInstanceOf(ArtifactDecodeError);
-      expect(result.left.path).toContain("outcome.json");
-      if (result.left instanceof ArtifactDecodeError) {
-        expect(result.left.details).toContain('["status"]');
-      }
-    }
   });
 
   test("maps missing orchestrator records to ArtifactPathError", async () => {

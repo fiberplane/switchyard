@@ -67,17 +67,6 @@ export const toOrchestratorConfig = (
   cfg: WorkflowConfig,
   hostConfig: Pick<HostRuntimeConfig, "github" | "codex" | "fpRest">,
 ): OrchestratorServiceConfig => {
-  const source =
-    cfg.sandbox.sourceStrategy === "archive"
-      ? { kind: "archive" as const }
-      : {
-          kind: "githubClone" as const,
-          repoUrl: cfg.sandbox.repoUrl,
-          baseBranch: cfg.sandbox.baseBranch,
-          artifactStrategy: cfg.sandbox.artifactStrategy,
-          githubToken: hostConfig.github.token,
-        };
-
   return {
     maxConcurrentAgents: cfg.agent.maxConcurrentAgents,
     turnTimeoutMs: cfg.codex.turnTimeoutMs,
@@ -86,7 +75,13 @@ export const toOrchestratorConfig = (
     autoDeleteInterval: cfg.sandbox.autoDeleteInterval,
     codexAuthHostPath: hostConfig.codex.authPath ?? path.join(homedir(), ".codex/auth.json"),
     repoPath: cfg.sandbox.repoPath,
-    source,
+    source: {
+      kind: "githubClone" as const,
+      repoUrl: cfg.sandbox.repoUrl,
+      baseBranch: cfg.sandbox.baseBranch,
+      artifactStrategy: cfg.sandbox.artifactStrategy,
+      githubToken: hostConfig.github.token,
+    },
     branchPrefix: cfg.integration.branchPrefix,
     fpRest: {
       remote: "rest-api",
@@ -130,11 +125,11 @@ export const buildPlatformLayer = (cfg: WorkflowConfig, env: EnvMap = process.en
   const hostRuntimeConfig = Effect.runSync(decodeHostRuntimeConfig(env));
   const daytonaLayers = buildDaytonaLayers(toDaytonaConfig(cfg.sandbox, hostRuntimeConfig));
   const fpStack = FpServiceLive.pipe(
-    Layer.provide(FpAdapterLive({ cwd: hostRepoRoot })),
-    Layer.provide(FpBinaryLive()),
+    Layer.provide(FpAdapterLive({ cwd: hostRepoRoot, env })),
+    Layer.provide(FpBinaryLive({ env })),
   );
   const integrationStack = IntegrationServiceLive.pipe(
-    Layer.provide(GitAdapterLive({ cwd: hostRepoRoot })),
+    Layer.provide(GitAdapterLive({ cwd: hostRepoRoot, env })),
   );
   const sandboxScripts = SandboxScriptServiceLive.pipe(Layer.provide(daytonaLayers));
   const orchestrator = OrchestratorServiceLive(toOrchestratorConfig(cfg, hostRuntimeConfig));

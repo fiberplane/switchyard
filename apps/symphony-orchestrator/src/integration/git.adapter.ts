@@ -5,7 +5,7 @@ import { Command, CommandExecutor, Error as PlatformError, FileSystem } from "@e
 import { Chunk, Context, Effect, Layer, Stream } from "effect";
 
 import { makeRedactor } from "../secrets/redactor.js";
-import { BundleFetchError, GitCommandError } from "./errors.js";
+import { GitCommandError } from "./errors.js";
 
 export type GitAdapterOptions = {
   readonly cwd?: string;
@@ -13,20 +13,11 @@ export type GitAdapterOptions = {
 };
 
 export type GitAdapterShape = {
-  readonly revParse: (rev: string) => Effect.Effect<string, GitCommandError>;
   readonly lsRemoteHead: (
     repoUrl: string,
     branch: string,
     token?: string,
   ) => Effect.Effect<string, GitCommandError>;
-  readonly archive: (rev: string, outputPath: string) => Effect.Effect<void, GitCommandError>;
-  readonly fetchBundle: (
-    bundlePath: string,
-    refspec: string,
-  ) => Effect.Effect<void, GitCommandError | BundleFetchError>;
-  readonly branchExists: (name: string) => Effect.Effect<boolean, GitCommandError>;
-  readonly branchCreate: (name: string, ref: string) => Effect.Effect<void, GitCommandError>;
-  readonly revListCount: (args: readonly string[]) => Effect.Effect<number, GitCommandError>;
 };
 
 export class GitAdapter extends Context.Tag("GitAdapter")<GitAdapter, GitAdapterShape>() {}
@@ -206,10 +197,6 @@ export const GitAdapterLive = (options: GitAdapterOptions = {}) =>
       const fs = yield* FileSystem.FileSystem;
 
       return {
-        revParse: (rev) =>
-          runGitSuccess(["rev-parse", rev], options, executor).pipe(
-            Effect.map((stdout) => stdout.trim()),
-          ),
         lsRemoteHead: (repoUrl, branch, token) =>
           withGitHubAskPassEnv(fs, token, (env, cwd) =>
             runGitSuccess(
@@ -219,74 +206,6 @@ export const GitAdapterLive = (options: GitAdapterOptions = {}) =>
               env,
             ).pipe(Effect.mapError(redactGitCommandError(token))),
           ),
-        archive: (rev, outputPath) =>
-          runGitSuccess(
-            ["archive", "--format=tar.gz", "-o", outputPath, rev],
-            options,
-            executor,
-          ).pipe(Effect.asVoid),
-        fetchBundle: (bundlePath, refspec) =>
-          Effect.gen(function* () {
-            const result = yield* runGitCommand(
-              ["fetch", "--no-tags", bundlePath, refspec],
-              options,
-              executor,
-            );
-            if (result.exitCode !== 0) {
-              return yield* Effect.fail(
-                new BundleFetchError({
-                  bundlePath,
-                  stderr: result.stderr.trim(),
-                  exitCode: result.exitCode,
-                }),
-              );
-            }
-            return undefined;
-          }),
-        branchExists: (name) =>
-          Effect.gen(function* () {
-            const result = yield* runGitCommand(
-              ["show-ref", "--verify", "--quiet", `refs/heads/${name}`],
-              options,
-              executor,
-            );
-            // git show-ref --verify exits 0 when ref exists, 1 when missing.
-            // Any other exit code indicates a real failure.
-            if (result.exitCode === 0) {
-              return true;
-            }
-            if (result.exitCode === 1) {
-              return false;
-            }
-            return yield* Effect.fail(
-              commandError(
-                ["git", "show-ref", "--verify", "--quiet", `refs/heads/${name}`],
-                result.stderr.trim(),
-                result.exitCode,
-              ),
-            );
-          }),
-        branchCreate: (name, ref) =>
-          runGitSuccess(["branch", name, ref], options, executor).pipe(Effect.asVoid),
-        revListCount: (args) =>
-          Effect.gen(function* () {
-            const stdout = yield* runGitSuccess(
-              ["rev-list", "--count", ...args],
-              options,
-              executor,
-            );
-            const trimmed = stdout.trim();
-            const count = Number(trimmed);
-            if (!Number.isFinite(count)) {
-              return yield* Effect.fail(
-                commandError(
-                  ["git", "rev-list", "--count", ...args],
-                  `unexpected non-numeric stdout: ${trimmed}`,
-                ),
-              );
-            }
-            return count;
-          }),
       };
     }),
   );

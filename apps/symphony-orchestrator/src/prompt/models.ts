@@ -5,8 +5,7 @@ import type { FpIssueDetail } from "../fp/models.js";
 // constant rather than hardcoding the path again.
 export const WORKER_PROMPT_SANDBOX_PATH = "/tmp/prompt.md";
 
-// Tempdir prefix used for the host-side rendered file. Matches the `swy-` convention from
-// `IntegrationService.prepareSourceHandoff` (`swy-source-`).
+// Tempdir prefix used for the host-side rendered file.
 export const WORKER_PROMPT_HOST_PREFIX = "swy-prompt-";
 
 // Filename inside the per-render tempdir. The full host path is
@@ -22,20 +21,18 @@ export const MISSING_DESCRIPTION_FALLBACK =
 export type WorkerPromptInput = {
   readonly issue: FpIssueDetail;
   readonly attempt: number;
-  readonly source:
-    | { readonly kind: "archive"; readonly repoPath: string }
-    | {
-        readonly kind: "githubClone";
-        readonly repoUrl: string;
-        readonly baseBranch: string;
-        readonly baseSha: string;
-        readonly repoPath: string;
-        readonly branchName: string;
-        readonly metadataPath: string;
-        readonly runId: string;
-        readonly sandboxId: string;
-        readonly fpRestWorkdir: string;
-      };
+  readonly source: {
+    readonly kind: "githubClone";
+    readonly repoUrl: string;
+    readonly baseBranch: string;
+    readonly baseSha: string;
+    readonly repoPath: string;
+    readonly branchName: string;
+    readonly metadataPath: string;
+    readonly runId: string;
+    readonly sandboxId: string;
+    readonly fpRestWorkdir: string;
+  };
 };
 
 export type RenderedPrompt = {
@@ -48,9 +45,7 @@ export type RenderedPrompt = {
 };
 
 // Closed shape the template substitution function consumes. Per-issue variable surface is
-// intentionally small. Source instructions are rendered by the orchestrator from the
-// selected source strategy so githubClone workers see the pinned base metadata while archive
-// workers keep the legacy symphony-base contract.
+// intentionally small. Source instructions are rendered from the pinned GitHub clone metadata.
 export type WorkerPromptVars = {
   readonly issueDisplayId: string;
   readonly issueTitle: string;

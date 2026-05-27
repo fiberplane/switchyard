@@ -49,7 +49,7 @@ export class TranscriptWriteError extends Data.TaggedError("TranscriptWriteError
   }
 }
 
-// Pre-claim selector/dispatch failure: candidate fetch or prepareSourceHandoff
+// Pre-claim selector/dispatch failure: candidate fetch or GitHub clone handoff
 // or renderPrompt failed before the running-set claim. Drives "log + skip" at
 // the tick level; never writes fp (state.ts wasn't entered yet).
 export class DispatchError extends Data.TaggedError("DispatchError")<{
@@ -60,19 +60,6 @@ export class DispatchError extends Data.TaggedError("DispatchError")<{
   get message(): string {
     const where = this.issueId === undefined ? this.stage : `${this.stage}/${this.issueId}`;
     return `Pre-claim dispatch failed at ${where}: ${this.reason}`;
-  }
-}
-
-// Wraps decode failure of the worker's outcome.json envelope so service.ts can
-// route to the F10 row (needs-attention with `symphony_last_error="malformed
-// worker outcome"`). Carries the underlying decode reason for transcripts.
-export class BundleDecodeError extends Data.TaggedError("BundleDecodeError")<{
-  readonly issueId: string;
-  readonly attempt: number;
-  readonly reason: string;
-}> {
-  get message(): string {
-    return `Worker outcome decode failed for ${this.issueId} (attempt ${this.attempt}): ${this.reason}`;
   }
 }
 
@@ -92,30 +79,15 @@ export class ProtocolStreamError extends Data.TaggedError("ProtocolStreamError")
   }
 }
 
-// Bundle was downloaded and decoded but `integrateBundle` failed (git fetch /
-// branch create). Bundle file is preserved at runDir/work.bundle for forensics.
-export class IntegrationFailedError extends Data.TaggedError("IntegrationFailedError")<{
-  readonly issueId: string;
-  readonly attempt: number;
-  readonly reason: string;
-}> {
-  get message(): string {
-    return `Bundle integration failed for ${this.issueId} (attempt ${this.attempt}): ${this.reason}`;
-  }
-}
-
-// In-sandbox setup or finalize script failed (tar, git init/add/commit/tag,
-// git bundle create). Surfaces stage so the F5 / F8 rows distinguish where the
-// failure landed.
+// In-sandbox setup/session/upload failure. Surfaces stage so runOne can map
+// setup errors separately from codex app-server start errors.
 export class SandboxSetupError extends Data.TaggedError("SandboxSetupError")<{
   readonly issueId: string;
   readonly attempt: number;
   readonly stage:
     | "setup"
-    | "finalize"
     | "create"
     | "upload"
-    | "download"
     | "session-start"
     | "render-prompt"
     | "render-worker-env";
@@ -172,11 +144,9 @@ export class HostFileSystemError extends Data.TaggedError("HostFileSystemError")
 // outer scope because the tick handler logs + skips them inline.
 export type OrchestratorError =
   | AlreadyClaimedError
-  | BundleDecodeError
   | DispatchError
   | FpWriteFailedError
   | HostFileSystemError
-  | IntegrationFailedError
   | MissingCodexAuthError
   | ProtocolStreamError
   | SandboxSetupError

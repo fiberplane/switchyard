@@ -36,12 +36,6 @@ const SandboxBaseConfig = {
   repoPath: NonEmptyString,
 };
 
-export const ArchiveSandboxConfig = Schema.Struct({
-  ...SandboxBaseConfig,
-  sourceStrategy: Schema.Literal("archive"),
-  artifactStrategy: Schema.Literal("bundle"),
-});
-
 export const GithubCloneSandboxConfig = Schema.Struct({
   ...SandboxBaseConfig,
   sourceStrategy: Schema.Literal("githubClone"),
@@ -50,7 +44,7 @@ export const GithubCloneSandboxConfig = Schema.Struct({
   baseBranch: NonEmptyString,
 });
 
-export const SandboxConfig = Schema.Union(ArchiveSandboxConfig, GithubCloneSandboxConfig);
+export const SandboxConfig = GithubCloneSandboxConfig;
 export type SandboxConfig = Schema.Schema.Type<typeof SandboxConfig>;
 
 export const CodexSandboxPolicy = Schema.Struct({

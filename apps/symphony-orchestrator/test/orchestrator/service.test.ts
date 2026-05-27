@@ -5,7 +5,7 @@
 // the runner can swap in a stub AgentRunner via wire().
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,12 +13,12 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
 import { Layer } from "effect";
 
-import { ArtifactDecodeError } from "../../src/artifact/errors.js";
 import { SYMPHONY_PROPERTIES_DEFAULTS } from "../../src/fp/symphony-properties.js";
 import {
   OrchestratorService,
   type OrchestratorServiceConfig,
 } from "../../src/orchestrator/service.js";
+import { ProtocolRecvError } from "../../src/runner/errors.js";
 import { AgentRunner } from "../../src/runner/service.js";
 import { fixtureEligible } from "./test-helpers/fixture-issue.js";
 import {
@@ -39,7 +39,13 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   autoDeleteInterval: -1,
   codexAuthHostPath,
   repoPath: "/workspace/repo",
-  source: { kind: "archive" },
+  source: {
+    kind: "githubClone",
+    repoUrl: "https://github.com/fiberplane/switchyard.git",
+    baseBranch: "main",
+    artifactStrategy: "pr",
+    githubToken: "github-token-that-must-not-render",
+  },
   fpRest: {
     remote: "rest-api",
     token: "fp-token-that-must-not-render",
@@ -136,7 +142,9 @@ afterEach(() => {
 describe("OrchestratorService.runOne — cycle 3 happy path", () => {
   test("drives a single eligible issue end-to-end and writes the integrated record", async () => {
     const issue = fixtureEligible("happy");
-    const fp = makeFpMock({});
+    const fp = makeFpMock({
+      fetchIssueState: () => Effect.succeed(workerDoneState("happy")),
+    });
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
     const integration = makeIntegrationMock({});
@@ -155,41 +163,36 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     expect(result.status).toBe("integrated");
     expect(result.attempt).toBe(1);
     expect(result.branch).toBe("symphony/happy");
-    expect(result.summary).toBe("ok");
+    expect(result.summary).toBe(
+      "Worker opened PR https://github.com/fiberplane/switchyard/pull/123",
+    );
     expect(result.lastError).toBeUndefined();
 
     const fpKinds = fp.calls.map((call) => call.kind);
     expect(fpKinds).toEqual([
       "claimIssue",
       "setAttempt",
+      "setRunMetadata",
       "addComment", // dispatched
-      "addComment", // integrating
-      "markCompleted",
+      "fetchIssueState",
     ]);
 
-    // Cycle 8: three-comment cadence — verify the strings.
     const comments = fp.calls.flatMap((call) => (call.kind === "addComment" ? [call.body] : []));
     expect(comments[0]).toMatch(/^Dispatched to sandbox `/);
-    expect(comments[1]).toBe("Worker turn completed; integrating");
-    const completed = fp.calls.find((call) => call.kind === "markCompleted");
-    expect(completed?.kind).toBe("markCompleted");
-    if (completed?.kind === "markCompleted") {
-      expect(completed.summary).toBe("ok");
-    }
+    expect(comments).toHaveLength(1);
 
     const setAttempt = fp.calls.find((call) => call.kind === "setAttempt");
     if (setAttempt?.kind === "setAttempt") {
       expect(setAttempt.attempt).toBe(1);
     }
 
-    // Step 8 batched upload: archive + prompt + codex auth in a single call.
     const upload = daytona.calls.find((call) => call.kind === "uploadFiles");
     if (upload?.kind === "uploadFiles") {
       expect(upload.files).toHaveLength(3);
       expect(upload.files.map((f) => f.dst)).toEqual([
-        "/tmp/repo.tgz",
         "/tmp/prompt.md",
-        "/tmp/auth.json",
+        "/tmp/.symphony/codex-home/auth.json",
+        "/tmp/.symphony/worker-env",
       ]);
     } else {
       throw new Error("expected uploadFiles call");
@@ -197,7 +200,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
 
     const sandbox = daytona.calls.find((call) => call.kind === "createSandbox");
     if (sandbox?.kind === "createSandbox") {
-      expect(sandbox.spec.envVars.CODEX_HOME).toBe("/tmp");
+      expect(sandbox.spec.envVars.CODEX_HOME).toBe("/tmp/.symphony/codex-home");
     }
 
     // The artifact record was written with status=integrated.
@@ -216,16 +219,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     const integration = makeIntegrationMock({});
     const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
     const setupCloneCalls: unknown[] = [];
-    const config: OrchestratorServiceConfig = {
-      ...baseConfig(codexAuthPath),
-      source: {
-        kind: "githubClone",
-        repoUrl: "https://github.com/fiberplane/switchyard.git",
-        baseBranch: "main",
-        artifactStrategy: "pr",
-        githubToken: "github-token-that-must-not-render",
-      },
-    };
+    const config = baseConfig(codexAuthPath);
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -241,15 +235,10 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             artifact,
             config,
             sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
               setupClone: (_handle, options) =>
                 Effect.sync(() => {
                   setupCloneCalls.push(options);
                 }),
-              finalizeBundle: () =>
-                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
             },
           }),
         ),
@@ -262,7 +251,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       "Worker opened PR https://github.com/fiberplane/switchyard/pull/123",
     );
     expect(result.branch).toBe("symphony/clone");
-    expect(integration.prepareCalls()).toBe(0);
     expect(integration.prepareGithubCloneCalls()).toEqual([
       {
         repoUrl: "https://github.com/fiberplane/switchyard.git",
@@ -278,7 +266,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     }
     expect(upload.files.map((file) => file.dst)).toEqual([
       "/tmp/prompt.md",
-      "/tmp/auth.json",
+      "/tmp/.symphony/codex-home/auth.json",
       "/tmp/.symphony/worker-env",
     ]);
     expect(JSON.stringify(upload.files)).not.toContain("repo.tgz");
@@ -305,7 +293,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
         githubToken: "github-token-that-must-not-render",
       },
     ]);
-    expect(integration.integrateCalls()).toEqual([]);
     expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
     expect(artifact.records()[0]?.record.status).toBe("integrated");
     expect(artifact.records()[0]?.record.branch).toBe("symphony/clone");
@@ -321,8 +308,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     });
     expect(
       daytona.calls.some(
-        (call) =>
-          call.kind === "executeCommand" && call.command === "rm -f '/tmp/.symphony/worker-env'",
+        (call) => call.kind === "executeCommand" && call.command.includes("worker-env"),
       ),
     ).toBe(true);
     expect(
@@ -338,20 +324,18 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
 
   test("githubClone completed turn verifies worker-owned fp terminal metadata", async () => {
     const issue = fixtureEligible("clone-missing-metadata");
-    const fp = makeFpMock({});
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed({
+          status: "in-progress",
+          properties: { ...SYMPHONY_PROPERTIES_DEFAULTS, symphony_state: "active" },
+        }),
+    });
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
     const integration = makeIntegrationMock({});
     const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
-    const config: OrchestratorServiceConfig = {
-      ...baseConfig(codexAuthPath),
-      source: {
-        kind: "githubClone",
-        repoUrl: "https://github.com/fiberplane/switchyard.git",
-        baseBranch: "main",
-        artifactStrategy: "pr",
-      },
-    };
+    const config = baseConfig(codexAuthPath);
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -367,12 +351,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             artifact,
             config,
             sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
               setupClone: () => Effect.void,
-              finalizeBundle: () =>
-                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
             },
           }),
         ),
@@ -383,12 +362,44 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     expect(result.lastError).toContain("worker-owned PR metadata incomplete");
     expect(result.lastError).toContain("status=in-progress");
     expect(result.lastError).toContain("symphony_pr_url=missing");
-    expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
+    const park = fp.calls.find((call) => call.kind === "markNeedsAttention");
+    expect(park?.kind).toBe("markNeedsAttention");
+    if (park?.kind === "markNeedsAttention") {
+      expect(park.error).toContain("worker-owned PR metadata incomplete");
+    }
     expect(artifact.records()[0]?.record.status).toBe("needs-attention");
     expect(artifact.records()[0]?.record.integrationError).toContain(
       "worker-owned PR metadata incomplete",
     );
-    expect(integration.integrateCalls()).toEqual([]);
+  });
+
+  test("sandbox secret cleanup failure leaves an operator fp note", async () => {
+    const issue = fixtureEligible("cleanup-note");
+    const fp = makeFpMock({
+      fetchIssueState: () => Effect.succeed(workerDoneState("cleanup-note")),
+    });
+    const daytona = makeDaytonaAdapterMock({
+      executeCommand: (_handle, command) =>
+        command.includes("rm -f")
+          ? Effect.succeed({ exitCode: 7, stdout: "", stderr: "permission denied" })
+          : Effect.succeed({ exitCode: 0, stdout: "", stderr: "" }),
+    });
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
+    );
+
+    expect(result.status).toBe("integrated");
+    const comments = fp.calls.flatMap((call) => (call.kind === "addComment" ? [call.body] : []));
+    expect(comments.some((body) => body.includes("Sandbox secret cleanup failed"))).toBe(true);
+    expect(comments.some((body) => body.includes("/tmp/.symphony secret files"))).toBe(true);
   });
 
   test("sandboxLabelsFor can add E2E labels without losing canonical labels", async () => {
@@ -436,12 +447,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             artifact,
             config,
             sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
               setupClone: () => Effect.void,
-              finalizeBundle: () =>
-                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
             },
           }),
         ),
@@ -505,12 +511,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             artifact,
             config,
             sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
               setupClone: () => Effect.void,
-              finalizeBundle: () =>
-                Effect.dieMessage("PR artifact strategy must not finalize a bundle"),
             },
           }),
         ),
@@ -521,7 +522,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     expect(result.branch).toBe("symphony/e2e/e2e-prefix");
   });
 
-  test("githubClone transcript redacts fp and github tokens", async () => {
+  test("githubClone transcript redacts fp, github, and codex auth tokens", async () => {
     const issue = fixtureEligible("clone-redact");
     const fp = makeFpMock({});
     const daytona = makeDaytonaAdapterMock();
@@ -529,8 +530,19 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
     const integration = makeIntegrationMock({});
     const artifactRoot = mkdtempSync(join(tmpdir(), "swy-artifact-"));
     const artifact = makeArtifactStoreMock(artifactRoot);
+    const authDir = mkdtempSync(join(tmpdir(), "swy-codex-auth-redact-"));
+    const authPath = join(authDir, "auth.json");
+    const codexAccessToken = "codex-access-token-that-must-not-render";
+    const codexRefreshToken = "codex-refresh-token-that-must-not-render";
+    writeFileSync(
+      authPath,
+      JSON.stringify({
+        access_token: codexAccessToken,
+        nested: { refresh_token: codexRefreshToken },
+      }),
+    );
     const config: OrchestratorServiceConfig = {
-      ...baseConfig(codexAuthPath),
+      ...baseConfig(authPath),
       source: {
         kind: "githubClone",
         repoUrl: "https://github.com/fiberplane/switchyard.git",
@@ -549,7 +561,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             method: "worker/log",
             params: {
               message:
-                "github-token-that-must-not-render fp-token-that-must-not-render should redact",
+                "github-token-that-must-not-render fp-token-that-must-not-render codex-access-token-that-must-not-render codex-refresh-token-that-must-not-render should redact",
             },
           } as never,
         ],
@@ -572,11 +584,7 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
               config,
               agentRunner: stubRunner,
               sandboxScripts: {
-                setupRepo: () => {
-                  throw new Error("archive setup must not run for githubClone");
-                },
                 setupClone: () => Effect.void,
-                finalizeBundle: () => Effect.dieMessage("githubClone must not finalize a bundle"),
               },
             }),
           ),
@@ -589,9 +597,55 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
       );
       expect(transcript).not.toContain("github-token-that-must-not-render");
       expect(transcript).not.toContain("fp-token-that-must-not-render");
+      expect(transcript).not.toContain(codexAccessToken);
+      expect(transcript).not.toContain(codexRefreshToken);
       expect(transcript).toContain("[redacted]");
     } finally {
       rmSync(artifactRoot, { recursive: true, force: true });
+      rmSync(authDir, { recursive: true, force: true });
+    }
+  });
+
+  test("githubClone invalid codex auth JSON parks before uploading secrets", async () => {
+    const issue = fixtureEligible("clone-invalid-auth");
+    const authDir = mkdtempSync(join(tmpdir(), "swy-codex-auth-invalid-"));
+    const authPath = join(authDir, "auth.json");
+    writeFileSync(authPath, "{not json");
+    const fp = makeFpMock({});
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: [] });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(authPath);
+
+    try {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const orch = yield* OrchestratorService;
+          return yield* orch.runOne(issue);
+        }).pipe(
+          Effect.provide(
+            wire({
+              fp,
+              daytona,
+              session,
+              integration,
+              artifact,
+              config,
+              sandboxScripts: {
+                setupClone: () => Effect.void,
+              },
+            }),
+          ),
+        ),
+      );
+
+      expect(result.status).toBe("needs-attention");
+      expect(result.lastError).toBe("sandbox upload failed: codex auth JSON decode failed");
+      expect(daytona.calls.some((call) => call.kind === "uploadFiles")).toBe(false);
+      expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(true);
+    } finally {
+      rmSync(authDir, { recursive: true, force: true });
     }
   });
 
@@ -628,9 +682,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
             artifact,
             config,
             sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
               setupClone: () =>
                 Effect.fail(
                   new SandboxScriptError({
@@ -640,7 +691,6 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
                     stderr: "clone failed",
                   }),
                 ),
-              finalizeBundle: () => Effect.dieMessage("githubClone must not finalize a bundle"),
             },
           }),
         ),
@@ -653,140 +703,12 @@ describe("OrchestratorService.runOne — cycle 3 happy path", () => {
   });
 });
 
-describe("OrchestratorService.runOne — cycle 4 empty bundle (F11)", () => {
-  test("routes to needs-attention with locked error string when commitsBeyondBase=0", async () => {
-    const issue = fixtureEligible("empty");
-    const fp = makeFpMock({});
-    const daytona = makeDaytonaAdapterMock();
-    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
-    const integration = makeIntegrationMock({});
-    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
-    const config = baseConfig(codexAuthPath);
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const orch = yield* OrchestratorService;
-        return yield* orch.runOne(issue);
-      }).pipe(
-        Effect.provide(
-          wire({
-            fp,
-            daytona,
-            session,
-            integration,
-            artifact,
-            config,
-            sandboxScripts: {
-              setupRepo: () => Effect.void,
-              setupClone: () => Effect.void,
-              finalizeBundle: (_handle, scriptOptions) =>
-                Effect.succeed({
-                  bundlePath: scriptOptions.bundlePath,
-                  commitsBeyondBase: 0,
-                }),
-            },
-          }),
-        ),
-      ),
-    );
-
-    expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe("completed status with no commits");
-    expect(result.branch).toBeUndefined();
-
-    // Integration was NOT called for the empty-bundle path.
-    expect(integration.integrateCalls()).toHaveLength(0);
-
-    // markNeedsAttention fired; no markCompleted.
-    expect(fp.calls.find((c) => c.kind === "markCompleted")).toBeUndefined();
-    const na = fp.calls.find((c) => c.kind === "markNeedsAttention");
-    expect(na?.kind).toBe("markNeedsAttention");
-    if (na?.kind === "markNeedsAttention") {
-      expect(na.error).toBe("completed status with no commits");
-    }
-  });
-});
-
-describe("OrchestratorService.runOne — cycle 5 malformed outcome (F10)", () => {
-  test("routes to needs-attention but still integrates a forensic branch", async () => {
-    const issue = fixtureEligible("malformed");
-    const fp = makeFpMock({});
-    const daytona = makeDaytonaAdapterMock();
-    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
-    const integration = makeIntegrationMock({});
-    const artifact = makeArtifactStoreMock("/tmp/swy-fixture", {
-      readOutcome: () =>
-        Effect.fail(
-          new ArtifactDecodeError({
-            path: "/tmp/swy-fixture/outcome.json",
-            reason: "schema validation failed",
-            details: "missing field summary",
-          }),
-        ),
-    });
-    const config = baseConfig(codexAuthPath);
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const orch = yield* OrchestratorService;
-        return yield* orch.runOne(issue);
-      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
-    );
-
-    expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe("malformed worker outcome");
-    // Forensic integration still happened (plain branch name, no `-incomplete`).
-    expect(integration.integrateCalls()).toHaveLength(1);
-    expect(integration.integrateCalls()[0]!.suffix).toBeUndefined();
-    expect(result.branch).toBe("symphony/malformed");
-
-    // The recorded artifact reflects the forensic state (status=needs-attention).
-    expect(artifact.records()).toHaveLength(1);
-    expect(artifact.records()[0]!.record.status).toBe("needs-attention");
-  });
-});
-
-describe("OrchestratorService.runOne — cycle 6 worker non-completed (F12)", () => {
-  test("plain symphony/<id> branch, summary head as last_error, summary verbatim in fp comment", async () => {
-    const issue = fixtureEligible("blocked");
-    const fp = makeFpMock({});
-    const daytona = makeDaytonaAdapterMock();
-    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
-    const integration = makeIntegrationMock({});
-    const artifact = makeArtifactStoreMock("/tmp/swy-fixture", {
-      readOutcome: () =>
-        Effect.succeed({
-          status: "blocked",
-          summary: "First line of summary\n\nMore detail below",
-        }),
-    });
-    const config = baseConfig(codexAuthPath);
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const orch = yield* OrchestratorService;
-        return yield* orch.runOne(issue);
-      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
-    );
-
-    expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe("blocked: First line of summary");
-    expect(result.branch).toBe("symphony/blocked"); // plain name (no -blocked suffix)
-
-    // The fp comment carries the *full* summary verbatim (locked decision §7),
-    // not the truncated last_error string.
-    const na = fp.calls.find((c) => c.kind === "markNeedsAttention");
-    if (na?.kind === "markNeedsAttention") {
-      expect(na.error).toBe("First line of summary\n\nMore detail below");
-    }
-  });
-});
-
 describe("OrchestratorService.runOneTick — cycles 9-12", () => {
   test("cycle 9: dispatches a single eligible candidate end-to-end", async () => {
     const issue = fixtureEligible("tick");
     const fp = makeFpMock({
       fetchCandidates: () => Effect.succeed({ eligible: [issue], rejected: [] }),
+      fetchIssueState: () => Effect.succeed(workerDoneState("tick")),
     });
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
@@ -803,8 +725,8 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
 
     expect(tick.dispatched).toEqual([{ issueId: "tick", displayId: "SWY-tick", attempt: 1 }]);
     expect(tick.skipped).toEqual([]);
-    // Confirm the issue actually went through runOne (markCompleted fired).
-    expect(fp.calls.some((c) => c.kind === "markCompleted")).toBe(true);
+    // Confirm the issue actually went through runOne and verified worker-owned PR metadata.
+    expect(fp.calls.some((c) => c.kind === "fetchIssueState")).toBe(true);
   });
 
   test("cycle 10: empty candidate set → no dispatch, no fp writes", async () => {
@@ -851,21 +773,10 @@ describe("OrchestratorService.runOneTick — cycles 9-12", () => {
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
     const integration = makeIntegrationMock({});
-    // First runOne goes malformed → needs-attention. Second runOne succeeds
-    // (default mocks). Both dispatches must complete without slot blockage,
+    // First runOne ends needs-attention because worker metadata is incomplete.
+    // Second runOne also completes its lifecycle. Both dispatches must finish without slot blockage,
     // proving the running-set entry was released after the first runOne.
-    const artifact = makeArtifactStoreMock("/tmp/swy-fixture", {
-      readOutcome: () =>
-        fetchN === 1
-          ? Effect.fail(
-              new ArtifactDecodeError({
-                path: "/tmp/swy-fixture/outcome.json",
-                reason: "schema validation failed",
-                details: "missing field",
-              }),
-            )
-          : Effect.succeed({ status: "completed", summary: "ok" }),
-    });
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
     const config = baseConfig(codexAuthPath);
 
     const layer = wire({ fp, daytona, session, integration, artifact, config });
@@ -932,18 +843,15 @@ describe("OrchestratorService.runOne — failure-matrix routing (B2 fix)", () =>
 
     const { SandboxScriptError } = await import("../../src/sandbox-scripts/errors.js");
     const customScripts = {
-      setupRepo: () =>
+      setupClone: () =>
         Effect.fail(
           new SandboxScriptError({
-            operation: "setupRepo" as const,
-            command: "tar ...",
+            operation: "setupClone" as const,
+            command: "git clone",
             exitCode: 1,
-            stderr: "tar: not found",
+            stderr: "clone failed",
           }),
         ) as Effect.Effect<never, never>,
-      setupClone: () => Effect.void,
-      finalizeBundle: () =>
-        Effect.succeed({ bundlePath: "/tmp/.symphony/work.bundle", commitsBeyondBase: 1 }),
     };
 
     const result = await Effect.runPromise(
@@ -966,39 +874,7 @@ describe("OrchestratorService.runOne — failure-matrix routing (B2 fix)", () =>
     );
 
     expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe("sandbox setup failed: tar: not found");
-    expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
-  });
-
-  test("F13: integrate-bundle failure → markNeedsAttention with `bundle integration failed: ...`", async () => {
-    const issue = fixtureEligible("f13");
-    const fp = makeFpMock({});
-    const daytona = makeDaytonaAdapterMock();
-    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
-    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
-    const config = baseConfig(codexAuthPath);
-
-    const { GitCommandError } = await import("../../src/integration/errors.js");
-    const integration = makeIntegrationMock({
-      integrate: () =>
-        Effect.fail(
-          new GitCommandError({
-            command: ["git", "fetch"],
-            stderr: "broken bundle",
-            exitCode: 128,
-          }),
-        ) as Effect.Effect<never, never>,
-    });
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const orch = yield* OrchestratorService;
-        return yield* orch.runOne(issue);
-      }).pipe(Effect.provide(wire({ fp, daytona, session, integration, artifact, config }))),
-    );
-
-    expect(result.status).toBe("needs-attention");
-    expect(result.lastError).toBe("bundle integration failed: broken bundle");
+    expect(result.lastError).toBe("sandbox setup failed: clone failed");
     expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
   });
 });
@@ -1122,13 +998,11 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
     expect(result.status).toBe("needs-attention");
     expect(result.lastError).toBe("protocol stream failed: model error: capacity exceeded");
 
-    // F7 path: integration NOT attempted.
-    expect(integration.integrateCalls()).toHaveLength(0);
     // markNeedsAttention fired.
     expect(fp.calls.some((c) => c.kind === "markNeedsAttention")).toBe(true);
   });
 
-  test("githubClone non-completed turn does not attempt archive bundle salvage", async () => {
+  test("githubClone non-completed turn does not download worker artifacts", async () => {
     const issue = fixtureEligible("clone-proto");
     const fp = makeFpMock({});
     const daytona = makeDaytonaAdapterMock();
@@ -1168,13 +1042,7 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
             artifact,
             config,
             agentRunner: stubRunner,
-            sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
-              setupClone: () => Effect.void,
-              finalizeBundle: () => Effect.dieMessage("githubClone F7 must not finalize a bundle"),
-            },
+            sandboxScripts: { setupClone: () => Effect.void },
           }),
         ),
       ),
@@ -1182,7 +1050,6 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
 
     expect(result.status).toBe("needs-attention");
     expect(result.lastError).toBe("protocol stream failed: model error: capacity exceeded");
-    expect(integration.integrateCalls()).toEqual([]);
     expect(daytona.calls.some((call) => call.kind === "downloadFiles")).toBe(false);
     expect(JSON.stringify(fp.calls)).not.toContain("symphony_artifact");
   });
@@ -1240,19 +1107,58 @@ describe("OrchestratorService.runOne — cycle 7 protocol stream failure (F7)", 
             artifact,
             config,
             agentRunner: stubRunner,
-            sandboxScripts: {
-              setupRepo: () => {
-                throw new Error("archive setup must not run for githubClone");
-              },
-              setupClone: () => Effect.void,
-              finalizeBundle: () => Effect.dieMessage("githubClone F7 must not finalize a bundle"),
-            },
+            sandboxScripts: { setupClone: () => Effect.void },
           }),
         ),
       ),
     );
 
     expect(result.status).toBe("needs-attention");
+    expect(fp.calls.some((call) => call.kind === "fetchIssueState")).toBe(true);
+    expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
+  });
+
+  test("githubClone protocol error does not overwrite worker terminal done state", async () => {
+    const issue = fixtureEligible("clone-terminal-protocol");
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed(
+          workerDoneState("clone-terminal-protocol", {
+            branch: "symphony/clone-terminal-protocol",
+          }),
+        ),
+    });
+    const daytona = makeDaytonaAdapterMock();
+    const session = makeDaytonaSessionMock({ perSendReplies: codexResponses() });
+    const integration = makeIntegrationMock({});
+    const artifact = makeArtifactStoreMock("/tmp/swy-fixture");
+    const config = baseConfig(codexAuthPath);
+    const failingRunner = Layer.succeed(AgentRunner, {
+      runTurn: () => Effect.fail(new ProtocolRecvError({ reason: "stream closed after handoff" })),
+    });
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const orch = yield* OrchestratorService;
+        return yield* orch.runOne(issue);
+      }).pipe(
+        Effect.provide(
+          wire({
+            fp,
+            daytona,
+            session,
+            integration,
+            artifact,
+            config,
+            agentRunner: failingRunner,
+            sandboxScripts: { setupClone: () => Effect.void },
+          }),
+        ),
+      ),
+    );
+
+    expect(result.status).toBe("needs-attention");
+    expect(result.lastError).toBe("protocol stream error: stream closed after handoff");
     expect(fp.calls.some((call) => call.kind === "fetchIssueState")).toBe(true);
     expect(fp.calls.some((call) => call.kind === "markNeedsAttention")).toBe(false);
   });

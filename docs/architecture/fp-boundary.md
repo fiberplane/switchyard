@@ -46,11 +46,10 @@ when present; this POC does not preserve the old bundle artifact channel.
 
 ## Writer boundary (per ADR D4)
 
-For archive-mode legacy runs, the orchestrator remains the fp writer and translates
-`outcome.json` into terminal state. For `githubClone`/PR runs, the orchestrator writes
-pre-handoff metadata (`symphony_branch`, `symphony_base_sha`, `symphony_run_id`,
-`symphony_sandbox_id`) and then the sandbox worker owns PR metadata and terminal workflow
-updates through fp REST no-clone mode.
+The orchestrator writes pre-handoff metadata (`symphony_branch`, `symphony_base_sha`,
+`symphony_run_id`, `symphony_sandbox_id`) and then the sandbox worker owns PR metadata and
+terminal workflow updates through fp REST no-clone mode. The old host-side artifact
+translation path is retired.
 
 ## Eligibility decision table
 

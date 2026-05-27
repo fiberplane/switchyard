@@ -18,8 +18,10 @@ sandbox:
   autoStopInterval: 15
   autoDeleteInterval: -1
   repoPath: /workspace/repo
-  sourceStrategy: archive
-  artifactStrategy: bundle
+  sourceStrategy: githubClone
+  artifactStrategy: pr
+  repoUrl: https://github.com/fiberplane/switchyard.git
+  baseBranch: main
 
 codex:
   command: codex app-server

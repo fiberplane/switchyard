@@ -1,16 +1,38 @@
+import { Either, Schema } from "effect";
+
 import { runCommand } from "./command.test.js";
 import type { RemoteE2EEnv } from "./env.test.js";
 
-export type GithubPrInfo = {
-  readonly url: string;
-  readonly number: number;
-  readonly body: string;
-  readonly comments: readonly unknown[];
-  readonly headRefName: string;
-  readonly headRefOid: string;
-  readonly baseRefOid: string;
-  readonly isDraft: boolean;
-  readonly state: string;
+const GitRefSchema = Schema.Struct({
+  object: Schema.Struct({
+    sha: Schema.String,
+  }),
+});
+
+const GithubPrInfoSchema = Schema.Struct({
+  url: Schema.String,
+  number: Schema.Number,
+  body: Schema.String,
+  comments: Schema.Array(Schema.Unknown),
+  headRefName: Schema.String,
+  headRefOid: Schema.String,
+  baseRefOid: Schema.String,
+  isDraft: Schema.Boolean,
+  state: Schema.String,
+});
+
+export type GithubPrInfo = Schema.Schema.Type<typeof GithubPrInfoSchema>;
+
+const decodeJson = <A, I>(
+  schema: Schema.Schema<A, I, never>,
+  content: string,
+  label: string,
+): A => {
+  const decoded = Schema.decodeUnknownEither(Schema.parseJson(schema))(content);
+  if (Either.isLeft(decoded)) {
+    throw new Error(`${label} response did not match expected schema`);
+  }
+  return decoded.right;
 };
 
 export const repoFullName = (repoUrl: string): string => {
@@ -29,9 +51,9 @@ export const assertRemoteBaseBranch = async (env: RemoteE2EEnv): Promise<string>
       env: { ...process.env, GITHUB_TOKEN: env.host.github.token, GH_TOKEN: env.host.github.token },
     },
   );
-  const payload = JSON.parse(result.stdout) as { readonly object?: { readonly sha?: unknown } };
-  const sha = payload.object?.sha;
-  if (typeof sha !== "string" || !/^[0-9a-f]{40}$/u.test(sha)) {
+  const payload = decodeJson(GitRefSchema, result.stdout, "github ref");
+  const sha = payload.object.sha;
+  if (!/^[0-9a-f]{40}$/u.test(sha)) {
     throw new Error(`remote base branch ${env.baseBranch} did not return a commit SHA`);
   }
   return sha;
@@ -97,7 +119,7 @@ export const viewPr = async (env: RemoteE2EEnv, prNumber: string): Promise<Githu
       env: { ...process.env, GITHUB_TOKEN: env.host.github.token, GH_TOKEN: env.host.github.token },
     },
   );
-  return JSON.parse(result.stdout) as GithubPrInfo;
+  return decodeJson(GithubPrInfoSchema, result.stdout, "github pr");
 };
 
 const deleteRemoteBranch = async (env: RemoteE2EEnv, branch: string): Promise<void> => {

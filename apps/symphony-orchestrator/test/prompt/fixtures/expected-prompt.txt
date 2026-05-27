@@ -7,40 +7,43 @@ Implement the foo helper. The helper should take a string and return its upperca
 ## Workspace
 
 - The local repo is `/workspace/repo`. Start there.
-- `/workspace/repo` mirrors the host repository root. Treat all file paths as host
-  repo-relative paths (for example, edit `apps/symphony-orchestrator/test/...` for
-  orchestrator tests, not top-level `test/...`).
-- The starting commit is tagged `symphony-base`. Make your changes on top of it.
+- The repo was cloned from `https://github.com/fiberplane/switchyard.git` and checked out at pinned base SHA `0123456789abcdef0123456789abcdef01234567` from `main`.
+- Clone metadata is available at `/tmp/.symphony/source.json` as JSON, including the deterministic worker branch `symphony/SWYRD-abc123`.
+- This run id is `swy-swyrd-abc123-1`; the Daytona sandbox id is `sb-123`.
+- Leave `origin` credential-free; GitHub access is provided through `GH_TOKEN`/`GITHUB_TOKEN` plus `GIT_ASKPASS` in the worker process environment.
 - The directory `/tmp/.symphony/` is pre-created for you by the orchestrator before your turn starts.
 
 ## Boundaries
 
-- You have **no `fp` credentials**. Do not attempt `fp` writes; the orchestrator owns all `fp` state.
-- You do not need to contact the host machine. Outcome flows entirely through files in the sandbox; the orchestrator collects them after your turn ends. **No host base URL is provided.**
-- Do **not** file follow-up issues yourself. Worker-driven follow-up filing is deferred. Put any out-of-scope observations or follow-up suggestions in your `summary` (see below) as prose.
+- You own durable task state after the orchestrator handoff. Use `fp` from a non-repo workdir with the REST remote, then use `gh` to open and babysit the PR.
+- Run fp commands from `/tmp/.symphony/fp-rest`, not from the cloned repository. The worker environment provides `FP_REMOTE=rest-api`, `FP_TOKEN`, `FP_SERVER_URL`, `FP_WORKSPACE`, and `FP_PROJECT_ID` when configured.
+- Do not run `gh auth login`. Use the provided `GH_TOKEN`/`GITHUB_TOKEN` environment variables. If you must isolate gh config, create a temporary `GH_CONFIG_DIR` and remove it before diagnostics.
+- Do not write credentials to repo files, shell profiles, fp comments, PR bodies, logs, transcripts, or diagnostics.
 
 ## Working in the repo
 
-- Make code changes in the repo.
-- Cadence: **commit early, commit often**, with descriptive commit messages — the orchestrator will preserve your full commit history via `git bundle`, and the human reviewer reads commit messages to understand your reasoning. Prefer multiple small commits over one squash.
-- You may run any commands you need to validate your work (build, test, type-check). The output of those commands does **not** need to be persisted; the orchestrator does not validate or re-run them.
+- Create or reset local branch `symphony/SWYRD-abc123` from pinned base SHA `0123456789abcdef0123456789abcdef01234567`, then make the requested changes there.
+- Follow the repo's fp workflow: inspect context, comment useful milestones, implement, verify, request an adversarial review, address findings, and keep commits associated with the fp issue.
+- Push the branch to GitHub with git using `GIT_ASKPASS`; do not put tokens in the remote URL.
+- Open a non-draft PR against base branch `main` with `gh pr create --base main --head symphony/SWYRD-abc123`, then babysit checks and review comments until the PR is in a reviewable state.
+- Set fp custom properties as soon as values are known: `symphony_branch`, `symphony_pr_url`, `symphony_pr_number`, `symphony_base_sha`, `symphony_head_sha`, `symphony_run_id`, and `symphony_sandbox_id`.
+- When the PR and verification are ready, mark issue `SWYRD-abc123` done with `symphony_state=end` in the same fp update that records final metadata.
+- Record clear verification evidence in fp comments and the PR body. Keep all credentials out of those texts.
 
 ## Outcome envelope (REQUIRED)
 
-**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` with this exact shape and no extra fields:
+**Before producing your final assistant message / exiting the turn**, you MUST leave the durable state in fp and GitHub: pushed branch, PR URL/number, head SHA, and the canonical `symphony_*` properties. Do not write an orchestrator return artifact.
 
-```json
-{
-  "status": "completed" | "blocked" | "needs-human" | "failed",
-  "summary": "<markdown narrative — what you did, why, and any caveats>"
-}
-```
+Required durable fields:
 
-Pick `status` deliberately:
+- `symphony_branch`: `symphony/SWYRD-abc123`
+- `symphony_pr_url`: the GitHub PR URL
+- `symphony_pr_number`: the GitHub PR number as text
+- `symphony_base_sha`: `0123456789abcdef0123456789abcdef01234567`
+- `symphony_head_sha`: the pushed branch HEAD SHA
+- `symphony_run_id`: `swy-swyrd-abc123-1`
+- `symphony_sandbox_id`: `sb-123`
+- fp issue `SWYRD-abc123`: `status=done` and `symphony_state=end`
 
-- `"completed"` only if you believe the work is fully done and ready for a human to review the resulting branch.
-- `"blocked"` if a precondition you cannot satisfy stops you.
-- `"needs-human"` if the work is partially done but you are uncertain.
-- `"failed"` if you tried and could not produce useful output.
 
-The `summary` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose.
+Your final assistant message should summarize the PR URL, fp property writes, verification, and any remaining babysitting state. Do not include secrets.

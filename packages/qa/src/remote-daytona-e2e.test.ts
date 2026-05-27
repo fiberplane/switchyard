@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { BunContext } from "@effect/platform-bun";
 import { NodeContext } from "@effect/platform-node";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer, Schema } from "effect";
 
 import { ArtifactStoreLive } from "../../../apps/symphony-orchestrator/src/artifact/store.js";
 import { DaytonaAdapterLive } from "../../../apps/symphony-orchestrator/src/daytona/daytona.adapter.js";
@@ -32,6 +32,7 @@ import { WorkflowServiceLive } from "../../../apps/symphony-orchestrator/src/wor
 import {
   cleanupE2ESandboxes,
   inspectSandboxGitConfig,
+  inspectSandboxSecretCleanup,
   listE2ESandboxes,
 } from "./lib/daytona.test.js";
 import { loadRemoteE2EEnv, publicEnvSummary } from "./lib/env.test.js";
@@ -68,7 +69,13 @@ const collectAuthSecrets = async (path: string | undefined): Promise<readonly st
   if (path === undefined) {
     return [];
   }
-  const auth = JSON.parse(await readFile(path, "utf8")) as unknown;
+  const decoded = Schema.decodeUnknownEither(Schema.parseJson(Schema.Unknown))(
+    await readFile(path, "utf8"),
+  );
+  if (Either.isLeft(decoded)) {
+    throw new Error("Codex auth file did not contain JSON");
+  }
+  const auth = decoded.right;
   const output = new Set<string>();
   const collect = (value: unknown): void => {
     if (typeof value === "string") {
@@ -319,6 +326,10 @@ export const runE2E = async (): Promise<void> => {
       "sandbox git remotes",
       await inspectSandboxGitConfig(daytonaConfig, sandboxId, env.repoUrl),
     );
+    scanner.scan(
+      "sandbox secret cleanup",
+      await inspectSandboxSecretCleanup(daytonaConfig, sandboxId),
+    );
     scratchCompleted = true;
     const evidence = [
       "# Result: Remote Daytona E2E",
@@ -335,6 +346,7 @@ export const runE2E = async (): Promise<void> => {
       "- fp REST scratch issue reached `status=done` and `symphony_state=end`.",
       "- GitHub PR URL, number, branch, head SHA, and pinned base SHA matched fp metadata.",
       "- Sandbox git remote/config inspection contained no registered secret values.",
+      "- Sandbox one-shot worker env and copied Codex auth files were absent after the run.",
       "- Daytona sandbox labels matched `app=symphony-test`, `source=remote-daytona`, and the test run id.",
       "- Exact-value secret scan passed for inspected orchestrator result, transcript, fp JSON, and PR JSON.",
       "",

@@ -6,8 +6,8 @@
 
 import { Effect, Queue, Stream } from "effect";
 
-import { ArtifactDecodeError, ArtifactPathError } from "../../../src/artifact/errors.js";
-import type { OrchestratorRecord, WorkerOutcome } from "../../../src/artifact/models.js";
+import { ArtifactPathError } from "../../../src/artifact/errors.js";
+import type { OrchestratorRecord } from "../../../src/artifact/models.js";
 import type { ArtifactStoreShape } from "../../../src/artifact/store.js";
 import type { DaytonaAdapterShape } from "../../../src/daytona/daytona.adapter.js";
 import type {
@@ -29,18 +29,13 @@ import type {
 } from "../../../src/daytona/models.js";
 import type { CandidateScan, FpServiceShape } from "../../../src/fp/service.js";
 import { SYMPHONY_PROPERTIES_DEFAULTS } from "../../../src/fp/symphony-properties.js";
-import type {
-  GithubCloneSourceHandoff,
-  IntegrationResult,
-  SourceHandoff,
-} from "../../../src/integration/models.js";
+import type { GithubCloneSourceHandoff } from "../../../src/integration/models.js";
 import type { GithubCloneSourceOptions } from "../../../src/integration/service.js";
 import type { IntegrationServiceShape } from "../../../src/integration/service.js";
 import type { RenderedPrompt } from "../../../src/prompt/models.js";
 import type { WorkerPromptServiceShape } from "../../../src/prompt/service.js";
 import type { TurnOutcome } from "../../../src/runner/service.js";
 import type { AgentRunnerShape } from "../../../src/runner/service.js";
-import type { SandboxBundleResult } from "../../../src/sandbox-scripts/models.js";
 import type { SandboxScriptServiceShape } from "../../../src/sandbox-scripts/service.js";
 
 export type FpCall =
@@ -178,6 +173,10 @@ const TEST_SANDBOX_HANDLE: SandboxHandle = {
 export const makeDaytonaAdapterMock = (overrides?: {
   readonly handle?: SandboxHandle;
   readonly createSandbox?: () => Effect.Effect<SandboxHandle, never>;
+  readonly executeCommand?: (
+    handle: SandboxHandle,
+    command: string,
+  ) => Effect.Effect<DaytonaCommandResult, DaytonaSandboxNotFoundError | DaytonaSandboxOpError>;
   readonly downloadFiles?: () => Effect.Effect<
     void,
     DaytonaSandboxNotFoundError | DaytonaSandboxOpError
@@ -196,10 +195,12 @@ export const makeDaytonaAdapterMock = (overrides?: {
       }),
     deleteSandbox: () => Effect.void,
     executeCommand: (h, command) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         calls.push({ kind: "executeCommand", handle: h, command });
-        const result: DaytonaCommandResult = { exitCode: 0, stdout: "", stderr: "" };
-        return result;
+        if (overrides?.executeCommand !== undefined) {
+          return overrides.executeCommand(h, command);
+        }
+        return Effect.succeed({ exitCode: 0, stdout: "", stderr: "" });
       }),
     uploadFiles: (h, files) =>
       Effect.sync(() => {
@@ -291,42 +292,16 @@ export const makeDaytonaSessionMock = (behavior: SessionMockBehavior): DaytonaSe
 
 export type IntegrationMock = {
   readonly shape: IntegrationServiceShape;
-  readonly prepareCalls: () => number;
   readonly prepareGithubCloneCalls: () => ReadonlyArray<GithubCloneSourceOptions>;
-  readonly integrateCalls: () => ReadonlyArray<IntegrationCall>;
-};
-
-type IntegrationCall = {
-  readonly bundlePath: string;
-  readonly issueId: string;
-  readonly suffix: string | undefined;
 };
 
 export const makeIntegrationMock = (overrides: {
-  readonly prepare?: () => Effect.Effect<SourceHandoff, never>;
   readonly prepareGithubClone?: (
     options: GithubCloneSourceOptions,
   ) => Effect.Effect<GithubCloneSourceHandoff, never>;
-  readonly integrate?: (
-    bundlePath: string,
-    issueId: string,
-  ) => Effect.Effect<IntegrationResult, never>;
 }): IntegrationMock => {
-  let prepareN = 0;
   const prepareGithubCloneLog: GithubCloneSourceOptions[] = [];
-  const integrateLog: IntegrationCall[] = [];
   const shape: IntegrationServiceShape = {
-    prepareSourceHandoff: () =>
-      Effect.suspend(() => {
-        prepareN += 1;
-        return overrides.prepare === undefined
-          ? Effect.succeed({
-              kind: "archive" as const,
-              baseRev: "deadbeef",
-              archivePath: "/tmp/swy-source-fixture/source.tar.gz",
-            })
-          : overrides.prepare();
-      }),
     prepareGithubCloneSourceHandoff: (options) =>
       Effect.suspend(() => {
         prepareGithubCloneLog.push(options);
@@ -341,23 +316,10 @@ export const makeIntegrationMock = (overrides: {
             })
           : overrides.prepareGithubClone(options);
       }),
-    integrateBundle: (bundlePath, issueId, options) =>
-      Effect.suspend(() => {
-        integrateLog.push({ bundlePath, issueId, suffix: options?.suffix });
-        return overrides.integrate === undefined
-          ? Effect.succeed({
-              branch: `symphony/${issueId}`,
-              commitsBeyondBase: 1,
-              attempt: 1,
-            })
-          : overrides.integrate(bundlePath, issueId);
-      }),
   };
   return {
     shape,
-    prepareCalls: () => prepareN,
     prepareGithubCloneCalls: () => [...prepareGithubCloneLog],
-    integrateCalls: () => [...integrateLog],
   };
 };
 
@@ -372,12 +334,7 @@ export type ArtifactStoreMock = {
 
 export const makeArtifactStoreMock = (
   basePath: string,
-  overrides: {
-    readonly readOutcome?: () => Effect.Effect<
-      WorkerOutcome,
-      ArtifactPathError | ArtifactDecodeError
-    >;
-  } = {},
+  _overrides: Record<string, never> = {},
 ): ArtifactStoreMock => {
   const recordLog: Array<{
     readonly issueId: string;
@@ -387,12 +344,6 @@ export const makeArtifactStoreMock = (
   const shape: ArtifactStoreShape = {
     runDir: (issueId, attempt) => Effect.succeed(`${basePath}/runs/${issueId}/${attempt}`),
     listRuns: () => Effect.succeed([]),
-    readOutcome: () =>
-      Effect.suspend(() =>
-        overrides.readOutcome === undefined
-          ? Effect.succeed({ status: "completed", summary: "ok" } satisfies WorkerOutcome)
-          : overrides.readOutcome(),
-      ),
     writeRecord: (issueId, attempt, record) =>
       Effect.sync(() => {
         recordLog.push({ issueId, attempt, record });
@@ -425,13 +376,7 @@ export const makePromptMock = (): WorkerPromptServiceShape => ({
 });
 
 export const makeSandboxScriptMock = (): SandboxScriptServiceShape => ({
-  setupRepo: () => Effect.void,
   setupClone: () => Effect.void,
-  finalizeBundle: (_handle, options) =>
-    Effect.succeed({
-      bundlePath: options.bundlePath,
-      commitsBeyondBase: 1,
-    } satisfies SandboxBundleResult),
 });
 
 // AgentRunner — for cycles that don't need the runner's framing path, a stub

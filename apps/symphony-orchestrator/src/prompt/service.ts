@@ -34,16 +34,6 @@ const resolveDescription = (raw: string | null | undefined): string => {
 };
 
 const sourceInstructions = (input: WorkerPromptInput): string => {
-  if (input.source.kind === "archive") {
-    return [
-      `- The local repo is \`${input.source.repoPath}\`. Start there.`,
-      `- \`${input.source.repoPath}\` mirrors the host repository root. Treat all file paths as host`,
-      "  repo-relative paths (for example, edit `apps/symphony-orchestrator/test/...` for",
-      "  orchestrator tests, not top-level `test/...`).",
-      "- The starting commit is tagged `symphony-base`. Make your changes on top of it.",
-    ].join("\n");
-  }
-
   return [
     `- The local repo is \`${input.source.repoPath}\`. Start there.`,
     `- The repo was cloned from \`${input.source.repoUrl}\` and checked out at pinned base SHA \`${input.source.baseSha}\` from \`${input.source.baseBranch}\`.`,
@@ -54,14 +44,6 @@ const sourceInstructions = (input: WorkerPromptInput): string => {
 };
 
 const boundaryInstructions = (input: WorkerPromptInput): string => {
-  if (input.source.kind === "archive") {
-    return [
-      "- You have **no `fp` credentials**. Do not attempt `fp` writes; the orchestrator owns all `fp` state.",
-      "- You do not need to contact the host machine. Outcome flows entirely through files in the sandbox; the orchestrator collects them after your turn ends. **No host base URL is provided.**",
-      "- Do **not** file follow-up issues yourself. Worker-driven follow-up filing is deferred. Put any out-of-scope observations or follow-up suggestions in your `summary` (see below) as prose.",
-    ].join("\n");
-  }
-
   return [
     "- You own durable task state after the orchestrator handoff. Use `fp` from a non-repo workdir with the REST remote, then use `gh` to open and babysit the PR.",
     `- Run fp commands from \`${input.source.fpRestWorkdir}\`, not from the cloned repository. The worker environment provides \`FP_REMOTE=rest-api\`, \`FP_TOKEN\`, \`FP_SERVER_URL\`, \`FP_WORKSPACE\`, and \`FP_PROJECT_ID\` when configured.`,
@@ -71,14 +53,6 @@ const boundaryInstructions = (input: WorkerPromptInput): string => {
 };
 
 const workInstructions = (input: WorkerPromptInput): string => {
-  if (input.source.kind === "archive") {
-    return [
-      "- Make code changes in the repo.",
-      "- Cadence: **commit early, commit often**, with descriptive commit messages — the orchestrator will preserve your full commit history via `git bundle`, and the human reviewer reads commit messages to understand your reasoning. Prefer multiple small commits over one squash.",
-      "- You may run any commands you need to validate your work (build, test, type-check). The output of those commands does **not** need to be persisted; the orchestrator does not validate or re-run them.",
-    ].join("\n");
-  }
-
   return [
     `- Create or reset local branch \`${input.source.branchName}\` from pinned base SHA \`${input.source.baseSha}\`, then make the requested changes there.`,
     "- Follow the repo's fp workflow: inspect context, comment useful milestones, implement, verify, request an adversarial review, address findings, and keep commits associated with the fp issue.",
@@ -90,45 +64,25 @@ const workInstructions = (input: WorkerPromptInput): string => {
   ].join("\n");
 };
 
-const outcomeInstructions = (input: WorkerPromptInput): string =>
-  input.source.kind === "archive"
-    ? "**Before producing your final assistant message / exiting the turn**, you MUST write `/tmp/.symphony/outcome.json` with this exact shape and no extra fields:"
-    : "**Before producing your final assistant message / exiting the turn**, you MUST leave the durable state in fp and GitHub: pushed branch, PR URL/number, head SHA, and the canonical `symphony_*` properties. Do not write an orchestrator return artifact.";
+const outcomeInstructions = (): string =>
+  "**Before producing your final assistant message / exiting the turn**, you MUST leave the durable state in fp and GitHub: pushed branch, PR URL/number, head SHA, and the canonical `symphony_*` properties. Do not write an orchestrator return artifact.";
 
 const outcomeBody = (input: WorkerPromptInput): string =>
-  input.source.kind === "archive"
-    ? [
-        "```json",
-        "{",
-        '  "status": "completed" | "blocked" | "needs-human" | "failed",',
-        '  "summary": "<markdown narrative — what you did, why, and any caveats>"',
-        "}",
-        "```",
-        "",
-        "Pick `status` deliberately:",
-        "",
-        '- `"completed"` only if you believe the work is fully done and ready for a human to review the resulting branch.',
-        '- `"blocked"` if a precondition you cannot satisfy stops you.',
-        '- `"needs-human"` if the work is partially done but you are uncertain.',
-        '- `"failed"` if you tried and could not produce useful output.',
-      ].join("\n")
-    : [
-        "Required durable fields:",
-        "",
-        `- \`symphony_branch\`: \`${input.source.branchName}\``,
-        "- `symphony_pr_url`: the GitHub PR URL",
-        "- `symphony_pr_number`: the GitHub PR number as text",
-        `- \`symphony_base_sha\`: \`${input.source.baseSha}\``,
-        "- `symphony_head_sha`: the pushed branch HEAD SHA",
-        `- \`symphony_run_id\`: \`${input.source.runId}\``,
-        `- \`symphony_sandbox_id\`: \`${input.source.sandboxId}\``,
-        `- fp issue \`${input.issue.displayId}\`: \`status=done\` and \`symphony_state=end\``,
-      ].join("\n");
+  [
+    "Required durable fields:",
+    "",
+    `- \`symphony_branch\`: \`${input.source.branchName}\``,
+    "- `symphony_pr_url`: the GitHub PR URL",
+    "- `symphony_pr_number`: the GitHub PR number as text",
+    `- \`symphony_base_sha\`: \`${input.source.baseSha}\``,
+    "- `symphony_head_sha`: the pushed branch HEAD SHA",
+    `- \`symphony_run_id\`: \`${input.source.runId}\``,
+    `- \`symphony_sandbox_id\`: \`${input.source.sandboxId}\``,
+    `- fp issue \`${input.issue.displayId}\`: \`status=done\` and \`symphony_state=end\``,
+  ].join("\n");
 
-const summaryInstructions = (input: WorkerPromptInput): string =>
-  input.source.kind === "archive"
-    ? "The `summary` becomes the fp comment narrative attached to this issue. Include any out-of-scope observations or follow-up suggestions there as prose."
-    : "Your final assistant message should summarize the PR URL, fp property writes, verification, and any remaining babysitting state. Do not include secrets.";
+const summaryInstructions = (): string =>
+  "Your final assistant message should summarize the PR URL, fp property writes, verification, and any remaining babysitting state. Do not include secrets.";
 
 const mapWriteError = (path: string) => (error: PlatformError.PlatformError) =>
   new WorkerPromptWriteError({
@@ -151,17 +105,15 @@ const renderPromptImpl = (
       sourceInstructions: sourceInstructions(input),
       boundaryInstructions: boundaryInstructions(input),
       workInstructions: workInstructions(input),
-      outcomeInstructions: outcomeInstructions(input),
+      outcomeInstructions: outcomeInstructions(),
       outcomeBody: outcomeBody(input),
-      summaryInstructions: summaryInstructions(input),
+      summaryInstructions: summaryInstructions(),
     } satisfies WorkerPromptVars;
 
     const content = yield* renderTemplate(WORKER_PROMPT_TEMPLATE, vars);
 
-    // Caller owns host-side cleanup of `dirname(hostPath)`. Mirrors
-    // `IntegrationService.prepareSourceHandoff`'s tempdir pattern: per-render directory
-    // under the OS tmpdir, returned path lives until the orchestrator deletes it after
-    // `daytona.uploadFiles` completes.
+    // Caller owns host-side cleanup of `dirname(hostPath)`. The per-render directory
+    // lives under the OS tmpdir until the orchestrator deletes it after upload.
     const dir = yield* fs
       .makeTempDirectory({ prefix: WORKER_PROMPT_HOST_PREFIX })
       .pipe(Effect.mapError(mapWriteError(`<tmpdir>/${WORKER_PROMPT_HOST_PREFIX}*`)));

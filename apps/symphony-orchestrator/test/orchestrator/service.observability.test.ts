@@ -32,7 +32,12 @@ const baseConfig = (codexAuthHostPath: string): OrchestratorServiceConfig => ({
   autoDeleteInterval: -1,
   codexAuthHostPath,
   repoPath: "/workspace/repo",
-  source: { kind: "archive" },
+  source: {
+    kind: "githubClone",
+    repoUrl: "https://github.com/fiberplane/switchyard.git",
+    baseBranch: "main",
+    artifactStrategy: "pr",
+  },
   fpRest: { remote: "rest-api" },
 });
 
@@ -49,7 +54,25 @@ afterEach(() => {});
 describe("OrchestratorService.runOne — observability emissions", () => {
   test("happy path emits one log line per umbrella-spec state-flow row, with annotation context", async () => {
     const issue = fixtureEligible("happy");
-    const fp = makeFpMock({});
+    const fp = makeFpMock({
+      fetchIssueState: () =>
+        Effect.succeed({
+          status: "done",
+          properties: {
+            symphony_state: "end",
+            symphony_attempt: undefined,
+            symphony_last_error: undefined,
+            symphony_ready: "false",
+            symphony_branch: "symphony/happy",
+            symphony_pr_url: "https://github.com/fiberplane/switchyard/pull/123",
+            symphony_pr_number: "123",
+            symphony_base_sha: "0123456789abcdef0123456789abcdef01234567",
+            symphony_head_sha: "89abcdef0123456789abcdef0123456789abcdef",
+            symphony_run_id: "swy-swy-happy-1",
+            symphony_sandbox_id: "sb-test-1",
+          },
+        }),
+    });
     const daytona = makeDaytonaAdapterMock();
     const session = makeDaytonaSessionMock({ perSendReplies: [] });
     const integration = makeIntegrationMock({});
@@ -89,9 +112,7 @@ describe("OrchestratorService.runOne — observability emissions", () => {
       "source.uploaded",
       "turn.started",
       "turn.completed",
-      "bundle.decoded",
-      "integration.succeeded",
-      "fp.done",
+      "worker.handoff.completed",
     ];
     for (const expected of expectedOrder) {
       expect(messages).toContain(expected);
@@ -114,7 +135,7 @@ describe("OrchestratorService.runOne — observability emissions", () => {
     expect(turnCompleted.sandbox_id).toBeDefined();
     expect(turnCompleted.issue_id).toBe(issue.detail.id);
 
-    const fpDone = lines.find((l) => l.message === "fp.done")!;
-    expect(fpDone.branch).toBe("symphony/happy");
+    const handoffDone = lines.find((l) => l.message === "worker.handoff.completed")!;
+    expect(handoffDone.branch).toBe("symphony/happy");
   });
 });

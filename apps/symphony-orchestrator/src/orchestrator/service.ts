@@ -6,7 +6,7 @@
 import { dirname } from "node:path";
 
 import { Error as PlatformError, FileSystem } from "@effect/platform";
-import { Context, Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
+import { Context, Effect, Either, Fiber, Layer, Option, Ref, Schema, Stream } from "effect";
 
 import type { ArtifactDecodeError, ArtifactPathError } from "../artifact/errors.js";
 import type { OrchestratorRecord } from "../artifact/models.js";
@@ -25,29 +25,19 @@ import type { DaytonaSandboxSpec, SandboxHandle } from "../daytona/models.js";
 import type { EligibleIssue } from "../fp/eligibility.js";
 import { FpService } from "../fp/service.js";
 import type { FpIssueState, WriteError } from "../fp/service.js";
-import {
-  sourceBaseRev,
-  symphonyBranchName,
-  type IntegrationResult,
-  type SourceHandoff,
-} from "../integration/models.js";
+import { symphonyBranchName, type GithubCloneSourceHandoff } from "../integration/models.js";
 import { IntegrationService } from "../integration/service.js";
 import { WorkerPromptService } from "../prompt/service.js";
 import { ProtocolRecvError, ProtocolSendError } from "../runner/errors.js";
 import { AgentRunner, type RunnerError, type TurnOutcome } from "../runner/service.js";
 import type { ProtocolStream } from "../runner/transport.js";
-import {
-  SANDBOX_ARCHIVE_PATH,
-  SANDBOX_BUNDLE_PATH,
-  SANDBOX_SYMPHONY_DIR,
-} from "../sandbox-scripts/models.js";
+import { SANDBOX_SYMPHONY_DIR } from "../sandbox-scripts/models.js";
 import { SandboxScriptService } from "../sandbox-scripts/service.js";
 import { shellQuote } from "../sandbox-scripts/shell-quote.js";
 import { makeRedactor } from "../secrets/redactor.js";
 import {
   DispatchError,
   FpWriteFailedError,
-  IntegrationFailedError,
   MissingCodexAuthError,
   ProtocolStreamError,
   SandboxSetupError,
@@ -66,11 +56,10 @@ import {
 } from "./state.js";
 import { writeTranscript } from "./transcript.js";
 
-// In-sandbox path the v1 demo copies host `~/.codex/auth.json` into.
-// `daytona.createSandbox` then sets `CODEX_HOME` to the parent dir so codex
-// picks up the auth on app-server start. Locked path; productionized API-key
-// path is deferred to SWYRD-jbzbqkon.
-const SANDBOX_CODEX_HOME = "/tmp";
+// In-sandbox path the orchestrator copies host Codex auth into for this run.
+// It lives outside the repo and is removed by the run scope finalizer after the
+// worker turn closes.
+const SANDBOX_CODEX_HOME = `${SANDBOX_SYMPHONY_DIR}/codex-home`;
 const SANDBOX_CODEX_AUTH_PATH = `${SANDBOX_CODEX_HOME}/auth.json`;
 const SANDBOX_GIT_CONFIG_PATH = `${SANDBOX_SYMPHONY_DIR}/gitconfig`;
 const SANDBOX_WORKER_ENV_PATH = `${SANDBOX_SYMPHONY_DIR}/worker-env`;
@@ -109,60 +98,49 @@ const codexAppServerCommand = (
   ].join("\n");
 };
 
-// Truncate the worker's `summary` for the `summary head` portion of
-// `symphony_last_error`, but never wrap or rephrase the user-facing comment
-// body (that is pass-through verbatim — locked in §7).
-const summaryHead = (summary: string): string => truncateLastError(summary);
-
-const prepareSourceHandoff = (
+const prepareGithubCloneHandoff = (
   integration: Context.Tag.Service<IntegrationService>,
   config: OrchestratorServiceConfig,
   issueId: string,
   attempt: number,
-): Effect.Effect<SourceHandoff, DispatchError> => {
+): Effect.Effect<GithubCloneSourceHandoff, DispatchError> => {
   const branchName = symphonyBranchName(issueId, attempt);
   const githubCloneBranchName =
     config.branchPrefix === undefined
       ? branchName
       : `${config.branchPrefix.replace(/\/?$/u, "/")}${branchName.slice("symphony/".length)}`;
-  const prepared =
-    config.source.kind === "archive"
-      ? integration.prepareSourceHandoff()
-      : integration.prepareGithubCloneSourceHandoff({
-          repoUrl: config.source.repoUrl,
-          baseBranch: config.source.baseBranch,
-          repoPath: config.repoPath,
-          branchName: githubCloneBranchName,
-          githubToken: config.source.githubToken,
-        });
 
-  return prepared.pipe(
-    Effect.mapError(
-      (err) => new DispatchError({ stage: "prepare-source", issueId, reason: err.stderr }),
-    ),
-  );
+  return integration
+    .prepareGithubCloneSourceHandoff({
+      repoUrl: config.source.repoUrl,
+      baseBranch: config.source.baseBranch,
+      repoPath: config.repoPath,
+      branchName: githubCloneBranchName,
+      githubToken: config.source.githubToken,
+    })
+    .pipe(
+      Effect.mapError(
+        (err) => new DispatchError({ stage: "prepare-source", issueId, reason: err.stderr }),
+      ),
+    );
 };
 
 const workerPromptSource = (
-  handoff: SourceHandoff,
-  repoPath: string,
+  handoff: GithubCloneSourceHandoff,
   runId: string,
   sandboxId: string,
-) =>
-  handoff.kind === "archive"
-    ? { kind: "archive" as const, repoPath }
-    : {
-        kind: "githubClone" as const,
-        repoUrl: handoff.repoUrl,
-        baseBranch: handoff.baseBranch,
-        baseSha: handoff.baseSha,
-        repoPath: handoff.repoPath,
-        branchName: handoff.branchName,
-        metadataPath: `${SANDBOX_SYMPHONY_DIR}/source.json`,
-        runId,
-        sandboxId,
-        fpRestWorkdir: SANDBOX_FP_REST_WORKDIR,
-      };
+) => ({
+  kind: "githubClone" as const,
+  repoUrl: handoff.repoUrl,
+  baseBranch: handoff.baseBranch,
+  baseSha: handoff.baseSha,
+  repoPath: handoff.repoPath,
+  branchName: handoff.branchName,
+  metadataPath: `${SANDBOX_SYMPHONY_DIR}/source.json`,
+  runId,
+  sandboxId,
+  fpRestWorkdir: SANDBOX_FP_REST_WORKDIR,
+});
 
 const defaultRunId = (issue: EligibleIssue, attempt: number): string =>
   `swy-${issue.detail.displayId.toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")}-${attempt}`;
@@ -214,6 +192,47 @@ const renderWorkerEnvFile = (
     ...pairs.map(([name, value]) => shellExportLine(name, value)),
     "",
   ].join("\n");
+};
+
+const collectJsonStringSecrets = (
+  content: string,
+  issueId: string,
+  attempt: number,
+): Effect.Effect<ReadonlyArray<string>, SandboxSetupError> => {
+  const values = new Set<string>();
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") {
+      if (value.length >= 16) {
+        values.add(value);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        collect(entry);
+      }
+      return;
+    }
+    if (typeof value === "object" && value !== null) {
+      for (const entry of Object.values(value)) {
+        collect(entry);
+      }
+    }
+  };
+
+  const decoded = Schema.decodeUnknownEither(Schema.parseJson(Schema.Unknown))(content);
+  if (Either.isLeft(decoded)) {
+    return Effect.fail(
+      new SandboxSetupError({
+        issueId,
+        attempt,
+        stage: "upload",
+        reason: "codex auth JSON decode failed",
+      }),
+    );
+  }
+  collect(decoded.right);
+  return Effect.succeed(Array.from(values));
 };
 
 type GithubCloneCompletion = {
@@ -340,13 +359,91 @@ const verifyGithubCloneCompletion = (
     ),
   );
 
-const cleanupWorkerEnv = (
+const cleanupSandboxSecrets = (
+  daytona: Context.Tag.Service<DaytonaAdapter>,
+  fp: Context.Tag.Service<FpService>,
+  handle: SandboxHandle,
+  issueId: string,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const cleanup = yield* Effect.either(
+      daytona.executeCommand(
+        handle,
+        [
+          "set +x",
+          `rm -f ${shellQuote(SANDBOX_WORKER_ENV_PATH)}`,
+          `rm -f ${shellQuote(SANDBOX_CODEX_AUTH_PATH)}`,
+          `rmdir ${shellQuote(SANDBOX_CODEX_HOME)} 2>/dev/null || true`,
+        ].join("\n"),
+      ),
+    );
+
+    const failureReason = Either.match(cleanup, {
+      onLeft: (error) => error.reason,
+      onRight: (result) =>
+        result.exitCode === 0 ? undefined : `cleanup command exited ${result.exitCode}`,
+    });
+    if (failureReason === undefined) {
+      return;
+    }
+
+    const note = `Sandbox secret cleanup failed for Daytona sandbox ${handle.id}; manually inspect and remove /tmp/.symphony secret files if the sandbox is retained.`;
+    yield* Effect.logWarning("sandbox.secret-cleanup.failed").pipe(
+      Effect.annotateLogs({
+        issue_id: issueId,
+        sandbox_id: handle.id,
+        reason: truncateLastError(failureReason),
+      }),
+    );
+    yield* fp.addComment(issueId, note).pipe(
+      Effect.catchAll((error) =>
+        Effect.logWarning("sandbox secret cleanup fp comment failed").pipe(
+          Effect.annotateLogs({
+            issue_id: issueId,
+            sandbox_id: handle.id,
+            error_tag: error._tag,
+          }),
+        ),
+      ),
+    );
+  });
+
+const prepareSandboxSecretDirs = (
   daytona: Context.Tag.Service<DaytonaAdapter>,
   handle: SandboxHandle,
-): Effect.Effect<void> =>
+): Effect.Effect<void, SandboxSetupError> =>
   daytona
-    .executeCommand(handle, `rm -f ${shellQuote(SANDBOX_WORKER_ENV_PATH)}`)
-    .pipe(Effect.ignore);
+    .executeCommand(
+      handle,
+      [
+        "set +x",
+        `mkdir -p ${shellQuote(SANDBOX_CODEX_HOME)}`,
+        `mkdir -p ${shellQuote(SANDBOX_FP_REST_WORKDIR)}`,
+      ].join("\n"),
+    )
+    .pipe(
+      Effect.mapError(
+        (err): SandboxSetupError =>
+          new SandboxSetupError({
+            issueId: handle.labels.fp_issue_id ?? "unknown",
+            attempt: Number.parseInt(handle.labels.attempt ?? "0", 10) || 0,
+            stage: "upload",
+            reason: err.reason,
+          }),
+      ),
+      Effect.flatMap((result) =>
+        result.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new SandboxSetupError({
+                issueId: handle.labels.fp_issue_id ?? "unknown",
+                attempt: Number.parseInt(handle.labels.attempt ?? "0", 10) || 0,
+                stage: "upload",
+                reason: result.stderr,
+              }),
+            ),
+      ),
+    );
 
 const restrictWorkerEnv = (
   daytona: Context.Tag.Service<DaytonaAdapter>,
@@ -409,20 +506,18 @@ export type OrchestratorServiceConfig = {
   readonly autoStopInterval: number;
   // From WorkflowConfig.sandbox.autoDeleteInterval (-1 default).
   readonly autoDeleteInterval: number;
-  // Host path to the codex auth.json that gets copied into the sandbox at
-  // /workspace/codex-home/auth.json. Resolved by index.ts via env →
-  // ~/.codex/auth.json. Pre-claim missing → MissingCodexAuthError → log + skip.
+  // Host path to the Codex auth.json copied into the sandbox Codex home.
+  // Resolved by index.ts via env → ~/.codex/auth.json. Pre-claim missing →
+  // MissingCodexAuthError → log + skip.
   readonly codexAuthHostPath: string;
   readonly repoPath: string;
-  readonly source:
-    | { readonly kind: "archive" }
-    | {
-        readonly kind: "githubClone";
-        readonly repoUrl: string;
-        readonly baseBranch: string;
-        readonly artifactStrategy: "pr";
-        readonly githubToken?: string | undefined;
-      };
+  readonly source: {
+    readonly kind: "githubClone";
+    readonly repoUrl: string;
+    readonly baseBranch: string;
+    readonly artifactStrategy: "pr";
+    readonly githubToken?: string | undefined;
+  };
   readonly fpRest: {
     readonly remote: "rest-api";
     readonly token?: string | undefined;
@@ -445,8 +540,8 @@ export type RunOneResult = {
   readonly issueId: string;
   readonly attempt: number;
   readonly status: "integrated" | "needs-attention";
-  // Branch is present whenever a bundle was integrated, or when a githubClone
-  // worker-owned PR handoff reached the post-turn verification gate.
+  // Branch is present when the worker-owned PR handoff reached the post-turn
+  // verification gate.
   readonly branch: string | undefined;
   readonly summary: string | undefined;
   readonly lastError: string | undefined;
@@ -583,11 +678,10 @@ const turnOutcomeToProtocol = (
   }
 };
 
-// Run a single dispatched issue end-to-end through the 20-step §5b pipeline.
-// Outer scope owns: state-claim release finalizer, prompt-tempdir cleanup,
-// archive-tempdir cleanup. Inner Effect.scoped(runTurn) owns: codex app-server
-// session lifetime — closes BEFORE the finalize bundle script runs in a
-// separate session. See orchestrator-runone.md.
+// Run a single dispatched issue end-to-end through the remote Daytona pipeline.
+// Outer scope owns: state-claim release finalizer plus prompt/env/secret
+// cleanup. Inner Effect.scoped(runTurn) owns the codex app-server session
+// lifetime and closes it before post-turn fp/PR metadata verification.
 const runOneImpl =
   (
     config: OrchestratorServiceConfig,
@@ -616,7 +710,7 @@ const runOneImpl =
 
       // Step 5: prepare source handoff. Pre-claim per §5b rule 1 — failure
       // here never writes fp; the tick handler logs + skips.
-      const handoff = yield* prepareSourceHandoff(integration, config, issueId, attempt);
+      const handoff = yield* prepareGithubCloneHandoff(integration, config, issueId, attempt);
 
       // Pre-claim host codex auth read (F2b in matrix). v1 demo path.
       const codexAuthExists = yield* fs.exists(config.codexAuthHostPath).pipe(
@@ -645,8 +739,8 @@ const runOneImpl =
       // later — but order doesn't matter for these independent resources).
       //
       // Post-claim failure-matrix routing (B2): the inner pipeline can fail
-      // with SandboxSetupError / IntegrationFailedError / TranscriptWriteError
-      // / FpWriteFailedError. Those tags get caught at the bottom of this
+      // with SandboxSetupError / TranscriptWriteError / FpWriteFailedError.
+      // Those tags get caught at the bottom of this
       // scoped block and routed to the prescribed markNeedsAttention write
       // before being absorbed into a `needs-attention` RunOneResult — so the
       // fp issue is NEVER left at status=in-progress without a last_error.
@@ -665,15 +759,6 @@ const runOneImpl =
           // on scope exit (LIFO) — guarantees the slot frees regardless of
           // outcome (success, failure, interrupt). Spec line 327 invariant.
           yield* Effect.addFinalizer(() => releaseEffect(issueId)(ref));
-          // Source archive tempdir cleanup. Prompt/env tempdirs are registered
-          // after those files are rendered because githubClone prompts need the
-          // Daytona sandbox id in their contract.
-          if (handoff.kind === "archive") {
-            yield* Effect.addFinalizer(() =>
-              fs.remove(dirname(handoff.archivePath), { recursive: true }).pipe(Effect.ignore),
-            );
-          }
-
           // Step 3: claim into running set. Failure here is AlreadyClaimedError
           // — the issue was already in flight (state-ts invariant). The
           // finalizer above is a no-op for a slot we never owned.
@@ -725,34 +810,50 @@ const runOneImpl =
                 }),
             ),
           );
+          yield* Effect.addFinalizer(() => cleanupSandboxSecrets(daytona, fp, handle, issueId));
 
           // Layer sandbox_id annotation onto every subsequent log emission
           // for this scope.
           yield* Effect.annotateLogsScoped({ sandbox_id: handle.id });
           yield* Effect.logInfo("sandbox.created");
+          const codexAuthContent = yield* fs.readFileString(config.codexAuthHostPath).pipe(
+            Effect.mapError(
+              (err): SandboxSetupError =>
+                new SandboxSetupError({
+                  issueId,
+                  attempt,
+                  stage: "upload",
+                  reason: err.message,
+                }),
+            ),
+          );
+          const codexAuthSecrets = yield* collectJsonStringSecrets(
+            codexAuthContent,
+            issueId,
+            attempt,
+          );
           const transcriptRedactor = makeRedactor([
             config.fpRest.token ?? "",
-            config.source.kind === "githubClone" ? (config.source.githubToken ?? "") : "",
+            config.source.githubToken ?? "",
+            ...codexAuthSecrets,
           ]);
 
-          if (handoff.kind === "githubClone") {
-            yield* writeFp(
-              fp.setRunMetadata(issueId, {
-                branch: handoff.branchName,
-                baseSha: handoff.baseSha,
-                runId,
-                sandboxId: handle.id,
-              }),
-              issueId,
-              "setRunMetadata",
-            );
-          }
+          yield* writeFp(
+            fp.setRunMetadata(issueId, {
+              branch: handoff.branchName,
+              baseSha: handoff.baseSha,
+              runId,
+              sandboxId: handle.id,
+            }),
+            issueId,
+            "setRunMetadata",
+          );
 
           const rendered = yield* prompt
             .renderPrompt({
               issue: issue.detail,
               attempt,
-              source: workerPromptSource(handoff, config.repoPath, runId, handle.id),
+              source: workerPromptSource(handoff, runId, handle.id),
             })
             .pipe(
               Effect.mapError(
@@ -770,9 +871,6 @@ const runOneImpl =
           );
 
           const workerEnvHostPath = yield* Effect.gen(function* () {
-            if (handoff.kind !== "githubClone") {
-              return undefined;
-            }
             const dir = yield* fs.makeTempDirectory({ prefix: "swy-worker-env-" }).pipe(
               Effect.mapError(
                 (err): SandboxSetupError =>
@@ -788,12 +886,10 @@ const runOneImpl =
               fs.remove(dir, { recursive: true }).pipe(Effect.ignore),
             );
             const hostPath = `${dir}/worker-env`;
-            const githubToken =
-              config.source.kind === "githubClone" ? config.source.githubToken : undefined;
             yield* fs
               .writeFileString(
                 hostPath,
-                renderWorkerEnvFile(config.fpRest, githubToken, {
+                renderWorkerEnvFile(config.fpRest, config.source.githubToken, {
                   branch: handoff.branchName,
                   baseSha: handoff.baseSha,
                   runId,
@@ -832,102 +928,59 @@ const runOneImpl =
             "addComment(dispatched)",
           );
 
-          // Archive setup needs the source archive before step 9. In githubClone
-          // mode, upload the secret-bearing worker env only after clone setup
-          // succeeds so setup/session failures cannot strand tokens in the sandbox.
-          if (handoff.kind === "archive") {
-            yield* daytona
-              .uploadFiles(handle, [
-                { src: handoff.archivePath, dst: SANDBOX_ARCHIVE_PATH },
-                { src: rendered.hostPath, dst: rendered.sandboxPath },
-                { src: config.codexAuthHostPath, dst: SANDBOX_CODEX_AUTH_PATH },
-              ])
-              .pipe(
-                Effect.mapError(
-                  (err) =>
-                    new SandboxSetupError({
-                      issueId,
-                      attempt,
-                      stage: "upload",
-                      reason: err.reason,
-                    }),
-                ),
-              );
-            yield* Effect.logInfo("source.uploaded");
-          }
+          // Step 9: in-sandbox setup script. Clone the remote repo, checkout
+          // the pinned base SHA, and create the deterministic worker branch.
+          yield* scripts
+            .setupClone(handle, {
+              repoUrl: handoff.repoUrl,
+              baseBranch: handoff.baseBranch,
+              baseSha: handoff.baseSha,
+              repoPath: handoff.repoPath,
+              branchName: handoff.branchName,
+              symphonyDir: SANDBOX_SYMPHONY_DIR,
+              githubToken: config.source.githubToken,
+            })
+            .pipe(
+              Effect.mapError(
+                (err): SandboxSetupError =>
+                  new SandboxSetupError({
+                    issueId,
+                    attempt,
+                    stage: "setup",
+                    reason: "stderr" in err ? err.stderr : err.reason,
+                  }),
+              ),
+            );
 
-          // Step 9: in-sandbox setup script. Archive mode preserves the local
-          // synthetic base; GitHub clone mode checks out the pinned remote SHA.
-          const setup =
-            handoff.kind === "archive"
-              ? scripts.setupRepo(handle, {
-                  archivePath: SANDBOX_ARCHIVE_PATH,
-                  repoPath: config.repoPath,
-                  symphonyDir: SANDBOX_SYMPHONY_DIR,
-                })
-              : scripts.setupClone(handle, {
-                  repoUrl: handoff.repoUrl,
-                  baseBranch: handoff.baseBranch,
-                  baseSha: handoff.baseSha,
-                  repoPath: handoff.repoPath,
-                  branchName: handoff.branchName,
-                  symphonyDir: SANDBOX_SYMPHONY_DIR,
-                  githubToken:
-                    config.source.kind === "githubClone" ? config.source.githubToken : undefined,
-                });
-          yield* setup.pipe(
-            Effect.mapError(
-              (err): SandboxSetupError =>
-                new SandboxSetupError({
-                  issueId,
-                  attempt,
-                  stage: "setup",
-                  reason: "stderr" in err ? err.stderr : err.reason,
-                }),
-            ),
-          );
-
-          if (handoff.kind === "githubClone") {
-            yield* Effect.addFinalizer(() => cleanupWorkerEnv(daytona, handle));
-            yield* daytona
-              .uploadFiles(handle, [
-                { src: rendered.hostPath, dst: rendered.sandboxPath },
-                { src: config.codexAuthHostPath, dst: SANDBOX_CODEX_AUTH_PATH },
-                ...(workerEnvHostPath === undefined
-                  ? []
-                  : [{ src: workerEnvHostPath, dst: SANDBOX_WORKER_ENV_PATH }]),
-              ])
-              .pipe(
-                Effect.mapError(
-                  (err) =>
-                    new SandboxSetupError({
-                      issueId,
-                      attempt,
-                      stage: "upload",
-                      reason: err.reason,
-                    }),
-                ),
-              );
-            yield* restrictWorkerEnv(daytona, handle);
-            yield* Effect.logInfo("source.uploaded");
-          }
+          // Upload secret-bearing files only after clone setup succeeds, so
+          // setup failures cannot strand credentials in the sandbox.
+          yield* prepareSandboxSecretDirs(daytona, handle);
+          yield* daytona
+            .uploadFiles(handle, [
+              { src: rendered.hostPath, dst: rendered.sandboxPath },
+              { src: config.codexAuthHostPath, dst: SANDBOX_CODEX_AUTH_PATH },
+              { src: workerEnvHostPath, dst: SANDBOX_WORKER_ENV_PATH },
+            ])
+            .pipe(
+              Effect.mapError(
+                (err) =>
+                  new SandboxSetupError({
+                    issueId,
+                    attempt,
+                    stage: "upload",
+                    reason: err.reason,
+                  }),
+              ),
+            );
+          yield* restrictWorkerEnv(daytona, handle);
+          yield* Effect.logInfo("source.uploaded");
 
           // Steps 10 + 11: child scope for codex app-server session + runTurn.
-          // Effect.scoped closes the codex session BEFORE the parent scope
-          // proceeds to step 13 (finalize) — which runs in a separate
-          // executeCommand session. Load-bearing per §5b clarification #3.
+          // Effect.scoped closes the codex session before post-turn fp reads.
           const turnResult = yield* Effect.scoped(
             Effect.gen(function* () {
               const daytonaStream = yield* session
-                .start(
-                  handle,
-                  codexAppServerCommand(
-                    handoff.kind === "archive" ? config.repoPath : handoff.repoPath,
-                    {
-                      workerEnv: handoff.kind === "githubClone",
-                    },
-                  ),
-                )
+                .start(handle, codexAppServerCommand(handoff.repoPath, { workerEnv: true }))
                 .pipe(
                   Effect.mapError(
                     (err): SandboxSetupError =>
@@ -945,7 +998,7 @@ const runOneImpl =
                 .runTurn({
                   stream: protocolStream,
                   prompt: rendered.content,
-                  cwd: handoff.kind === "archive" ? config.repoPath : handoff.repoPath,
+                  cwd: handoff.repoPath,
                   turnTimeoutMs: config.turnTimeoutMs,
                 })
                 .pipe(Effect.mapError((err) => runnerErrorToProtocol(issueId, attempt, err)));
@@ -969,27 +1022,16 @@ const runOneImpl =
           );
           yield* writeTranscript(runDir, turnResult.events, { redact: transcriptRedactor.redact });
 
-          // F7: non-completed TurnOutcome. Best-effort finalize + download for
-          // forensics, then surface needs-attention. We swallow finalize/
-          // download errors here so the original protocol-stream error stays
-          // the lastError on the issue (F7's salvage is *additive* — it tries
-          // to grab forensic artifacts; the issue is already lost).
+          // F7: non-completed TurnOutcome. The sandbox worker owns fp terminal
+          // state after handoff; if it already wrote a terminal value, preserve
+          // that state and only write local evidence.
           const outcomeProtocol = turnOutcomeToProtocol(issueId, attempt, turnResult);
           if (outcomeProtocol !== null) {
-            if (handoff.kind === "archive") {
-              yield* salvageBundle({
-                handle,
-                runDir,
-                scripts,
-                daytona,
-                repoPath: config.repoPath,
-              }).pipe(Effect.ignore);
-            }
             const lastError = `protocol stream ${outcomeProtocol.kind}: ${truncateLastError(outcomeProtocol.reason)}`;
             const record = makeRecord({
               status: "needs-attention",
               branch: "",
-              baseRev: sourceBaseRev(handoff),
+              baseRev: handoff.baseSha,
               workerStatus: Option.none(),
               startedAt,
               attempt,
@@ -997,10 +1039,7 @@ const runOneImpl =
             yield* artifactStore
               .writeRecord(issueId, attempt, record)
               .pipe(Effect.mapError(mapArtifactWriteError));
-            const skipCrashPark =
-              handoff.kind === "githubClone"
-                ? yield* shouldSkipGithubCloneCrashPark(fp, issueId)
-                : false;
+            const skipCrashPark = yield* shouldSkipGithubCloneCrashPark(fp, issueId);
             if (!skipCrashPark) {
               yield* writeFp(
                 fp.markNeedsAttention(issueId, lastError),
@@ -1019,307 +1058,84 @@ const runOneImpl =
             return resultFromError(issueId, attempt, lastError, undefined, undefined);
           }
 
-          if (handoff.kind === "githubClone" && config.source.kind === "githubClone") {
-            const verified = yield* verifyGithubCloneCompletion(fp, issueId, {
-              branch: handoff.branchName,
-              baseSha: handoff.baseSha,
-              runId,
-              sandboxId: handle.id,
-            });
-            if (verified.kind === "missing") {
-              const record = makeRecord({
-                status: "needs-attention",
-                branch: handoff.branchName,
-                baseRev: handoff.baseSha,
-                workerStatus: Option.none(),
-                startedAt,
-                attempt,
-                integrationError: verified.reason,
-              });
-              yield* artifactStore
-                .writeRecord(issueId, attempt, record)
-                .pipe(Effect.mapError(mapArtifactWriteError));
-              yield* Effect.logWarning("worker.handoff.incomplete").pipe(
-                Effect.annotateLogs({
-                  branch: handoff.branchName,
-                  run_id: runId,
-                  sandbox_id: handle.id,
-                  reason: verified.reason,
-                }),
-              );
-              return {
-                issueId,
-                attempt,
-                status: "needs-attention" as const,
-                branch: handoff.branchName,
-                summary: undefined,
-                lastError: verified.reason,
-              };
-            }
-
+          const verified = yield* verifyGithubCloneCompletion(fp, issueId, {
+            branch: handoff.branchName,
+            baseSha: handoff.baseSha,
+            runId,
+            sandboxId: handle.id,
+          });
+          if (verified.kind === "missing") {
             const record = makeRecord({
-              status: "integrated",
-              branch: verified.completion.branch,
-              baseRev: verified.completion.baseSha,
-              workerStatus: Option.some("completed"),
+              status: "needs-attention",
+              branch: handoff.branchName,
+              baseRev: handoff.baseSha,
+              workerStatus: Option.none(),
               startedAt,
               attempt,
+              integrationError: verified.reason,
             });
             yield* artifactStore
               .writeRecord(issueId, attempt, record)
               .pipe(Effect.mapError(mapArtifactWriteError));
-            yield* Effect.logInfo("worker.handoff.completed").pipe(
+            const skipCrashPark = yield* shouldSkipGithubCloneCrashPark(fp, issueId);
+            if (!skipCrashPark) {
+              yield* writeFp(
+                fp.markNeedsAttention(issueId, verified.reason),
+                issueId,
+                "markNeedsAttention(worker-handoff)",
+              );
+            }
+            yield* Effect.logWarning("worker.handoff.incomplete").pipe(
               Effect.annotateLogs({
-                branch: verified.completion.branch,
-                run_id: verified.completion.runId,
-                sandbox_id: verified.completion.sandboxId,
-                pr_url: verified.completion.prUrl,
-                pr_number: verified.completion.prNumber,
-                head_sha: verified.completion.headSha,
+                branch: handoff.branchName,
+                run_id: runId,
+                sandbox_id: handle.id,
+                reason: verified.reason,
+                fp_write_skipped: skipCrashPark,
               }),
             );
             return {
               issueId,
               attempt,
-              status: "integrated" as const,
-              branch: verified.completion.branch,
-              summary: `Worker opened PR ${verified.completion.prUrl}`,
-              lastError: undefined,
+              status: "needs-attention" as const,
+              branch: handoff.branchName,
+              summary: undefined,
+              lastError: verified.reason,
             };
           }
 
-          // Step 13: finalize the bundle inside the sandbox (separate session).
-          const bundle = yield* scripts
-            .finalizeBundle(handle, {
-              repoPath: config.repoPath,
-              bundlePath: SANDBOX_BUNDLE_PATH,
-            })
-            .pipe(
-              Effect.mapError(
-                (err): SandboxSetupError =>
-                  new SandboxSetupError({
-                    issueId,
-                    attempt,
-                    stage: "finalize",
-                    reason: "stderr" in err ? err.stderr : err.reason,
-                  }),
-              ),
-            );
-
-          // Step 14: download bundle + outcome.json.
-          yield* daytona
-            .downloadFiles(handle, [
-              { src: bundle.bundlePath, dst: `${runDir}/work.bundle` },
-              { src: `${SANDBOX_SYMPHONY_DIR}/outcome.json`, dst: `${runDir}/outcome.json` },
-            ])
-            .pipe(
-              Effect.mapError(
-                (err) =>
-                  new SandboxSetupError({
-                    issueId,
-                    attempt,
-                    stage: "download",
-                    reason: err.reason,
-                  }),
-              ),
-            );
-
-          // Step 15: decode worker outcome envelope. F10: missing/malformed
-          // routes to needs-attention with `malformed worker outcome`.
-          const decoded = yield* artifactStore.readOutcome(issueId, attempt).pipe(
-            Effect.matchEffect({
-              onSuccess: (outcome) => Effect.succeed({ kind: "ok" as const, outcome }),
-              onFailure: (err) =>
-                Effect.succeed({
-                  kind: "malformed" as const,
-                  reason: artifactReadErrorReason(err),
-                }),
-            }),
-          );
-
-          yield* Effect.logInfo("bundle.decoded").pipe(
-            Effect.annotateLogs({
-              outcome_kind: decoded.kind,
-              commits_beyond_base: bundle.commitsBeyondBase,
-            }),
-          );
-
-          // F11: empty bundle (commitsBeyondBase=0). Skip integration; route
-          // to needs-attention with the locked error string.
-          if (bundle.commitsBeyondBase === 0) {
-            const lastError =
-              decoded.kind === "ok" && decoded.outcome.status === "completed"
-                ? "completed status with no commits"
-                : "worker produced no commits";
-            const record = makeRecord({
-              status: "needs-attention",
-              branch: "",
-              baseRev: sourceBaseRev(handoff),
-              workerStatus:
-                decoded.kind === "ok" ? Option.some(decoded.outcome.status) : Option.none(),
-              startedAt,
-              attempt,
-            });
-            yield* artifactStore
-              .writeRecord(issueId, attempt, record)
-              .pipe(Effect.mapError(mapArtifactWriteError));
-            yield* writeFp(
-              fp.markNeedsAttention(issueId, lastError),
-              issueId,
-              "markNeedsAttention(empty)",
-            );
-            yield* Effect.logWarning("failure").pipe(
-              Effect.annotateLogs({
-                failure_code: "F11",
-                error_tag: "EmptyBundle",
-                reason: lastError,
-              }),
-            );
-            return resultFromError(issueId, attempt, lastError, undefined, undefined);
-          }
-
-          // F10: malformed outcome — integrate forensic branch (plain name
-          // per locked decision; no `-incomplete` suffix).
-          if (decoded.kind === "malformed") {
-            const integrated = yield* integration
-              .integrateBundle(`${runDir}/work.bundle`, issueId)
-              .pipe(
-                Effect.mapError(
-                  (err): IntegrationFailedError =>
-                    new IntegrationFailedError({
-                      issueId,
-                      attempt,
-                      reason: "stderr" in err ? err.stderr : "integration failed",
-                    }),
-                ),
-              );
-            const record = makeRecord({
-              status: "needs-attention",
-              branch: integrated.branch,
-              baseRev: sourceBaseRev(handoff),
-              workerStatus: Option.none(),
-              startedAt,
-              attempt,
-              integrationError: undefined,
-            });
-            yield* artifactStore
-              .writeRecord(issueId, attempt, record)
-              .pipe(Effect.mapError(mapArtifactWriteError));
-            yield* writeFp(
-              fp.markNeedsAttention(issueId, "malformed worker outcome"),
-              issueId,
-              "markNeedsAttention(malformed)",
-            );
-            yield* Effect.logWarning("failure").pipe(
-              Effect.annotateLogs({
-                failure_code: "F10",
-                error_tag: "MalformedOutcome",
-                reason: "malformed worker outcome",
-              }),
-            );
-            return resultFromError(
-              issueId,
-              attempt,
-              "malformed worker outcome",
-              integrated.branch,
-              undefined,
-            );
-          }
-
-          // We have a decoded outcome AND a non-empty bundle. Cadence #2.
-          yield* writeFp(
-            fp.addComment(issueId, "Worker turn completed; integrating"),
-            issueId,
-            "addComment(integrating)",
-          );
-
-          // Step 16: integrate bundle. F13 routes failure to needs-attention.
-          const integrated: IntegrationResult = yield* integration
-            .integrateBundle(`${runDir}/work.bundle`, issueId)
-            .pipe(
-              Effect.mapError(
-                (err): IntegrationFailedError =>
-                  new IntegrationFailedError({
-                    issueId,
-                    attempt,
-                    reason: "stderr" in err ? err.stderr : "integration failed",
-                  }),
-              ),
-            );
-
-          yield* Effect.logInfo("integration.succeeded").pipe(
-            Effect.annotateLogs({ branch: integrated.branch }),
-          );
-
-          // F12: worker non-completed status with commits — plain branch name
-          // already created via integrate; route to needs-attention with
-          // `<status>: <summary head>`.
-          if (decoded.outcome.status !== "completed") {
-            const lastError = `${decoded.outcome.status}: ${summaryHead(decoded.outcome.summary)}`;
-            const record = makeRecord({
-              status: "needs-attention",
-              branch: integrated.branch,
-              baseRev: sourceBaseRev(handoff),
-              workerStatus: Option.some(decoded.outcome.status),
-              startedAt,
-              attempt,
-              integrationError: undefined,
-            });
-            yield* artifactStore
-              .writeRecord(issueId, attempt, record)
-              .pipe(Effect.mapError(mapArtifactWriteError));
-            yield* writeFp(
-              fp.markNeedsAttention(issueId, decoded.outcome.summary),
-              issueId,
-              "markNeedsAttention(non-completed)",
-            );
-            yield* Effect.logWarning("failure").pipe(
-              Effect.annotateLogs({
-                failure_code: "F12",
-                error_tag: "WorkerNonCompleted",
-                reason: lastError,
-              }),
-            );
-            return resultFromError(
-              issueId,
-              attempt,
-              lastError,
-              integrated.branch,
-              decoded.outcome.summary,
-            );
-          }
-
-          // Happy path. Write record, mark completed, cadence #3 is the final
-          // summary inline in markCompleted.
           const record = makeRecord({
             status: "integrated",
-            branch: integrated.branch,
-            baseRev: sourceBaseRev(handoff),
-            workerStatus: Option.some(decoded.outcome.status),
+            branch: verified.completion.branch,
+            baseRev: verified.completion.baseSha,
+            workerStatus: Option.some("completed"),
             startedAt,
             attempt,
-            integrationError: undefined,
           });
           yield* artifactStore
             .writeRecord(issueId, attempt, record)
             .pipe(Effect.mapError(mapArtifactWriteError));
-          yield* writeFp(
-            fp.markCompleted(issueId, decoded.outcome.summary),
-            issueId,
-            "markCompleted",
+          yield* Effect.logInfo("worker.handoff.completed").pipe(
+            Effect.annotateLogs({
+              branch: verified.completion.branch,
+              run_id: verified.completion.runId,
+              sandbox_id: verified.completion.sandboxId,
+              pr_url: verified.completion.prUrl,
+              pr_number: verified.completion.prNumber,
+              head_sha: verified.completion.headSha,
+            }),
           );
-          yield* Effect.logInfo("fp.done").pipe(Effect.annotateLogs({ branch: integrated.branch }));
           return {
             issueId,
             attempt,
             status: "integrated" as const,
-            branch: integrated.branch,
-            summary: decoded.outcome.summary,
+            branch: verified.completion.branch,
+            summary: `Worker opened PR ${verified.completion.prUrl}`,
             lastError: undefined,
           };
         }).pipe(
-          // Failure-matrix routing for post-claim throws (F3-F6, F8, F9, F13,
-          // F14). Each tag maps to the prescribed `symphony_last_error` head
+          // Failure-matrix routing for post-claim throws (F3-F7, F9, F14).
+          // Each tag maps to the prescribed `symphony_last_error` head
           // string, writes an outcome record (status=needs-attention), and
           // calls markNeedsAttention. The terminal markNeedsAttention itself
           // can fail — F15 says retry once then leave at in-progress; we
@@ -1333,7 +1149,7 @@ const runOneImpl =
                 artifactStore,
                 issueId,
                 attempt,
-                baseRev: sourceBaseRev(handoff),
+                baseRev: handoff.baseSha,
                 lastError: sandboxSetupLastError(err),
                 comment: sandboxSetupLastError(err),
                 startedAt,
@@ -1341,46 +1157,40 @@ const runOneImpl =
                 errorTag: err._tag,
               }),
             ProtocolStreamError: (err) =>
-              routePostClaimFailure({
-                ref,
-                fp,
-                artifactStore,
-                issueId,
-                attempt,
-                baseRev: sourceBaseRev(handoff),
-                lastError: `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`,
-                comment: `protocol stream ${err.kind}: ${err.reason}`,
-                startedAt,
-                failureCode: "F7",
-                errorTag: err._tag,
-              }),
-            IntegrationFailedError: (err) =>
-              routePostClaimFailure({
-                ref,
-                fp,
-                artifactStore,
-                issueId,
-                attempt,
-                baseRev: sourceBaseRev(handoff),
-                lastError: `bundle integration failed: ${truncateLastError(err.reason)}`,
-                comment: `bundle integration failed: ${err.reason}`,
-                startedAt,
-                failureCode: "F13",
-                errorTag: err._tag,
+              Effect.gen(function* () {
+                const skipFpWrite = yield* shouldSkipGithubCloneCrashPark(fp, issueId);
+                return yield* routePostClaimFailure({
+                  ref,
+                  fp,
+                  artifactStore,
+                  issueId,
+                  attempt,
+                  baseRev: handoff.baseSha,
+                  lastError: `protocol stream ${err.kind}: ${truncateLastError(err.reason)}`,
+                  comment: `protocol stream ${err.kind}: ${err.reason}`,
+                  startedAt,
+                  failureCode: "F7",
+                  errorTag: err._tag,
+                  skipFpWrite,
+                });
               }),
             TranscriptWriteError: (err) =>
-              routePostClaimFailure({
-                ref,
-                fp,
-                artifactStore,
-                issueId,
-                attempt,
-                baseRev: sourceBaseRev(handoff),
-                lastError: `${err.operation} failed: ${truncateLastError(err.reason)}`,
-                comment: `${err.operation} failed at ${err.path}: ${err.reason}`,
-                startedAt,
-                failureCode: "F9",
-                errorTag: err._tag,
+              Effect.gen(function* () {
+                const skipFpWrite = yield* shouldSkipGithubCloneCrashPark(fp, issueId);
+                return yield* routePostClaimFailure({
+                  ref,
+                  fp,
+                  artifactStore,
+                  issueId,
+                  attempt,
+                  baseRev: handoff.baseSha,
+                  lastError: `${err.operation} failed: ${truncateLastError(err.reason)}`,
+                  comment: `${err.operation} failed at ${err.path}: ${err.reason}`,
+                  startedAt,
+                  failureCode: "F9",
+                  errorTag: err._tag,
+                  skipFpWrite,
+                });
               }),
             // FpWriteFailedError on intermediate writes (claim, addComment,
             // setAttempt, setRunMetadata) — best-effort log + park. The slot
@@ -1460,32 +1270,6 @@ const resultFromError = (
   lastError,
 });
 
-// Best-effort F7 salvage: try to finalize the in-sandbox bundle and download
-// it for forensics. Errors here are intentionally absorbed by the caller
-// (Effect.ignore at the call site) so the original ProtocolStreamError stays
-// the lastError on the issue. The bundle, if it lands, sits at runDir/work.bundle
-// for human inspection — we deliberately do NOT integrate it (per the F7 row).
-const salvageBundle = (ctx: {
-  readonly handle: SandboxHandle;
-  readonly runDir: string;
-  readonly repoPath: string;
-  readonly scripts: Context.Tag.Service<SandboxScriptService>;
-  readonly daytona: Context.Tag.Service<DaytonaAdapter>;
-}): Effect.Effect<void, never, never> =>
-  Effect.gen(function* () {
-    const bundle = yield* ctx.scripts.finalizeBundle(ctx.handle, {
-      repoPath: ctx.repoPath,
-      bundlePath: SANDBOX_BUNDLE_PATH,
-    });
-    yield* ctx.daytona.downloadFiles(ctx.handle, [
-      { src: bundle.bundlePath, dst: `${ctx.runDir}/work.bundle` },
-      {
-        src: `${SANDBOX_SYMPHONY_DIR}/outcome.json`,
-        dst: `${ctx.runDir}/outcome.json`,
-      },
-    ]);
-  }).pipe(Effect.ignore);
-
 // Sandbox-step → `symphony_last_error` head string mapping per the failure
 // matrix. Single source of truth so a typo in the prefix doesn't drift across
 // branches.
@@ -1497,8 +1281,6 @@ const sandboxSetupLastError = (err: SandboxSetupError): string => {
     upload: "sandbox upload failed",
     setup: "sandbox setup failed",
     "session-start": "codex app-server start failed",
-    finalize: "bundle finalize failed",
-    download: "artifact download failed",
   };
   return `${stagePrefix[err.stage]}: ${truncateLastError(err.reason)}`;
 };
@@ -1517,10 +1299,6 @@ const sandboxStageFailureCode = (stage: SandboxSetupError["stage"]): string => {
       return "F3";
     case "session-start":
       return "F5";
-    case "finalize":
-      return "F8";
-    case "download":
-      return "F8";
   }
 };
 
@@ -1536,6 +1314,7 @@ const routePostClaimFailure = (input: {
   readonly startedAt: string;
   readonly failureCode: string;
   readonly errorTag: string;
+  readonly skipFpWrite?: boolean | undefined;
 }): Effect.Effect<RunOneResult, never, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     yield* Effect.logWarning("failure").pipe(
@@ -1559,16 +1338,22 @@ const routePostClaimFailure = (input: {
       .pipe(Effect.ignore);
     // Best-effort fp write — log and continue if it fails (F15: retry-once
     // not yet implemented; tracked for later).
-    yield* input.fp.markNeedsAttention(input.issueId, input.comment).pipe(
-      Effect.catchAll((err) =>
-        Effect.logWarning("markNeedsAttention failed; issue stays at in-progress").pipe(
-          Effect.annotateLogs({
-            issue_id: input.issueId,
-            reason: "stderr" in err ? err.stderr : err._tag,
-          }),
+    if (input.skipFpWrite !== true) {
+      yield* input.fp.markNeedsAttention(input.issueId, input.comment).pipe(
+        Effect.catchAll((err) =>
+          Effect.logWarning("markNeedsAttention failed; issue stays at in-progress").pipe(
+            Effect.annotateLogs({
+              issue_id: input.issueId,
+              reason: "stderr" in err ? err.stderr : err._tag,
+            }),
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      yield* Effect.logWarning("markNeedsAttention skipped; worker owns terminal state").pipe(
+        Effect.annotateLogs({ issue_id: input.issueId }),
+      );
+    }
     return resultFromError(input.issueId, input.attempt, input.lastError, undefined, undefined);
   });
 
