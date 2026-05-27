@@ -67,7 +67,7 @@ export const assertGithubWriteAccess = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `remote Daytona E2E requires GITHUB_TOKEN/GH_TOKEN with contents write access to ${repoFullName(env.repoUrl)}; preflight branch creation failed: ${message}`,
+      `remote Daytona E2E requires GITHUB_TOKEN/GH_TOKEN with contents read/write, workflows read/write, and pull requests read/write access to ${repoFullName(env.repoUrl)}; preflight branch creation failed: ${message}`,
     );
   } finally {
     if (created) {

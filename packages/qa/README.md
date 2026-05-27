@@ -49,7 +49,9 @@ Scenario 02 is the remote-Daytona migration signal. It is gated by
 `SWITCHYARD_REMOTE_DAYTONA_E2E=1` and is intentionally not wired into `bun run test`.
 Before it creates fp issues or Daytona sandboxes, the harness verifies that the configured
 `GITHUB_TOKEN` can create and delete an E2E-prefixed branch in the target repo. For GitHub
-fine-grained PATs, grant contents read/write and pull requests read/write access to the repo.
+fine-grained PATs, grant contents read/write, workflows read/write, and pull requests read/write
+access to the repo. GitHub may require workflow write permission when creating a branch at a commit
+that already contains `.github/workflows`.
 
 **Failure-path scenarios deferred to follow-up `SWYRD-euvkxyra`** (under epic `SWYRD-uouprnfv`):
 worker-blocked (02), research-task (03), re-arm (04), and signal-shutdown (05). Failure-mode

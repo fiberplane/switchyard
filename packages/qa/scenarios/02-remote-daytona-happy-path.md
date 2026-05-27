@@ -37,6 +37,8 @@ it.
   - `FP_WORKSPACE`
   - `FP_PROJECT_ID`
   - `SWITCHYARD_CODEX_AUTH`
+- For GitHub fine-grained PATs, `GITHUB_TOKEN` grants contents read/write, workflows read/write,
+  and pull requests read/write access to the target repository.
 - The configured Daytona snapshot contains `git`, `gh`, `fp`, `rg`, `jq`, Bun, Codex, drift,
   and ast-grep.
 - The configured base branch exists on GitHub. Override with

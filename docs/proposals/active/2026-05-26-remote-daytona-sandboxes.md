@@ -181,7 +181,7 @@ Environment variables:
 | `DAYTONA_API_URL` | Host `.env` or host shell | Optional SDK override | Never |
 | `DAYTONA_TARGET` | Host `.env` or host shell | Cloud region/target | Never |
 | `DAYTONA_SNAPSHOT` | Host `.env`, host shell, or workflow default | Snapshot name | Name only |
-| `GITHUB_TOKEN` | Host `.env` or host shell | Clone, push, PR creation, PR babysitting | Command env only |
+| `GITHUB_TOKEN` | Host `.env` or host shell | Clone, push, PR creation, PR babysitting; fine-grained PATs need contents read/write, workflows read/write, and pull requests read/write for this repo | Command env only |
 | `FP_REMOTE` | Host `.env`, host shell, or hardcoded remote default | Must be `rest-api` for no-clone fp mode | Command env only |
 | `FP_TOKEN` | Host `.env` or host shell | fp REST issue reads/writes | Command env only |
 | `FP_SERVER_URL`, `FP_WORKSPACE`, `FP_PROJECT_ID`, `FP_PROJECT_PREFIX` | Host `.env` or host shell | fp no-clone REST project context | Command env only |
