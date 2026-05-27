@@ -16,7 +16,13 @@ export const runCommand = async (
     readonly env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<CommandResult> => {
-  const result = await execFileAsync(file, [...args], {
+  const commandFile =
+    file === "fp" &&
+    options.env?.SWITCHYARD_FP_BIN !== undefined &&
+    options.env.SWITCHYARD_FP_BIN !== ""
+      ? options.env.SWITCHYARD_FP_BIN
+      : file;
+  const result = await execFileAsync(commandFile, [...args], {
     cwd: options.cwd,
     env: options.env,
     maxBuffer: 1024 * 1024 * 20,

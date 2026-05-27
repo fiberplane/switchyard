@@ -23,6 +23,21 @@ const GithubPrInfoSchema = Schema.Struct({
 
 export type GithubPrInfo = Schema.Schema.Type<typeof GithubPrInfoSchema>;
 
+const GithubRestPullSchema = Schema.Struct({
+  html_url: Schema.String,
+  number: Schema.Number,
+  body: Schema.NullOr(Schema.String),
+  head: Schema.Struct({
+    ref: Schema.String,
+    sha: Schema.String,
+  }),
+  base: Schema.Struct({
+    sha: Schema.String,
+  }),
+  draft: Schema.Boolean,
+  state: Schema.String,
+});
+
 const decodeJson = <A, I>(
   schema: Schema.Schema<A, I, never>,
   content: string,
@@ -103,23 +118,37 @@ export const assertGithubWriteAccess = async (
 };
 
 export const viewPr = async (env: RemoteE2EEnv, prNumber: string): Promise<GithubPrInfo> => {
-  const result = await runCommand(
+  const commandEnv = {
+    ...process.env,
+    GITHUB_TOKEN: env.host.github.token,
+    GH_TOKEN: env.host.github.token,
+  };
+  const repo = repoFullName(env.repoUrl);
+  const prResult = await runCommand("gh", ["api", `repos/${repo}/pulls/${prNumber}`], {
+    env: commandEnv,
+  });
+  const commentsResult = await runCommand(
     "gh",
-    [
-      "pr",
-      "view",
-      prNumber,
-      "--repo",
-      repoFullName(env.repoUrl),
-      "--comments",
-      "--json",
-      "url,number,body,comments,headRefName,headRefOid,baseRefOid,isDraft,state",
-    ],
-    {
-      env: { ...process.env, GITHUB_TOKEN: env.host.github.token, GH_TOKEN: env.host.github.token },
-    },
+    ["api", `repos/${repo}/issues/${prNumber}/comments`],
+    { env: commandEnv },
   );
-  return decodeJson(GithubPrInfoSchema, result.stdout, "github pr");
+  const pr = decodeJson(GithubRestPullSchema, prResult.stdout, "github pr");
+  const comments = decodeJson(
+    Schema.Array(Schema.Unknown),
+    commentsResult.stdout,
+    "github comments",
+  );
+  return {
+    url: pr.html_url,
+    number: pr.number,
+    body: pr.body ?? "",
+    comments,
+    headRefName: pr.head.ref,
+    headRefOid: pr.head.sha,
+    baseRefOid: pr.base.sha,
+    isDraft: pr.draft,
+    state: pr.state.toUpperCase(),
+  };
 };
 
 const deleteRemoteBranch = async (env: RemoteE2EEnv, branch: string): Promise<void> => {
